@@ -1173,7 +1173,7 @@ maps/genai-endpoint.json (written on your Mac by Claude Code from a real sample;
 
   1. Export from your existing app to a file (CSV or JSON).
   2. Ask Claude Code on the Mac to write `maps/october-app.json` from the first rows. The real format never leaves your machine or reaches the repo.
-  3. Dry run, then import. Cadence records the rows with source `import:october-app` and marks them backfilled. It does not keep the file.
+  3. Dry run, then import. Cadence records the rows with source `import:october-app`; that source is what marks them as imported, since usage rows carry no backfilled flag. It does not keep the file, except that rows it could not read are kept in `inbox/` as in section 10.1.
 
 
 ```sh

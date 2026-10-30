@@ -139,6 +139,9 @@ Every task has a tier. The tier is a floor, not a ceiling: on any doubt, move a 
 | [x] T2.16 | `examples/`: `config.example.json`, the on-call collector in shell and Python, sample maps with synthetic data | mechanic | §7.4, §10 | The guard is clean and the examples run |
 | [ ] T2.17 | On your Mac, local only: maps for your endpoint and October app, backfill from 2026-10-01, totals checked against your app | builder | §10.5, §10.6 | October totals match; nothing is committed |
 | [ ] T2.18 | Phase 2 audit | auditor | §9 to §11, §13 | No open gaps |
+| [ ] T2.19 | Phase 2 audit fixes: GenAI overflow, scheduler window after long failure streaks and chunked catch-up, shared link rules for log and MCP, declare_day ownership, dictation prompt markers and size, tool size measured as the server does, README; CLI spool drain on `collect run`, `collect run --since --until`, audit nits | builder | §9, §10 | Each defect has a failing test first; `make check` green |
+| [ ] T2.20 | `cadence setup claude-code --print\|--apply` (hooks merge, MCP registration, skill copy) and `cadence doctor` checks for the agent, hooks, MCP registration, spool backlog and `cleanupPeriodDays` | builder | §9.1, §10.4, §14.5 | Tests on a temp HOME; `--print` changes nothing |
+| [ ] T2.21 | Core metrics of §11.1 (AI-assisted merges, agent-logged accepted entries, median session length, cache reuse, model mix) and the review sentence for the cycle recap and proof summary; the opt-in stand-up AI line of §11.2 | builder | §11, §12 | Metric tests on seeded ledgers; the stand-up line is off by default |
 
 ## Phase 3 · Menu bar · v0.3 (macOS only, on your Mac)
 
