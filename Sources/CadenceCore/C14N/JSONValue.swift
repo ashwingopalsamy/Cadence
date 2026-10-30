@@ -1,6 +1,6 @@
 /// A JSON value as Cadence stores and hashes it: no floating point, by design
 /// (docs/SPEC.md sections 7.3 and 12.1). Money is micro-dollars and tokens are counts.
-public enum JSONValue: Sendable, Hashable {
+public enum JSONValue: Sendable {
     case null
     case bool(Bool)
     /// Canonical JSON only admits integers within ±(2^53 - 1), so every value survives
@@ -61,4 +61,37 @@ extension JSONValue {
     }
 
     public var isNull: Bool { self == .null }
+}
+
+// Equality follows the canonical bytes, not Swift's String equality, which treats canonically
+// equivalent strings ("\u{E9}" and "e\u{301}") as equal even though they hash differently in the ledger.
+extension JSONValue: Hashable {
+    public static func == (lhs: JSONValue, rhs: JSONValue) -> Bool {
+        switch (lhs, rhs) {
+        case (.null, .null): true
+        case (.bool(let a), .bool(let b)): a == b
+        case (.int(let a), .int(let b)): a == b
+        case (.string(let a), .string(let b)): a.utf8.elementsEqual(b.utf8)
+        case (.array(let a), .array(let b)): a == b
+        case (.object(let a), .object(let b)):
+            a.count == b.count && a.allSatisfy { key, value in b[key].map { $0 == value } ?? false }
+        default: false
+        }
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        switch self {
+        case .null: hasher.combine(0)
+        case .bool(let b): hasher.combine(1); hasher.combine(b)
+        case .int(let i): hasher.combine(2); hasher.combine(i)
+        case .string(let s): hasher.combine(3); hasher.combine(Array(s.utf8))
+        case .array(let a): hasher.combine(4); hasher.combine(a)
+        case .object(let o):
+            hasher.combine(5)
+            for key in o.keys.sorted(by: { Array($0.utf8).lexicographicallyPrecedes(Array($1.utf8)) }) {
+                hasher.combine(Array(key.utf8))
+                o[key]?.hash(into: &hasher)
+            }
+        }
+    }
 }

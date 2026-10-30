@@ -114,72 +114,222 @@
       "input": "[[[[[[[[[[{\"a\":[[[[1]]]]}]]]]]]]]]]",
       "canonical": "[[[[[[[[[[{\"a\":[[[[1]]]]}]]]]]]]]]]",
       "sha256": "32a9921953d4ecfd70e17280c948797a403afef2668702d12a1a3d96b5a864c9"
+    },
+    {
+      "name": "64 levels of nesting",
+      "input": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[{}]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "canonical": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[{}]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "sha256": "2b69d0b7b23f131eeb25dd3ae3db30b6907a02e8e362d8a5572bc3d11c964972"
+    },
+    {
+      "name": "escaped keys sort after unescaping",
+      "input": "{\"\\u0062\":1,\"a\":2}",
+      "canonical": "{\"a\":2,\"b\":1}",
+      "sha256": "d3626ac30a87e6f7a6428233b3c68299976865fa5508e4267c5415c76af7a772"
+    },
+    {
+      "name": "keys that need escaping",
+      "input": "{\"a\\\"b\":1,\"a\\\\b\":2,\"\\n\":3,\"\\u007f\":4}",
+      "canonical": "{\"\\n\":3,\"a\\\"b\":1,\"a\\\\b\":2,\"\":4}",
+      "sha256": "b94a991bbc89da76b451bf773d13998dc4f4aef76c3bd51d8fb7a7929ce583e1"
+    },
+    {
+      "name": "C1 controls stay raw",
+      "input": "\"\\u0080\\u009f\"",
+      "canonical": "\"\"",
+      "sha256": "5ab9dc377c64aa500b327a9c80962288831270656cef570697459bd2428ce7d2"
+    },
+    {
+      "name": "BOM and noncharacter stay raw",
+      "input": "\"\\ufeff\\uffff\"",
+      "canonical": "\"﻿￿\"",
+      "sha256": "261ecab9e7cbca238714eb52db8fe6480f6c4fc5be2b8efebd2da8572789d965"
+    },
+    {
+      "name": "uppercase hex escape",
+      "input": "\"\\u00E9\"",
+      "canonical": "\"é\"",
+      "sha256": "f2886017e9c7abacf804b54d64787dce2b611c9544ba21f3affdd126a6e50086"
+    },
+    {
+      "name": "highest code point",
+      "input": "\"\\udbff\\udfff\"",
+      "canonical": "\"􏿿\"",
+      "sha256": "216551a7df34e082dd063693c09f0b567df0351251da1fd71057b83fe66003c6"
+    },
+    {
+      "name": "top-level string",
+      "input": "\"x\"",
+      "canonical": "\"x\"",
+      "sha256": "ba2df4903a2c14e86dc3bcca58911b44ac1d2514b7227bf6eb08cfb978f55a1b"
+    },
+    {
+      "name": "top-level integer",
+      "input": "7",
+      "canonical": "7",
+      "sha256": "7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451"
     }
   ],
   "reject": [
     {
       "name": "float",
-      "input": "1.0"
+      "input": "1.0",
+      "stage": "parse"
     },
     {
       "name": "float in object",
-      "input": "{\"cost\":0.42}"
+      "input": "{\"cost\":0.42}",
+      "stage": "parse"
     },
     {
       "name": "exponent",
-      "input": "1e3"
+      "input": "1e3",
+      "stage": "parse"
     },
     {
       "name": "negative exponent",
-      "input": "{\"a\":5E-1}"
+      "input": "{\"a\":5E-1}",
+      "stage": "parse"
     },
     {
       "name": "integer above 2^53 - 1",
-      "input": "9007199254740992"
+      "input": "9007199254740992",
+      "stage": "parse"
     },
     {
       "name": "integer below -(2^53 - 1)",
-      "input": "-9007199254740992"
+      "input": "-9007199254740992",
+      "stage": "parse"
     },
     {
       "name": "huge integer",
-      "input": "123456789012345678901234567890"
+      "input": "123456789012345678901234567890",
+      "stage": "parse"
     },
     {
       "name": "non-ASCII key",
-      "input": "{\"café\":1}"
+      "input": "{\"café\":1}",
+      "stage": "write"
     },
     {
       "name": "duplicate key",
-      "input": "{\"a\":1,\"a\":2}"
+      "input": "{\"a\":1,\"a\":2}",
+      "stage": "parse"
     },
     {
       "name": "unpaired high surrogate",
-      "input": "\"\\ud800\""
+      "input": "\"\\ud800\"",
+      "stage": "parse"
     },
     {
       "name": "unpaired low surrogate",
-      "input": "\"\\udc00x\""
+      "input": "\"\\udc00x\"",
+      "stage": "parse"
     },
     {
       "name": "raw control character",
-      "input": "\"a\tb\""
+      "input": "\"a\tb\"",
+      "stage": "parse"
     },
     {
       "name": "leading zero",
-      "input": "012"
+      "input": "012",
+      "stage": "parse"
     },
     {
       "name": "trailing content",
-      "input": "{} {}"
+      "input": "{} {}",
+      "stage": "parse"
     },
     {
       "name": "NaN",
-      "input": "NaN"
+      "input": "NaN",
+      "stage": "parse"
     },
     {
       "name": "invalid escape",
-      "input": "\"\\x41\""
+      "input": "\"\\x41\"",
+      "stage": "parse"
+    },
+    {
+      "name": "non-ASCII key through an escape",
+      "input": "{\"caf\\u00e9\":1}",
+      "stage": "write"
+    },
+    {
+      "name": "high surrogate then a letter",
+      "input": "\"\\ud800A\"",
+      "stage": "parse"
+    },
+    {
+      "name": "two high surrogates",
+      "input": "\"\\ud800\\ud800\"",
+      "stage": "parse"
+    },
+    {
+      "name": "lone minus",
+      "input": "-",
+      "stage": "parse"
+    },
+    {
+      "name": "negative leading zero",
+      "input": "-01",
+      "stage": "parse"
+    },
+    {
+      "name": "plus sign",
+      "input": "+1",
+      "stage": "parse"
+    },
+    {
+      "name": "negative zero float",
+      "input": "-0.0",
+      "stage": "parse"
+    },
+    {
+      "name": "zero exponent",
+      "input": "0e0",
+      "stage": "parse"
+    },
+    {
+      "name": "trailing comma in array",
+      "input": "[1,]",
+      "stage": "parse"
+    },
+    {
+      "name": "trailing comma in object",
+      "input": "{\"a\":1,}",
+      "stage": "parse"
+    },
+    {
+      "name": "missing colon",
+      "input": "{\"a\" 1}",
+      "stage": "parse"
+    },
+    {
+      "name": "Infinity",
+      "input": "Infinity",
+      "stage": "parse"
+    },
+    {
+      "name": "short unicode escape",
+      "input": "\"\\u12\"",
+      "stage": "parse"
+    },
+    {
+      "name": "uppercase U escape",
+      "input": "\"\\U0041\"",
+      "stage": "parse"
+    },
+    {
+      "name": "leading byte order mark",
+      "input": "﻿[]",
+      "stage": "parse"
+    },
+    {
+      "name": "65 levels of nesting",
+      "input": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "stage": "parse"
     }
   ]
 }

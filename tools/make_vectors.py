@@ -185,8 +185,18 @@ C14N_INPUTS = [
     ("astral plane raw", '"\U0001F680"'),
     ("ACME entry", '{"kind":"pr.merged","title":"ACME-482913 Ship retry budget","attrs":{"number":412,"ai_assisted":true,"additions":184},"links":[{"kind":"pr","url":"https://git.example.com/acme/ledger-core/pull/412"}],"occurred_at":"2026-10-29T16:02:11+05:30","ticket":{"class":"assigned","key":"ACME-482913"}}'),
     ("deep nesting", '[[[[[[[[[[{"a":[[[[1]]]]}]]]]]]]]]]'),
+    ("64 levels of nesting", "[" * 63 + "{}" + "]" * 63),
+    ("escaped keys sort after unescaping", '{"\\u0062":1,"a":2}'),
+    ("keys that need escaping", '{"a\\"b":1,"a\\\\b":2,"\\n":3,"\\u007f":4}'),
+    ("C1 controls stay raw", '"\\u0080\\u009f"'),
+    ("BOM and noncharacter stay raw", '"\\ufeff\\uffff"'),
+    ("uppercase hex escape", '"\\u00E9"'),
+    ("highest code point", '"\\udbff\\udfff"'),
+    ("top-level string", '"x"'),
+    ("top-level integer", '7'),
 ]
 
+# Each reject names the stage that must refuse it: "parse" (JSONParser) or "write" (CanonicalJSON).
 C14N_REJECTS = [
     ("float", '1.0'),
     ("float in object", '{"cost":0.42}'),
@@ -204,7 +214,25 @@ C14N_REJECTS = [
     ("trailing content", '{} {}'),
     ("NaN", 'NaN'),
     ("invalid escape", '"\\x41"'),
+    ("non-ASCII key through an escape", '{"caf\\u00e9":1}'),
+    ("high surrogate then a letter", '"\\ud800A"'),
+    ("two high surrogates", '"\\ud800\\ud800"'),
+    ("lone minus", '-'),
+    ("negative leading zero", '-01'),
+    ("plus sign", '+1'),
+    ("negative zero float", '-0.0'),
+    ("zero exponent", '0e0'),
+    ("trailing comma in array", '[1,]'),
+    ("trailing comma in object", '{"a":1,}'),
+    ("missing colon", '{"a" 1}'),
+    ("Infinity", 'Infinity'),
+    ("short unicode escape", '"\\u12"'),
+    ("uppercase U escape", '"\\U0041"'),
+    ("leading byte order mark", '\ufeff[]'),
+    ("65 levels of nesting", "[" * 65 + "]" * 65),
 ]
+
+WRITE_STAGE_REJECTS = {"non-ASCII key", "non-ASCII key through an escape"}
 
 
 def c14n_vectors():
@@ -215,7 +243,8 @@ def c14n_vectors():
         vectors.append({"name": name, "input": text, "canonical": out.decode("utf-8"),
                         "sha256": verify_proof.hashlib.sha256(out).hexdigest()})
     return {"c14n": "cadence-c14n/1", "vectors": vectors,
-            "reject": [{"name": n, "input": t} for n, t in C14N_REJECTS]}
+            "reject": [{"name": n, "input": t, "stage": "write" if n in WRITE_STAGE_REJECTS else "parse"}
+                       for n, t in C14N_REJECTS]}
 
 
 def chain_vectors():
