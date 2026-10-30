@@ -1,0 +1,19 @@
+{
+  "cadence": "map/1",
+  "description": "A usage endpoint that answers JSON with one object per day and model. Costs are dollars, stored as micro-dollars.",
+  "input": "json",
+  "produces": "genai.usage",
+  "records": "$.data[*]",
+  "fields": {
+    "day":                { "path": "$.date", "format": "yyyy-MM-dd" },
+    "tool":               { "const": "claude-code" },
+    "model":              { "path": "$.model", "default": "*" },
+    "requests":           { "path": "$.request_count" },
+    "tokens.in":          { "path": "$.input_tokens" },
+    "tokens.out":         { "path": "$.output_tokens" },
+    "tokens.cache_read":  { "path": "$.cache_read_tokens", "default": 0 },
+    "tokens.cache_write": { "path": "$.cache_creation_tokens", "default": 0 },
+    "cost_micros":        { "path": "$.cost_usd", "scale": 1000000 }
+  },
+  "source_ref": "genai-endpoint:{day}:{tool}:{model}"
+}

@@ -1,0 +1,16 @@
+{
+  "cadence": "map/1",
+  "description": "A CSV usage export with one row per day and model. Costs are dollars, stored as micro-dollars.",
+  "input": "csv",
+  "produces": "genai.usage",
+  "fields": {
+    "day":         { "path": "$.date", "format": "yyyy-MM-dd" },
+    "tool":        { "const": "claude-code" },
+    "model":       { "path": "$.model", "default": "*" },
+    "requests":    { "path": "$.requests" },
+    "tokens.in":   { "path": "$.input_tokens" },
+    "tokens.out":  { "path": "$.output_tokens" },
+    "cost_micros": { "path": "$.cost_usd", "scale": 1000000 }
+  },
+  "source_ref": "usage-export:{day}:{tool}:{model}"
+}

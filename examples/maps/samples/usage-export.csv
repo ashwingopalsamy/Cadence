@@ -1,0 +1,5 @@
+date,model,requests,input_tokens,output_tokens,cost_usd
+2026-10-26,model-a,118,1204,51302,14.21
+2026-10-27,model-a,164,2210,77940,19.87
+2026-10-28,model-b,212,2410,96115,26.4013
+2026-10-29,model-a,9,310,1450,0.4213

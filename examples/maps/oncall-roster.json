@@ -1,0 +1,13 @@
+{
+  "cadence": "map/1",
+  "description": "A scheduler export with one on-call shift per row, in Date, Schedule and Summary columns.",
+  "input": "csv",
+  "produces": "item",
+  "fields": {
+    "kind":           { "const": "oncall.shift" },
+    "day":            { "path": "$.Date", "format": "yyyy-MM-dd" },
+    "title":          { "path": "$.Summary" },
+    "attrs.schedule": { "path": "$.Schedule" }
+  },
+  "source_ref": "roster:{day}"
+}

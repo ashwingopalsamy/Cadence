@@ -1,0 +1,8 @@
+{
+  "data": [
+    { "date": "2026-10-26", "model": "model-a", "request_count": 118, "input_tokens": 1204, "output_tokens": 51302, "cache_read_tokens": 812040, "cache_creation_tokens": 40211, "cost_usd": 14.21 },
+    { "date": "2026-10-27", "model": "model-a", "request_count": 164, "input_tokens": 2210, "output_tokens": 77940, "cache_read_tokens": 1204377, "cache_creation_tokens": 58820, "cost_usd": 19.87 },
+    { "date": "2026-10-28", "model": "model-b", "request_count": 212, "input_tokens": 2410, "output_tokens": 96115, "cost_usd": "26.4013" },
+    { "date": "2026-10-29", "request_count": 9, "input_tokens": 310, "output_tokens": 1450, "cost_usd": 0.4213 }
+  ]
+}
