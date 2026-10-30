@@ -14,7 +14,7 @@ struct Cadence: ParsableCommand {
             QueryCommand.self, SummaryCommand.self, StreakCommand.self, StandupCommand.self, ExportCommand.self,
             VerifyCommand.self, BackupCommand.self, RebuildCommand.self, DoctorCommand.self, ConfigCommand.self, Dev.self,
             Demo.self, PresenceCommand.self, HookCommand.self, SpoolCommand.self,
-            CollectorCommand.self, CollectCommand.self,
+            CollectorCommand.self, CollectCommand.self, ImportCommand.self,
         ]
     )
 
