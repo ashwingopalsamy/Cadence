@@ -220,8 +220,10 @@ extension Journal {
     }
 
     private func writeUsage(_ usage: UsageRecord, collector: String, actor: Actor) throws(CadenceError) -> IngestOutcome {
+        // Section 10.6: imported rows carry source `import:<name>`, so they never collide with a collector's.
+        let source = actor == .importer(collector) ? "import:\(collector)" : collector
         let payload = GenAIUsage(
-            day: usage.day.description, tool: usage.tool, model: usage.model, source: collector, sessions: usage.sessions,
+            day: usage.day.description, tool: usage.tool, model: usage.model, source: source, sessions: usage.sessions,
             requests: usage.requests, tokens: usage.tokens, costMicros: usage.costMicros, estimated: usage.estimated)
         // The row's last event is what the row holds, the estimated flag included.
         if let last = try store.events(subject: EventPayload.genaiUsage(payload).subject(id: nil) ?? "").last {

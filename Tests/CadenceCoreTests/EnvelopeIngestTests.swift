@@ -468,6 +468,14 @@ import Testing
         #expect(row.text("model") == "*" && row.int("sessions") == nil && row.int("tokens_out") == 10)
     }
 
+    @Test func importedUsageCarriesTheImportSource() throws {
+        let f = try Fixture()
+        let text = ([Self.header("october-app")] + [Self.usage]).joined(separator: "\n")
+        try f.journal.ingest(envelope: Array(text.utf8), collector: "october-app", window: Self.window, actor: .importer("october-app"))
+        #expect(try f.store.db.query("SELECT source FROM genai_usage").map { $0.text("source") } == ["import:october-app"])
+        #expect(try f.events("genai.usage").first?.actor == .importer("october-app"))
+    }
+
     @Test func leaveNeverOverridesADayYouDeclared() throws {
         let f = try Fixture()
         try f.journal.declare(LocalDate("2026-09-25")!, kind: .holiday, label: "Festival", actor: .app)
