@@ -186,6 +186,25 @@ import Testing
         #expect(try f.store.projectionDump() == before)
     }
 
+    @Test func carryOverNeverTargetsAPastOrSealedDay() throws {
+        let f = try Fixture(start: "2026-10-26")
+        let stranded = try f.plan("Monday leftover", on: "2026-10-26")
+        _ = try f.seal("2026-10-27", at: ("2026-10-27", 18, 0))
+        f.go("2026-10-29", 10, 0)
+        let result = try f.journal.seal(f.day("2026-10-26"), actor: .cli)
+        #expect(result.carried.first?.task.day == "2026-10-29")
+        #expect(result.carried.first?.from == stranded.id)
+
+        // With today sealed as well, the next unsealed workday from today takes them.
+        let g = try Fixture(start: "2026-10-26")
+        _ = try g.plan("Monday leftover", on: "2026-10-26")
+        _ = try g.seal("2026-10-27", at: ("2026-10-27", 18, 0))
+        g.go("2026-10-29", 10, 0)
+        _ = try g.journal.seal(nil, actor: .cli)
+        let again = try g.journal.seal(g.day("2026-10-26"), actor: .cli)
+        #expect(again.carried.first?.task.day == "2026-10-30")
+    }
+
     // MARK: streak
 
     @Test func streakSkipsWeekends() throws {
@@ -290,6 +309,17 @@ import Testing
         let past = Timestamp.resolve(LocalDate("2026-11-03")!, hour: 0, minute: 30, in: ny)
         #expect(rules.sealCounts(eleven30, for: LocalDate("2026-11-01")!, in: ny))
         #expect(!rules.sealCounts(past, for: LocalDate("2026-11-01")!, in: ny))
+    }
+
+    @Test func streakWalkStartsAtTheGenesisDay() throws {
+        let f = try Fixture(start: "2026-10-29")
+        _ = try f.journal.log(
+            LogRequest(text: "Backfilled before the ledger", kind: .shipped, date: f.day("2026-10-28")), actor: .cli,
+            origin: .selfReported)
+        _ = try f.journal.seal(f.day("2026-10-28"), actor: .cli)
+        let streak = try f.journal.seal(nil, actor: .cli).streak
+        #expect(streak.current == 1 && streak.best == 1)
+        #expect(try f.journal.streak(asOf: f.day("2026-10-28")) == Streak())
     }
 
     // MARK: stand-up

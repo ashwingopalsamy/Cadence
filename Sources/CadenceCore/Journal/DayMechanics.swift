@@ -80,7 +80,7 @@ extension Journal {
             var carried: [CarriedTask] = []
             var drafts: [EventDraft] = []
             if !open.isEmpty {
-                let target = rules.nextWorkday(after: day, declared: try self.declaredKinds())
+                let target = try self.carryTarget(after: day, today: today, rules: rules)
                 var position = try self.rows(
                     "SELECT COALESCE(MAX(position), 0) AS highest FROM plan_tasks WHERE day = ?",
                     [.text(target.description)]
@@ -146,18 +146,39 @@ extension Journal {
         let reference =
             asOf == today
             ? clock.now() : Timestamp.resolve(asOf.adding(days: 1), hour: 0, minute: 0, in: zone).addingTimeInterval(-0.001)
-        var first: LocalDate?
+        // The walk starts on the day the ledger began, as summary and proof do; earlier days never count.
+        guard let first = try ledgerStart() else { return Streak() }
         var sealed: DayRules.SealedDays = [:]
         for row in try rows("SELECT date, tz, sealed_at FROM days ORDER BY date") {
-            guard let date = row.text("date").flatMap({ LocalDate($0) }) else { continue }
-            if first == nil { first = date }
+            guard let date = row.text("date").flatMap({ LocalDate($0) }), date >= first else { continue }
             if let at = row.text("sealed_at").flatMap({ Timestamp.parse($0) }), at <= reference {
                 sealed[date] = (at, row.text("tz").flatMap { TimeZone(identifier: $0) } ?? zone)
             }
         }
-        guard let first else { return Streak() }
         return DayRules(config: config).streak(
             sealed: sealed, declared: try declaredKinds(), first: first, asOf: asOf, now: reference, zone: zone)
+    }
+
+    /// The day the ledger began: the local day of `ledger.genesis` in the profile zone.
+    func ledgerStart() throws(CadenceError) -> LocalDate? {
+        let found = try store.readEvents("SELECT * FROM events WHERE type = 'ledger.genesis' ORDER BY seq LIMIT 1", [])
+        guard let genesis = found.first, let at = Timestamp.parse(genesis.at) else { return nil }
+        return config.dayBoundary.day(of: at, in: zone)
+    }
+
+    /// Where a seal's open tasks go: the first workday on or after the later of the day after `day` and today
+    /// that is not sealed yet. Never a past day and never a sealed one, which would strand the tasks.
+    func carryTarget(after day: LocalDate, today: LocalDate, rules: DayRules) throws(CadenceError) -> LocalDate {
+        let declared = try declaredKinds()
+        var candidate = max(day.adding(days: 1), today)
+        for _ in 0..<366 {
+            if rules.kind(of: candidate, declared: declared[candidate]) == .workday {
+                let row = try rows("SELECT sealed_at FROM days WHERE date = ?", [.text(candidate.description)]).first
+                if row?.text("sealed_at") == nil { return candidate }
+            }
+            candidate = candidate.adding(days: 1)
+        }
+        return rules.nextWorkday(after: max(day, today.adding(days: -1)), declared: declared)
     }
 
     /// The latest declared kind of every declared day, in one query.
