@@ -1,0 +1,21 @@
+[
+  {"type":"ledger.genesis","subject":"ledger","data":{"created":"2026-10-01T08:00:00.000Z","app_version":"0.1.0","profile":{"name":"Ada Example","zone":"Europe/Berlin"}}},
+  {"type":"day.started","subject":"day:2026-10-29","data":{"day":"2026-10-29","tz":"Europe/Berlin","at":"2026-10-29T09:02:11.000+01:00","source":"input"}},
+  {"type":"day.ended","subject":"day:2026-10-29","data":{"day":"2026-10-29","tz":"Europe/Berlin","at":"2026-10-29T18:15:00.000+01:00","source":"manual"}},
+  {"type":"presence.span","subject":"day:2026-10-29","data":{"day":"2026-10-29","tz":"Europe/Berlin","start":"2026-10-29T09:02:11.000+01:00","end":"2026-10-29T12:30:00.000+01:00","source":"input"}},
+  {"type":"day.declared","subject":"day:2026-10-30","data":{"day":"2026-10-30","tz":"Europe/Berlin","kind":"leave_planned","label":"Family trip"}},
+  {"type":"day.noted","subject":"day:2026-10-29","data":{"day":"2026-10-29","tz":"Europe/Berlin","focus":"Finish ACME-123 migration","note":null,"on_call":true}},
+  {"type":"plan.added","subject":"task:01JBX3K8Q2M4N5P6R7S8T9V0WA","data":{"id":"01JBX3K8Q2M4N5P6R7S8T9V0WA","day":"2026-10-29","position":0,"title":"Review ACME-123 schema change","ticket":{"key":"ACME-123","class":"assigned"},"estimate_min":45,"origin":"self","carried_from":null,"status":"open","reason":null,"reason_note":null,"linked_entries":[],"planned_at":"2026-10-29T09:10:00.000Z","resolved_at":null}},
+  {"type":"plan.updated","subject":"task:01JBX3K8Q2M4N5P6R7S8T9V0WA","data":{"changes":{"title":["Review ACME-123 schema change","Review and merge ACME-123"],"estimate_min":[45,60]}}},
+  {"type":"plan.resolved","subject":"task:01JBX3K8Q2M4N5P6R7S8T9V0WA","data":{"status":"done","reason":null,"reason_note":null,"links":["01JBX3N0A1B2C3D4E5F6G7H8J9"]}},
+  {"type":"plan.committed","subject":"day:2026-10-29","data":{"day":"2026-10-29","tz":"Europe/Berlin","focus":"Finish ACME-123 migration","tasks":["01JBX3K8Q2M4N5P6R7S8T9V0WA"]}},
+  {"type":"entry.created","subject":"entry:01JBX3N0A1B2C3D4E5F6G7H8J9","data":{"id":"01JBX3N0A1B2C3D4E5F6G7H8J9","day":"2026-10-29","kind":"pr.merged","family":"delivery","title":"Merged ACME-123 schema change","occurred_at":"2026-10-29T11:40:00.000+01:00","duration_s":null,"quantity":1,"ticket":{"key":"ACME-123","class":"assigned"},"links":[{"kind":"pr","url":"https://example.com/acme/pull/42"}],"tags":["db"],"attrs":{},"origin":"self","source":null,"source_ref":null,"status":"accepted","backfilled":false,"after_seal":false,"export":"include"}},
+  {"type":"entry.updated","subject":"entry:01JBX3N0A1B2C3D4E5F6G7H8J9","data":{"changes":{"title":["Merged ACME-123 schema change","Merged ACME-123 schema migration"],"tags":[["db"],["db","migration"]]}}},
+  {"type":"entry.status","subject":"entry:01JBX3N0A1B2C3D4E5F6G7H8J9","data":{"from":"proposed","to":"accepted","note":null}},
+  {"type":"day.sealed","subject":"day:2026-10-29","data":{"day":"2026-10-29","tz":"Europe/Berlin","counts":{"delivery":2,"review":1},"plan":{"done":2,"slipped":1,"dropped":0,"moved":1,"open":0},"head":"b4f1c2d3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e7f809"}},
+  {"type":"witness.checkpoint","subject":"day:2026-10-29","data":{"day":"2026-10-29","purpose":"standup"}},
+  {"type":"genai.session","subject":"session:sess-0001","data":{"session_id":"sess-0001","tool":"claude-code","day":"2026-10-29","started_at":"2026-10-29T10:00:00.000Z","ended_at":"2026-10-29T10:45:00.000Z","end_reason":"exit","project_alias":"acme-api","models":["model-a"],"turns":18}},
+  {"type":"genai.usage","subject":"usage:2026-10-28:claude-code:model-a:endpoint","data":{"day":"2026-10-28","tool":"claude-code","model":"model-a","source":"endpoint","sessions":5,"requests":212,"tokens":{"in":48210,"out":96115,"cache_read":8120400,"cache_write":402118},"cost_micros":null,"estimated":false}},
+  {"type":"ingest.run","subject":"run:01JBX3P5Q6R7S8T9V0W1X2Y3Z4","data":{"collector":"genai-endpoint","window":{"since":"2026-10-28","until":"2026-10-29"},"counts":{"created":3,"skipped":1},"errors":[],"status":"ok"}},
+  {"type":"config.classifier","subject":"config","data":{"patterns":["sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"]}}
+]
