@@ -24,6 +24,8 @@ public struct IngestReport: Sendable, Equatable {
     public var problems: [String]
     /// Where the envelope was kept because something in it was skipped or unreadable.
     public var inbox: URL?
+    /// Where the output a map was applied to was kept, beside `inbox`, so rows the map left out can still be read.
+    public var raw: URL?
 
     public func count(_ key: String) -> Int64 { counts[key] ?? 0 }
 }
@@ -44,10 +46,12 @@ extension Journal {
     ///   - actor: `collector:<name>` by default, `import:<name>` for imports.
     ///   - skipped: records already dropped before the envelope was made, such as rows a map could not read.
     ///     They count as skipped and keep the envelope in `inbox`.
+    ///   - raw: what the envelope was made from, such as a collector's output before its map. It is kept as
+    ///     `<collector>-<run>.raw` whenever the envelope is, because the envelope no longer holds the dropped rows.
     @discardableResult
     public func ingest(
         envelope bytes: [UInt8], collector: String, window: IngestWindow, actor: Actor? = nil, inbox: URL? = nil,
-        skipped: [String] = []
+        skipped: [String] = [], raw: [UInt8]? = nil
     ) throws(CadenceError) -> IngestReport {
         guard Actor.isValidName(collector) else { throw .validation("collector: '\(collector)' is not a valid name") }
         let actor = actor ?? .collector(collector)
@@ -63,7 +67,7 @@ extension Journal {
         } catch {
             let report = try recordRun(runID: runID, collector: collector, window: window, actor: actor, status: "error",
                                        counts: [:], problems: [error.message])
-            return keep(bytes, report: report, inbox: bytes.count <= EnvelopeReader.maxBytes ? inbox : nil)
+            return keep(bytes, raw: raw, report: report, inbox: bytes.count <= EnvelopeReader.maxBytes ? inbox : nil)
         }
 
         let reader = EnvelopeReader(context: EnvelopeContext(
@@ -123,17 +127,19 @@ extension Journal {
             return try self.recordRun(runID: runID, collector: collector, window: window, actor: actor, status: "ok",
                                       counts: counts, problems: problems)
         }
-        return keep(bytes, report: report, inbox: counts["skipped"] ?? 0 > 0 ? inbox : nil)
+        return keep(bytes, raw: raw, report: report, inbox: counts["skipped"] ?? 0 > 0 ? inbox : nil)
     }
 
-    /// Records a run that produced nothing to read: a non-zero exit, a timeout, a refused command.
+    /// Records a run that produced nothing to read: a non-zero exit, a timeout, a refused command. When `raw` and
+    /// `inbox` are given, such as the output of a map that could not read it, the output is kept in `inbox`.
     @discardableResult
     public func recordIngestFailure(
-        collector: String, window: IngestWindow, error: String, actor: Actor? = nil
+        collector: String, window: IngestWindow, error: String, actor: Actor? = nil, inbox: URL? = nil, raw: [UInt8]? = nil
     ) throws(CadenceError) -> IngestReport {
         guard Actor.isValidName(collector) else { throw .validation("collector: '\(collector)' is not a valid name") }
-        return try recordRun(runID: ids.next(), collector: collector, window: window, actor: actor ?? .collector(collector),
-                             status: "error", counts: [:], problems: [error])
+        let report = try recordRun(runID: ids.next(), collector: collector, window: window, actor: actor ?? .collector(collector),
+                                   status: "error", counts: [:], problems: [error])
+        return keep(nil, raw: raw, report: report, inbox: inbox)
     }
 
     // MARK: - Records
@@ -344,21 +350,31 @@ extension Journal {
         return IngestReport(runID: runID, collector: collector, status: status, counts: counts, problems: problems, inbox: nil)
     }
 
-    /// Keeps the envelope and the reasons beside it in `inbox`, readable only by you.
-    /// The ledger has already committed, so a file that cannot be written leaves `inbox` nil instead of failing the run.
-    private func keep(_ bytes: [UInt8], report: IngestReport, inbox: URL?) -> IngestReport {
-        guard let inbox else { return report }
+    /// Keeps the envelope and the reasons beside it in `inbox`, readable only by you, and the raw output it was made
+    /// from as `<collector>-<run>.raw`. The ledger has already committed, so a file that cannot be written leaves
+    /// `inbox` nil instead of failing the run; the raw copy is a help on top, so failing to write it changes nothing else.
+    private func keep(_ bytes: [UInt8]?, raw: [UInt8]?, report: IngestReport, inbox: URL?) -> IngestReport {
+        guard let inbox, bytes != nil || raw != nil else { return report }
         let base = "\(report.collector)-\(report.runID)"
-        let file = inbox.appendingPathComponent("\(base).jsonl")
-        let why = report.problems.map { Self.clean($0, limit: Self.maxRunError) }.joined(separator: "\n") + "\n"
+        var kept = report
+        var notes = report.problems.map { Self.clean($0, limit: Self.maxRunError) }
         do {
-            try PrivateFile.save(bytes, to: file)
-            try PrivateFile.save(Array(why.utf8), to: inbox.appendingPathComponent("\(base).txt"))
+            if let bytes {
+                let file = inbox.appendingPathComponent("\(base).jsonl")
+                try PrivateFile.save(bytes, to: file)
+                kept.inbox = file
+            }
+            if let raw {
+                let file = inbox.appendingPathComponent("\(base).raw")
+                if (try? PrivateFile.save(raw, to: file)) != nil {
+                    kept.raw = file
+                    notes.append("raw output: \(base).raw")
+                }
+            }
+            try PrivateFile.save(Array((notes.joined(separator: "\n") + "\n").utf8), to: inbox.appendingPathComponent("\(base).txt"))
         } catch {
             return report
         }
-        var kept = report
-        kept.inbox = file
         return kept
     }
 

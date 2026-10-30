@@ -283,6 +283,40 @@ import Testing
         #expect(why.contains("item.colour: unknown field"))
     }
 
+    @Test func rawOutputIsKeptOnlyWhenTheEnvelopeIs() throws {
+        let f = try Fixture()
+        let head = Self.header("github")
+        let raw = Array("raw bytes the envelope was made from".utf8)
+        func run(_ records: [String], skipped: [String] = []) throws -> IngestReport {
+            try f.journal.ingest(
+                envelope: Array(([head] + records).joined(separator: "\n").utf8), collector: "github", window: Self.window,
+                inbox: f.inbox, skipped: skipped, raw: raw)
+        }
+        let clean = try run([Self.item("github:1")])
+        #expect(clean.inbox == nil && clean.raw == nil)
+
+        let bad = try run([Self.item("github:2"), "{not json"])
+        let kept = try #require(bad.raw)
+        #expect(kept.lastPathComponent == "github-\(bad.runID).raw")
+        #expect(try Data(contentsOf: kept) == Data(raw))
+        let mode = try FileManager.default.attributesOfItem(atPath: kept.path)[.posixPermissions] as? Int
+        #expect(mode == 0o600)
+        let why = try String(contentsOf: kept.deletingPathExtension().appendingPathExtension("txt"), encoding: .utf8)
+        #expect(why.contains("raw output: github-\(bad.runID).raw"))
+
+        // Rows a map already dropped keep the envelope too, and the raw output with it.
+        let dropped = try run([Self.item("github:3")], skipped: ["record 2: tokens.out: must not be negative"])
+        #expect(dropped.inbox != nil && dropped.raw != nil)
+
+        // A runner can also keep raw output on its own when there is no envelope.
+        let failure = try f.journal.recordIngestFailure(
+            collector: "github", window: Self.window, error: "map: nothing readable", inbox: f.inbox, raw: raw)
+        let alone = try #require(failure.raw)
+        #expect(failure.inbox == nil && alone.lastPathComponent == "github-\(failure.runID).raw")
+        let plain = try f.journal.recordIngestFailure(collector: "github", window: Self.window, error: "exit status 1")
+        #expect(plain.raw == nil)
+    }
+
     @Test func badRecordsAreSkippedWithTheirReason() throws {
         let cases: [(String, String)] = [
             ("{not json", "is not valid JSON"),

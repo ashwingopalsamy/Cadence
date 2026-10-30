@@ -28,6 +28,9 @@ public struct MapFile: Sendable, Equatable {
     public var fields: [(String, Rule)]
     public var sourceRef: String
 
+    /// A map is a few dozen lines; anything bigger is not one.
+    public static let maxBytes = 256 * 1024
+
     public static func == (a: MapFile, b: MapFile) -> Bool {
         a.name == b.name && a.input == b.input && a.produces == b.produces && a.records == b.records
             && a.sourceRef == b.sourceRef && a.fields.map(\.0) == b.fields.map(\.0) && a.fields.map(\.1) == b.fields.map(\.1)
@@ -52,6 +55,7 @@ public struct MapFile: Sendable, Equatable {
 
     /// Reads and checks a map. `name` is what reports call it, usually the file name without `.json`.
     public init(bytes: [UInt8], name: String) throws(CadenceError) {
+        guard bytes.count <= Self.maxBytes else { throw .validation("map \(name): the file is larger than 256 KB") }
         let value: JSONValue
         do {
             value = try JSONParser.parse(bytes: bytes)
@@ -70,9 +74,12 @@ public struct MapFile: Sendable, Equatable {
 
         var fields: [(String, Rule)] = []
         for key in fieldObject.keys.sorted() {
-            let owner = "map \(name).fields.\(key)"
-            guard allowed.contains(key) || (produces == "item" && key.hasPrefix("attrs.") && key.count > 6 && !key.dropFirst(6).contains("."))
-            else { throw CadenceError.validation("\(owner): is not a field of \(produces)") }
+            let owner = "map \(name).fields.\(EnvelopeReader.printable(key))"
+            let isAttrs = produces == "item" && key.hasPrefix("attrs.") && key.count > 6 && !key.dropFirst(6).contains(".")
+            guard allowed.contains(key) || isAttrs else { throw CadenceError.validation("\(owner): is not a field of \(produces)") }
+            guard !isAttrs || EnvelopeReader.isValidAttrsKey(String(key.dropFirst(6))) else {
+                throw CadenceError.validation("\(owner): an attrs key must be 1 to 64 characters with no control characters")
+            }
             let f = try RecordReader(fieldObject[key]!, owner: owner, required: [], optional: ["path", "const", "default", "format", "scale"])
             var rule = Rule()
             if let path = try f.optionalString("path") {
@@ -90,8 +97,18 @@ public struct MapFile: Sendable, Equatable {
             }
             if let scale = try f.optionalInt("scale") {
                 guard Self.integers.contains(key) else { throw f.fail("scale", "applies to number fields only") }
-                guard Decimal10.isPowerOfTen(scale) else { throw f.fail("scale", "must be 1, 10, 100 and so on up to 10^12") }
+                guard scale != 1 else { throw f.fail("scale", "scale must be 10 or more; leave it out for exact values") }
+                guard Decimal10.isPowerOfTen(scale) else { throw f.fail("scale", "must be 10, 100 and so on up to 10^12") }
                 rule.scale = scale
+            }
+            // A const or default that the field would refuse is a mistake in the map, not in each record.
+            for (label, value) in [("const", rule.const), ("default", rule.defaultValue)] {
+                guard let value else { continue }
+                do throws(CadenceError) {
+                    _ = try MapEngine.convert(value, field: key, rule: rule, zone: TimeZone(secondsFromGMT: 0)!, boundary: .standard)
+                } catch {
+                    throw f.fail(label, error.message)
+                }
             }
             fields.append((key, rule))
         }
@@ -110,15 +127,27 @@ public struct MapFile: Sendable, Equatable {
         self.sourceRef = sourceRef
     }
 
-    /// The names inside `{...}` in a template, in order.
-    static func placeholders(_ template: String) -> [String] {
-        var out: [String] = []
+    /// A `source_ref` template cut into the text it keeps and the `{field}` names it fills.
+    enum Segment: Equatable {
+        case text(String)
+        case field(String)
+    }
+
+    static func segments(_ template: String) -> [Segment] {
+        var out: [Segment] = []
         var rest = template[...]
         while let open = rest.firstIndex(of: "{"), let close = rest[open...].firstIndex(of: "}") {
-            out.append(String(rest[rest.index(after: open)..<close]))
+            if open > rest.startIndex { out.append(.text(String(rest[..<open]))) }
+            out.append(.field(String(rest[rest.index(after: open)..<close])))
             rest = rest[rest.index(after: close)...]
         }
+        if !rest.isEmpty { out.append(.text(String(rest))) }
         return out
+    }
+
+    /// The names inside `{...}` in a template, in order.
+    static func placeholders(_ template: String) -> [String] {
+        segments(template).compactMap { if case .field(let name) = $0 { name } else { nil } }
     }
 }
 
@@ -132,6 +161,18 @@ enum Decimal10 {
             k += 1
         }
         return v == 1
+    }
+
+    /// True for a minus sign followed by a mantissa with a digit that is not zero. Asked of the text, before
+    /// `scaled` rounds it, so `-0.0000004` is below zero and `-0.000` is not.
+    static func isNegative(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespaces).utf8
+        guard t.first == 0x2D else { return false }
+        for byte in t.dropFirst() {
+            if byte == 0x65 || byte == 0x45 { return false }
+            if byte >= 0x31, byte <= 0x39 { return true }
+        }
+        return false
     }
 
     /// `text × scale` as an integer. Digits finer than one unit are rounded half away from zero; nil when the text

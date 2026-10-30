@@ -41,15 +41,18 @@ public struct MapEngine: Sendable {
             case .failure(let error): skipped.append("\(label): \(error.message)")
             }
         }
-        guard records.count <= EnvelopeReader.maxRecords else { throw .validation("map \(map.name): more than 20,000 records") }
         return MapOutput(envelope: Array(lines.joined(separator: [0x0A])) + [0x0A], records: records.count, skipped: skipped)
     }
 
     /// Every selected record, labelled for messages, mapped to an envelope record or the reason it could not be.
+    /// More than 20,000 of them is refused before any is mapped.
     func records(from bytes: [UInt8]) throws(CadenceError) -> [(String, Result<JSONValue, CadenceError>)] {
+        let tooMany = CadenceError.validation("map \(map.name): more than 20,000 records")
         switch map.input {
         case .csv:
-            return try CSVReader.rows(bytes).map { row in
+            let rows = try CSVReader.rows(bytes, limit: EnvelopeReader.maxRecords)
+            guard rows.count <= EnvelopeReader.maxRecords else { throw tooMany }
+            return rows.map { row in
                 let label = "row at line \(row.line)"
                 switch row.value {
                 case .success(let object): return (label, Result { () throws(CadenceError) in try record(from: object) })
@@ -63,7 +66,9 @@ public struct MapEngine: Sendable {
             } catch {
                 throw .validation("map \(map.name): the input \(EnvelopeReader.describe(error))")
             }
-            return map.records.select(document).enumerated().map { index, node in
+            let nodes = map.records.select(document)
+            guard nodes.count <= EnvelopeReader.maxRecords else { throw tooMany }
+            return nodes.enumerated().map { index, node in
                 ("record \(index + 1)", Result { () throws(CadenceError) in try record(from: node) })
             }
         }
@@ -78,7 +83,8 @@ public struct MapEngine: Sendable {
             } else if let path = rule.path {
                 let found = path.select(node)
                 guard found.count <= 1 else { throw .validation("\(name): the path selects more than one value") }
-                value = found.first.flatMap { $0.isNull || $0 == .string("") ? nil : $0 }
+                // Not a flatMap with `nil`: JSONValue is ExpressibleByNilLiteral, so that would be `.null`, not no value.
+                if let first = found.first, !Self.isBlank(first) { value = first }
             }
             if value == nil { value = rule.defaultValue }
             guard let raw = value else { continue }
@@ -97,22 +103,58 @@ public struct MapEngine: Sendable {
             }
         }
 
-        var ref = map.sourceRef
-        for placeholder in MapFile.placeholders(map.sourceRef) {
-            let text: String
-            switch flat[placeholder] {
-            case .string(let s)?: text = s
-            case .int(let i)?: text = String(i)
-            case .bool(let b)?: text = b ? "true" : "false"
-            default: throw .validation("source_ref: {\(placeholder)} has no value")
+        // One pass over the template: a value is written once and never read again as a template, and the
+        // characters that give a ref its shape are escaped in it, so two different values never make the same ref.
+        var ref = ""
+        for segment in MapFile.segments(map.sourceRef) {
+            switch segment {
+            case .text(let text): ref += text
+            case .field(let placeholder):
+                switch flat[placeholder] {
+                case .string(let s)?: ref += Self.escapeRefValue(s)
+                case .int(let i)?: ref += String(i)
+                case .bool(let b)?: ref += b ? "true" : "false"
+                default: throw .validation("source_ref: {\(placeholder)} has no value")
+                }
             }
-            ref = ref.replacingOccurrences(of: "{\(placeholder)}", with: text)
         }
         record["source_ref"] = .string(ref)
         return .object(record)
     }
 
+    private static let refShaping: Set<Unicode.Scalar> = ["%", ":", "{", "}"]
+
+    /// `%`, `:`, `{` and `}` in a value become `%25`, `%3A`, `%7B` and `%7D` (docs/SPEC.md section 10.5).
+    static func escapeRefValue(_ text: String) -> String {
+        guard text.unicodeScalars.contains(where: refShaping.contains) else { return text }
+        var out = ""
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "%": out += "%25"
+            case ":": out += "%3A"
+            case "{": out += "%7B"
+            case "}": out += "%7D"
+            default: out.unicodeScalars.append(scalar)
+            }
+        }
+        return out
+    }
+
+    /// Null, empty and spaces only all mean there is no value, so the field's default applies.
+    static func isBlank(_ value: JSONValue) -> Bool {
+        if value.isNull { return true }
+        if case .string(let s) = value { return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return false
+    }
+
     private func convert(_ raw: JSONValue, field: String, rule: MapFile.Rule) throws(CadenceError) -> JSONValue {
+        try Self.convert(raw, field: field, rule: rule, zone: zone, boundary: boundary)
+    }
+
+    /// One value as the field holds it. The map checks its `const` and `default` this way when it loads.
+    static func convert(
+        _ raw: JSONValue, field: String, rule: MapFile.Rule, zone: TimeZone, boundary: DayBoundary
+    ) throws(CadenceError) -> JSONValue {
         if MapFile.integers.contains(field) {
             let text: String
             switch raw {
@@ -125,30 +167,43 @@ public struct MapEngine: Sendable {
             guard let value = Decimal10.scaled(text, by: scale, exact: rule.scale == nil) else {
                 throw .validation("\(field): '\(EnvelopeReader.printable(text))' is not \(rule.scale == nil ? "a whole number" : "a decimal number in range")")
             }
-            guard value >= 0 else { throw .validation("\(field): must not be negative") }
+            // Asked of the text, because rounding would turn -0.0000004 into a plain zero.
+            guard !Decimal10.isNegative(text), value >= 0 else { throw .validation("\(field): must not be negative") }
             guard value <= JSONValue.maxSafeInteger else { throw .validation("\(field): is too large") }
             return .int(value)
         }
         if MapFile.booleans.contains(field) {
             switch raw {
             case .bool: return raw
-            case .string(let s) where s.lowercased() == "true": return .bool(true)
-            case .string(let s) where s.lowercased() == "false": return .bool(false)
+            case .string(let s):
+                switch s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                case "true": return .bool(true)
+                case "false": return .bool(false)
+                default: throw .validation("\(field): is not true or false")
+                }
             default: throw .validation("\(field): is not true or false")
             }
         }
         if field == "day" || MapFile.times.contains(field) {
-            return try moment(raw, field: field, format: rule.format)
+            return try moment(raw, field: field, format: rule.format, zone: zone, boundary: boundary)
         }
         switch raw {
         case .string, .bool: return raw
-        case .int(let i): return field.hasPrefix("attrs.") ? raw : .string(String(i))
+        case .int(let i) where field.hasPrefix("attrs."):
+            guard i >= 0 else { throw .validation("\(field): must not be negative") }
+            return raw
+        case .int(let i): return .string(String(i))
         default: throw .validation("\(field): must be a single value, not a list or an object")
         }
     }
 
+    /// 10000-01-01T00:00:00Z. Later years do not fit RFC 3339, so a larger number is a mistake in units.
+    static let maxEpochSeconds: Int64 = 253_402_300_800
+
     /// A day as YYYY-MM-DD, or a time as RFC 3339 in the profile zone, from any of the map formats.
-    private func moment(_ raw: JSONValue, field: String, format: MapFile.Format?) throws(CadenceError) -> JSONValue {
+    private static func moment(
+        _ raw: JSONValue, field: String, format: MapFile.Format?, zone: TimeZone, boundary: DayBoundary
+    ) throws(CadenceError) -> JSONValue {
         let text: String
         switch raw {
         case .string(let s): text = s.trimmingCharacters(in: .whitespaces)
@@ -167,7 +222,8 @@ public struct MapEngine: Sendable {
             }
             instant = date
         case .epochSeconds, .epochMilliseconds:
-            guard let n = Decimal10.scaled(text, by: 1, exact: true), n >= 0, n < 100_000_000_000_000 else {
+            let end = format == .epochSeconds ? maxEpochSeconds : maxEpochSeconds * 1000
+            guard let n = Decimal10.scaled(text, by: 1, exact: true), n >= 0, n < end else {
                 throw .validation("\(field): '\(EnvelopeReader.printable(text))' is not an epoch time")
             }
             instant = Date(timeIntervalSince1970: format == .epochSeconds ? Double(n) : Double(n / 1000) + Double(n % 1000) / 1000)

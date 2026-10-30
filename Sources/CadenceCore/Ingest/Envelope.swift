@@ -252,8 +252,7 @@ struct EnvelopeReader {
         if let raw = r.fields["attrs"], !raw.isNull {
             guard let object = raw.objectValue else { throw r.fail("attrs", "must be an object") }
             for key in object.keys.sorted() {
-                guard (1...64).contains(key.count), !key.unicodeScalars.contains(where: { $0.properties.generalCategory == .control })
-                else { throw r.fail("attrs", "keys must be 1 to 64 characters") }
+                guard Self.isValidAttrsKey(key) else { throw r.fail("attrs", "keys must be 1 to 64 characters") }
                 switch object[key]! {
                 case .string(let s):
                     guard !s.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
@@ -379,6 +378,11 @@ struct EnvelopeReader {
 
     private static func trimSeparators(_ text: String) -> String {
         text.trimmingCharacters(in: CharacterSet(charactersIn: " :-|]").union(.whitespaces))
+    }
+
+    /// An `attrs` key is 1 to 64 characters with no control characters. A map's `attrs.<key>` follows the same rule.
+    static func isValidAttrsKey(_ key: String) -> Bool {
+        (1...64).contains(key.count) && !key.unicodeScalars.contains(where: { $0.properties.generalCategory == .control })
     }
 
     /// Text from the envelope, safe to quote in a message: control characters out, at most 40 characters.

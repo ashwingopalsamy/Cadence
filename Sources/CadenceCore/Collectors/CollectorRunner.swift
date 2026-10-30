@@ -137,7 +137,15 @@ public struct MapTransform: CollectorOutputTransform {
     public func envelope(from output: [UInt8], collector: Config.Collector, window: IngestWindow) throws(CadenceError) -> MapOutput {
         guard let mapName = collector.map else { throw .validation("collector \(collector.name) has no map") }
         let url = Self.location(of: mapName, roots: roots)
-        guard let data = FileManager.default.contents(atPath: url.path) else { throw .io("cannot read the map \(url.lastPathComponent)") }
+        // One byte past the cap is read, so a file that is too big is refused without being read whole.
+        guard let handle = FileHandle(forReadingAtPath: url.path) else { throw .io("cannot read the map \(url.lastPathComponent)") }
+        defer { try? handle.close() }
+        let data: Data
+        do {
+            data = try handle.read(upToCount: MapFile.maxBytes + 1) ?? Data()
+        } catch {
+            throw .io("cannot read the map \(url.lastPathComponent)")
+        }
         let map = try MapFile(bytes: Array(data), name: url.deletingPathExtension().lastPathComponent)
         return try MapEngine(map: map, zone: zone, boundary: boundary)
             .envelope(from: output, collector: collector.name, window: window, run: ids.next(), generatedAt: clock.now())
@@ -280,19 +288,24 @@ public struct CollectorRunner {
         }
         var output = Array(result.stdout)
         var mapSkipped: [String] = []
+        // What a map was applied to. The envelope it made lacks the rows it left out, so the inbox keeps this too.
+        var raw: [UInt8]?
         if collector.map != nil {
             guard let transform else {
                 return .ran(try journal.recordIngestFailure(collector: name, window: window, error: "map collectors need map/1"))
             }
+            raw = output
             do {
                 let mapped = try transform.envelope(from: output, collector: collector, window: window)
                 output = mapped.envelope
                 mapSkipped = mapped.skipped
             } catch {
-                return .ran(try journal.recordIngestFailure(collector: name, window: window, error: "map: \(error.message)"))
+                return .ran(try journal.recordIngestFailure(
+                    collector: name, window: window, error: "map: \(error.message)", inbox: roots.inbox, raw: raw))
             }
         }
-        return .ran(try journal.ingest(envelope: output, collector: name, window: window, inbox: roots.inbox, skipped: mapSkipped))
+        return .ran(try journal.ingest(
+            envelope: output, collector: name, window: window, inbox: roots.inbox, skipped: mapSkipped, raw: raw))
     }
 
     /// `{since}` and `{until}` are replaced inside argv elements, and nowhere else.

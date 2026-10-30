@@ -327,6 +327,81 @@ import Testing
         #expect(row.int("cost_micros") == 421_300 && row.text("source") == "endpoint")
     }
 
+    /// A map collector named `endpoint` whose command printed `body`, mapped by `map`.
+    static func mapped(_ body: String, map: String = MapEngineTests.endpointMap) throws -> (f: Fixture, report: IngestReport) {
+        var collector = Config.Collector(name: "endpoint", command: ["/usr/bin/curl", "-s", "https://usage.example.com/daily?from={since}"])
+        collector.map = "endpoint.json"
+        let f = try Fixture(collectors: [collector])
+        try FileManager.default.createDirectory(at: f.roots.maps, withIntermediateDirectories: true)
+        try Data(map.utf8).write(to: f.roots.maps.appendingPathComponent("endpoint.json"))
+        let runner = CollectorRunner(
+            roots: f.roots, journal: f.journal, runner: FakeRunner(Self.output(body)), selfExecutable: "/x", environment: [:],
+            transform: MapTransform(roots: f.roots, zone: f.journal.zone, boundary: f.journal.config.dayBoundary, clock: f.clock, ids: CountingIDs()))
+        try f.approveAll(runner)
+        return (f, try f.report(try runner.run(name: "endpoint", window: Self.window)))
+    }
+
+    static func mode(_ url: URL) throws -> Int? {
+        try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+    }
+
+    @Test func skippedRowsKeepTheRawOutputBesideTheInboxCopy() throws {
+        let body = #"{"data":[{"date":"2026-09-18","model":"model-a","output_tokens":9},{"date":"2026-09-18","model":"model-b","output_tokens":-1}]}"#
+        let (f, report) = try Self.mapped(body)
+        let kept = try #require(report.inbox)
+        let raw = try #require(report.raw)
+        #expect(raw.lastPathComponent == "endpoint-\(report.runID).raw")
+        #expect(raw.deletingLastPathComponent() == kept.deletingLastPathComponent())
+        #expect(raw.deletingLastPathComponent().path == f.roots.inbox.path)
+        // The mapped copy lacks the row that was left out; the raw copy is what the command printed.
+        #expect(try String(contentsOf: raw, encoding: .utf8) == body)
+        #expect(try !String(contentsOf: kept, encoding: .utf8).contains("model-b"))
+        #expect(try Self.mode(raw) == 0o600 && Self.mode(kept) == 0o600)
+        let note = try String(contentsOf: kept.deletingPathExtension().appendingPathExtension("txt"), encoding: .utf8)
+        #expect(note.contains("record 2: tokens.out: must not be negative") && note.contains("raw output: endpoint-\(report.runID).raw"))
+    }
+
+    @Test func aCleanMapRunKeepsNothingInTheInbox() throws {
+        let (f, report) = try Self.mapped(#"{"data":[{"date":"2026-09-18","model":"model-a","output_tokens":9}]}"#)
+        #expect(report.count("created") == 1 && report.count("skipped") == 0)
+        #expect(report.inbox == nil && report.raw == nil)
+        #expect(!FileManager.default.fileExists(atPath: f.roots.inbox.path))
+    }
+
+    @Test func aDocumentThatCannotBeMappedKeepsTheRawOutput() throws {
+        for body in ["<html>Service unavailable</html>", #"{"data":["# + String(repeating: "{},", count: 25_000) + #"{}]}"#] {
+            let (f, report) = try Self.mapped(body)
+            #expect(report.status == "error" && report.problems.count == 1 && report.problems[0].hasPrefix("map: "), "\(report.problems)")
+            #expect(report.inbox == nil)
+            let raw = try #require(report.raw, "\(report.problems)")
+            #expect(raw.lastPathComponent == "endpoint-\(report.runID).raw")
+            #expect(try String(contentsOf: raw, encoding: .utf8) == body)
+            #expect(try Self.mode(raw) == 0o600)
+            let note = try String(contentsOf: raw.deletingPathExtension().appendingPathExtension("txt"), encoding: .utf8)
+            #expect(note.hasPrefix("map: ") && note.contains("raw output: endpoint-\(report.runID).raw"))
+            #expect(try f.runs().map(\.status) == ["error"])
+        }
+    }
+
+    @Test func aFailedCommandKeepsNoRawOutput() throws {
+        var collector = Config.Collector(name: "endpoint", command: ["/usr/bin/curl", "-s", "https://usage.example.com/daily"])
+        collector.map = "endpoint.json"
+        let f = try Fixture(collectors: [collector])
+        let runner = CollectorRunner(
+            roots: f.roots, journal: f.journal, runner: FakeRunner(Self.output("partial", status: 22)), selfExecutable: "/x", environment: [:],
+            transform: MapTransform(roots: f.roots, zone: f.journal.zone, boundary: f.journal.config.dayBoundary, clock: f.clock, ids: CountingIDs()))
+        try f.approveAll(runner)
+        let report = try f.report(try runner.run(name: "endpoint", window: Self.window))
+        #expect(report.status == "error" && report.raw == nil)
+        #expect(!FileManager.default.fileExists(atPath: f.roots.inbox.path))
+    }
+
+    @Test func aMapFileOver256KBIsNotLoaded() throws {
+        let padded = MapEngineTests.endpointMap + String(repeating: " ", count: 300 * 1024)
+        let (_, report) = try Self.mapped(#"{"data":[]}"#, map: padded)
+        #expect(report.status == "error" && report.problems == ["map: map endpoint: the file is larger than 256 KB"])
+    }
+
     @Test func aBadWindowIsRefused() throws {
         let f = try Fixture(collectors: [Self.oncall])
         #expect(throws: CadenceError.self) {

@@ -50,6 +50,7 @@ public struct MapPath: Sendable, Equatable, CustomStringConvertible {
                     while i < b.count, b[i] >= 0x30, b[i] <= 0x39 { i += 1 }
                     guard i > start, i - start <= 9, i < b.count, b[i] == 0x5D, let n = Int(String(decoding: b[start..<i], as: UTF8.self))
                     else { throw fail("an index must be a whole number in [ ]") }
+                    guard i - start == 1 || b[start] != 0x30 else { throw fail("an index must not have leading zeros") }
                     i += 1
                     steps.append(.index(n))
                 }

@@ -705,7 +705,7 @@ cadence.db        ledger and projections, WAL mode (-wal and -shm beside it)
 config.json       your settings: ticket pattern, hosts, collectors, reminders. Never in git
 spool/            hook lines waiting to be ingested, one NDJSON file per day
 jobs/             requests from the app to the collector agent (backfill, run now)
-inbox/            envelopes that failed validation, kept for inspection
+inbox/            envelopes that failed validation, and the raw output a map could not fully read, kept for inspection
 exports/          proof files you exported
 backups/          daily VACUUM INTO snapshots: 14 daily, 8 weekly
 logs/             collector and agent logs, rotated at 1 MB
@@ -1158,11 +1158,15 @@ maps/genai-endpoint.json (written on your Mac by Claude Code from a real sample;
 ```
 
 
-  * **Paths** are a small JSONPath subset: `$`, `.key`, `['key']`, `[n]`, `[*]`. No filters and no scripts.
-  * **Formats** for days and times: `yyyy-MM-dd`, `iso8601`, `epoch-s`, `epoch-ms`, converted in your profile zone.
-  * **Scale** is exact decimal arithmetic on the text, so `"0.4213"` dollars becomes 421300 micro-dollars with no float in between. Digits finer than one unit are rounded half away from zero. Number fields without a scale must be whole numbers.
-  * **Bad records.** A record that cannot be mapped is left out, counted as skipped in `ingest.run` with its reason, and the output is kept in `inbox/`.
-  * **CSV** with `"input": "csv"` turns each row into an object keyed by header, so `$.output_tokens` reads that column.
+  * **Paths** are a small JSONPath subset: `$`, `.key`, `['key']`, `[n]`, `[*]`. No filters and no scripts. An index has no leading zeros.
+  * **Formats** for days and times: `yyyy-MM-dd`, `iso8601`, `epoch-s`, `epoch-ms`, converted in your profile zone. An epoch time must fall before the year 10000, so milliseconds read as seconds are refused.
+  * **Scale** is exact decimal arithmetic on the text, so `"0.4213"` dollars becomes 421300 micro-dollars with no float in between. It is 10, 100 and so on up to 10^12; leave it out for exact values. Digits finer than one unit are rounded half away from zero. Number fields without a scale must be whole numbers, and a negative number is refused before it is rounded, so `-0.0000004` is never stored as zero.
+  * **Blank values.** A value that is missing, null, empty or only spaces counts as missing, so the field's `default` applies. A boolean may be written with spaces around `true` or `false`.
+  * **Checked on load.** Every `const` and `default` goes through the conversion of its field when the map loads, and an `attrs.<key>` key must be 1 to 64 characters with no control characters, so a mistake in the map fails once with its field name and not on every record. A map file is at most 256 KB.
+  * **source_ref** is the template filled in one pass: each `{field}` becomes that field's converted value, and a value is never read as a template again. In a substituted value, `%`, `:`, `{` and `}` are written as `%25`, `%3A`, `%7B` and `%7D`, so `{a}:{b}` gives different refs for `a=x:y, b=z` and `a=x, b=y:z`. Text in the template itself is used as written.
+  * **Limits.** The input is at most 10 MB and 20,000 records, counted before any record is mapped. A CSV has at most 256 columns.
+  * **Bad records.** A record that cannot be mapped is left out and counted as skipped in `ingest.run` with its reason. The mapped envelope in `inbox/` no longer holds the rows that were left out, so the command's own output is kept beside it as `inbox/<collector>-<run>.raw`, readable only by you, and the note next to it names that file. A document that cannot be mapped at all writes a failed `ingest.run` and keeps its output the same way. Writing these files is best effort, like the rest of `inbox/`.
+  * **CSV** with `"input": "csv"` turns each row into an object keyed by header, so `$.output_tokens` reads that column. Quoting follows RFC 4180: a quote opens a field only at its start, and only a comma or a line break may follow a closing quote. Anything else refuses the file with its line number. A lone carriage return counts as a line break.
 
 
 ### 10.6 Importing your October data
