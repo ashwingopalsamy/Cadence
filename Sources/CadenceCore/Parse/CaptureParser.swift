@@ -53,7 +53,23 @@ public enum CaptureParser {
     /// Splits a dictation transcript into lines and bullets and parses each. A line that is only a day sets the
     /// day for the lines after it.
     public static func parseTranscript(_ text: String, context: CaptureContext) -> [ParsedCapture] {
-        var result: [ParsedCapture] = []
+        splitTranscript(text, context: context).map(\.capture)
+    }
+
+    /// One line or bullet of a transcript.
+    public struct TranscriptLine: Sendable, Equatable {
+        /// The line with its bullet taken off.
+        public var text: String
+        /// The day the line names itself, or takes from a day-only line above it. Nil when it names none, so the
+        /// caller decides what day it is for.
+        public var day: LocalDate?
+        public var capture: ParsedCapture
+    }
+
+    /// The lines of a transcript with the day each one names, in order. Blank lines and day-only lines are not
+    /// returned.
+    public static func splitTranscript(_ text: String, context: CaptureContext) -> [TranscriptLine] {
+        var result: [TranscriptLine] = []
         var baseDay: LocalDate?
         for rawLine in text.components(separatedBy: .newlines) {
             for piece in rawLine.components(separatedBy: "\u{2022}") {
@@ -64,7 +80,8 @@ public enum CaptureParser {
                     baseDay = parsed.capture.day
                     continue
                 }
-                result.append(parsed.capture)
+                let named = baseDay != nil || parsed.capture.tokens.contains { $0.kind == .day }
+                result.append(TranscriptLine(text: line, day: named ? parsed.capture.day : nil, capture: parsed.capture))
             }
         }
         return result

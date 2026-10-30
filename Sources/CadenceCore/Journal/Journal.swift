@@ -12,11 +12,16 @@ public struct LogRequest: Sendable {
     public var quantity: Int64?
     public var durationMin: Int64?
     public var note: String?
+    /// Lands the entry as a proposal in the Inbox whatever its day. Without it, only an agent's entry for a
+    /// past day is proposed. The entry's origin is not touched.
+    public var proposed: Bool
+    /// Marks the entry as dictated (`attrs.dictated`): it came from a transcript, not from a typed line.
+    public var dictated: Bool
 
     public init(
         text: String, kind: EntryKind? = nil, date: LocalDate? = nil, occurredAt: String? = nil,
         ticket: String? = nil, links: [Link] = [], quantity: Int64? = nil, durationMin: Int64? = nil,
-        note: String? = nil
+        note: String? = nil, proposed: Bool = false, dictated: Bool = false
     ) {
         self.text = text
         self.kind = kind
@@ -27,6 +32,8 @@ public struct LogRequest: Sendable {
         self.quantity = quantity
         self.durationMin = durationMin
         self.note = note
+        self.proposed = proposed
+        self.dictated = dictated
     }
 }
 
@@ -142,6 +149,48 @@ public final class Journal {
     // MARK: - Writes
 
     public func log(_ request: LogRequest, actor: Actor, origin: Origin) throws(CadenceError) -> Entry {
+        var entry = try prepare(request, origin: origin)
+        return try store.transact { () throws(CadenceError) -> Entry in
+            entry.afterSeal = try self.isSealed(entry.day)
+            entry.id = self.ids.next()
+            try self.append([EventPayload.entryCreated(entry).draft(actor: actor)])
+            return entry
+        }
+    }
+
+    /// Several entries in one transaction: every one lands, or none does.
+    public func logAll(_ requests: [LogRequest], actor: Actor, origin: Origin) throws(CadenceError) -> [Entry] {
+        try store.transact { () throws(CadenceError) -> [Entry] in
+            var entries: [Entry] = []
+            for request in requests { entries.append(try self.log(request, actor: actor, origin: origin)) }
+            return entries
+        }
+    }
+
+    /// What `log` would record for `request`, checked by the same rules, with nothing written. The entry has
+    /// no id (an empty string): ids are made when the event is appended.
+    public func preview(_ request: LogRequest, origin: Origin) throws(CadenceError) -> Entry {
+        var entry = try prepare(request, origin: origin)
+        entry.afterSeal = try isSealed(entry.day)
+        return entry
+    }
+
+    /// A pasted transcript as log requests, one per line or bullet, each landing as a proposal marked dictated.
+    /// A line that is only a day (such as "Wed 28 Oct") sets the day for the lines after it, and a line that
+    /// names a day keeps it. `date` is the day for lines that name none; without it they are for today.
+    public func requests(fromTranscript text: String, date: LocalDate?) -> [LogRequest] {
+        let context = CaptureContext(now: clock.now(), zone: zone, boundary: config.dayBoundary, classifier: classifier)
+        return CaptureParser.splitTranscript(text, context: context).map {
+            LogRequest(text: $0.text, date: $0.day ?? date, proposed: true, dictated: true)
+        }
+    }
+
+    private func isSealed(_ day: String) throws(CadenceError) -> Bool {
+        try rows("SELECT sealed_at FROM days WHERE date = ?", [.text(day)]).first?.text("sealed_at") != nil
+    }
+
+    /// Every rule that does not need the write lock. The entry has no id yet and is not marked after-seal.
+    private func prepare(_ request: LogRequest, origin: Origin) throws(CadenceError) -> Entry {
         let text = Self.clean(request.text, limit: Self.maxText + 1)
         guard !text.isEmpty else { throw .validation("text must not be empty") }
         guard text.count <= Self.maxText else { throw .validation("text is too long (at most \(Self.maxText) characters)") }
@@ -208,19 +257,14 @@ public final class Journal {
         }
 
         let isAgent = origin == .agent
-        return try store.transact { () throws(CadenceError) -> Entry in
-            let sealed = try self.rows("SELECT sealed_at FROM days WHERE date = ?", [.text(day.description)]).first?
-                .text("sealed_at") != nil
-            let entry = Entry(
-                id: self.ids.next(), day: day.description, kind: kind,
-                family: EntryKind.family(for: kind, ticketClass: ticket?.class), title: title,
-                occurredAt: occurred.map { Timestamp.local($0, in: dayZone) }, durationS: durationS,
-                quantity: quantity, ticket: ticket, links: links, tags: parsed.tags, attrs: attrs, origin: origin,
-                status: isAgent && day < today ? .proposed : .accepted, backfilled: day < today, afterSeal: sealed,
-                export: kind == .note ? .digest : .include)
-            try self.append([EventPayload.entryCreated(entry).draft(actor: actor)])
-            return entry
-        }
+        if request.dictated { attrs["dictated"] = .bool(true) }
+        return Entry(
+            id: "", day: day.description, kind: kind,
+            family: EntryKind.family(for: kind, ticketClass: ticket?.class), title: title,
+            occurredAt: occurred.map { Timestamp.local($0, in: dayZone) }, durationS: durationS,
+            quantity: quantity, ticket: ticket, links: links, tags: parsed.tags, attrs: attrs, origin: origin,
+            status: request.proposed || (isAgent && day < today) ? .proposed : .accepted, backfilled: day < today,
+            afterSeal: false, export: kind == .note ? .digest : .include)
     }
 
     public func planAdd(
@@ -273,6 +317,39 @@ public final class Journal {
                 EventPayload.planResolved(PlanResolved(status: status, reason: reason, reasonNote: note, links: links))
                     .draft(actor: actor, id: taskID)
             ])
+            return try self.task(taskID)
+        }
+    }
+
+    /// Changes an open task's title or estimate. A new title brings its ticket with it, as when the task was added.
+    /// A task that is already resolved or moved is not edited, and a change that changes nothing writes nothing.
+    public func planEdit(taskID: String, title: String?, estimateMin: Int64?, actor: Actor) throws(CadenceError) -> PlanTask {
+        guard title != nil || estimateMin != nil else { throw .validation("nothing to change: give a title or an estimate") }
+        let cleaned = title.map { Self.clean($0, limit: Self.maxTitle) }
+        if let cleaned, cleaned.isEmpty { throw .validation("title must not be empty") }
+        if let estimateMin, !(1...1440).contains(estimateMin) {
+            throw .validation("estimate: must be between 1 and 1440 minutes")
+        }
+        return try store.transact { () throws(CadenceError) -> PlanTask in
+            let current = try self.task(taskID)
+            guard current.status == .open else {
+                throw .validation("task \(taskID) is \(current.status.rawValue); only an open task can be edited")
+            }
+            var fields: [String: Change] = [:]
+            if let cleaned, cleaned != current.title {
+                fields["title"] = Change(old: .string(current.title), new: .string(cleaned))
+                let ticket = self.classifier.firstTicket(in: cleaned).map {
+                    Ticket(key: $0.key, class: $0.selfInitiated ? .selfInitiated : .assigned)
+                }
+                if ticket != current.ticket {
+                    fields["ticket"] = Change(old: current.ticket?.json ?? .null, new: ticket?.json ?? .null)
+                }
+            }
+            if let estimateMin, estimateMin != current.estimateMin {
+                fields["estimate_min"] = Change(old: current.estimateMin.jsonValue, new: .int(estimateMin))
+            }
+            guard !fields.isEmpty else { return current }
+            try self.append([EventPayload.planUpdated(Changes(fields: fields)).draft(actor: actor, id: taskID)])
             return try self.task(taskID)
         }
     }

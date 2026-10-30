@@ -201,8 +201,20 @@ extension Journal {
     /// The stand-up text for `day` (default today), ending in a witness code. Appends a `witness.checkpoint`
     /// unless the head already is one for this day.
     public func standup(_ day: LocalDate?, actor: Actor = .cli) throws(CadenceError) -> StandupText {
+        let day = day ?? today()
+        let body = try standupLines(for: day)
+        let witness = try store.witness(day: day, actor: actor)
+        return StandupText(text: (body + [witness.line]).joined(separator: "\n"), code: witness.code)
+    }
+
+    /// The stand-up text for `day` (default today) without a witness code. Reads only: nothing is appended,
+    /// so a caller that must not write to the ledger can still show the text.
+    public func standupText(_ day: LocalDate?) throws(CadenceError) -> String {
+        try standupLines(for: day ?? today()).joined(separator: "\n")
+    }
+
+    private func standupLines(for day: LocalDate) throws(CadenceError) -> [String] {
         let today = self.today()
-        let day = day ?? today
         guard day <= today else { throw .validation("date: \(day) is in the future") }
         let key = SQLValue.text(day.description)
 
@@ -260,10 +272,7 @@ extension Journal {
             lines.append(line)
         }
         lines.append("Blockers: none")
-
-        let witness = try store.witness(day: day, actor: actor)
-        lines.append(witness.line)
-        return StandupText(text: lines.joined(separator: "\n"), code: witness.code)
+        return lines
     }
 
     private static func ticketSuffix(_ ticket: Ticket?, in title: String) -> String {
@@ -272,7 +281,7 @@ extension Journal {
     }
 
     /// "Thu 29 Oct".
-    static func standUpDate(_ day: LocalDate) -> String {
+    public static func standUpDate(_ day: LocalDate) -> String {
         let weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         let parts = day.description.split(separator: "-").compactMap { Int($0) }
