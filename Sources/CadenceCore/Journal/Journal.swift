@@ -103,7 +103,7 @@ public final class Journal {
     public let config: Config
     let clock: any Clock
     let ids: any IdentifierSource
-    private let classifier: TicketClassifier
+    let classifier: TicketClassifier
     private let zoneValue: TimeZone
 
     static let maxTitle = 200

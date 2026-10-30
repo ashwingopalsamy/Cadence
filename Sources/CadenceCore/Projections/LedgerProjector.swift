@@ -199,6 +199,14 @@ public struct LedgerProjector: Projector {
             guard var object = try entryJSON(id, db: db)?.objectValue else {
                 throw CadenceError.integrity("event \(event.seq) (entry.updated) refers to an unknown entry \(id)")
             }
+            // Section 7.3: collectors only edit their own entries.
+            switch event.actor {
+            case .collector(let name), .importer(let name):
+                guard object["origin"]?.stringValue == Origin.collected.rawValue, object["source"]?.stringValue == name else {
+                    throw CadenceError.integrity("event \(event.seq): \(event.actor.rawValue) cannot edit an entry it did not create")
+                }
+            default: break
+            }
             for (field, change) in changes.fields.sorted(by: { $0.key < $1.key }) {
                 guard Self.editableEntryFields.contains(field) else {
                     throw CadenceError.integrity("event \(event.seq): entry.updated cannot change \(field)")
@@ -271,7 +279,7 @@ public struct LedgerProjector: Projector {
                 INSERT OR REPLACE INTO genai_usage (day, tool, model, source, sessions, requests, tokens_in, tokens_out,
                   tokens_cache_read, tokens_cache_write, cost_micros) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                [.text(usage.day), .text(usage.tool), .text(usage.model), .text(usage.source), .int(usage.sessions),
+                [.text(usage.day), .text(usage.tool), .text(usage.model), .text(usage.source), SQLValue(usage.sessions),
                  SQLValue(usage.requests), SQLValue(usage.tokens.input), SQLValue(usage.tokens.output),
                  SQLValue(usage.tokens.cacheRead), SQLValue(usage.tokens.cacheWrite), SQLValue(usage.costMicros)])
 

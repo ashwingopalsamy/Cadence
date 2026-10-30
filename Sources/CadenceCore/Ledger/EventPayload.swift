@@ -577,14 +577,15 @@ public struct GenAIUsage: Sendable, Equatable, JSONRepresentable {
     /// "*" when unknown.
     public var model: String
     public var source: String
-    public var sessions: Int64
+    /// Nil when the source does not count sessions: unknown is not zero.
+    public var sessions: Int64?
     public var requests: Int64?
     public var tokens: TokenCounts
     public var costMicros: Int64?
     public var estimated: Bool
 
     public init(
-        day: String, tool: String, model: String, source: String, sessions: Int64, requests: Int64? = nil,
+        day: String, tool: String, model: String, source: String, sessions: Int64?, requests: Int64? = nil,
         tokens: TokenCounts = TokenCounts(), costMicros: Int64? = nil, estimated: Bool = false
     ) {
         self.day = day
@@ -601,7 +602,7 @@ public struct GenAIUsage: Sendable, Equatable, JSONRepresentable {
     public var json: JSONValue {
         [
             "day": .string(day), "tool": .string(tool), "model": .string(model), "source": .string(source),
-            "sessions": .int(sessions), "requests": requests.jsonValue, "tokens": tokens.json,
+            "sessions": sessions.jsonValue, "requests": requests.jsonValue, "tokens": tokens.json,
             "cost_micros": costMicros.jsonValue, "estimated": .bool(estimated),
         ]
     }
@@ -617,7 +618,7 @@ public struct GenAIUsage: Sendable, Equatable, JSONRepresentable {
         tool = try r.string("tool")
         model = try r.string("model")
         source = try r.string("source")
-        sessions = try r.int("sessions")
+        sessions = try r.optionalInt("sessions")
         requests = try r.optionalInt("requests")
         tokens = try TokenCounts(r.raw("tokens"), owner: "genai.usage.tokens")
         costMicros = try r.optionalInt("cost_micros")

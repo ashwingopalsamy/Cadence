@@ -16,7 +16,7 @@ import Testing
         #expect(TaskStatus.allCases.map(\.rawValue) == ["open", "done", "slipped", "dropped", "moved"])
         #expect(TicketClass.allCases.map(\.rawValue) == ["assigned", "self"])
         #expect(ExportPolicy.allCases.map(\.rawValue) == ["include", "digest", "exclude"])
-        #expect(PresenceSource.allCases.map(\.rawValue) == ["input", "wake", "unlock", "powerlog", "manual"])
+        #expect(PresenceSource.allCases.map(\.rawValue) == ["input", "wake", "unlock", "powerlog", "manual", "collected"])
         #expect(LinkKind.allCases.map(\.rawValue) == ["pr", "ticket", "doc", "other"])
         #expect(
             Family.allCases.map(\.rawValue)

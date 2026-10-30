@@ -268,11 +268,7 @@ extension Journal {
 
         // GenAI.
         var aiDays = Set<String>()
-        for row in try rows("""
-            SELECT DISTINCT day FROM genai_sessions UNION SELECT DISTINCT day FROM genai_usage
-            WHERE sessions > 0 OR (sessions IS NULL AND (COALESCE(tokens_in, 0) > 0 OR COALESCE(tokens_out, 0) > 0
-              OR COALESCE(tokens_cache_read, 0) > 0 OR COALESCE(tokens_cache_write, 0) > 0))
-            """) {
+        for row in try rows(Self.aiDaysSQL) {
             if let day = row.text("day") { aiDays.insert(day) }
         }
         let firstAIDay = aiDays.min()
@@ -313,4 +309,14 @@ extension Journal {
             aiSessions: sessionsKnown ? sessionCount : nil, outputTokens: tokens, tokenSources: tokenSources,
             streak: streak)
     }
+}
+
+extension Journal {
+    /// Days with AI use: a session, or a usage row with sessions, or with tokens when the source does not
+    /// count sessions. The summary and the proof both read this, so they agree.
+    static let aiDaysSQL = """
+        SELECT DISTINCT day FROM genai_sessions UNION SELECT DISTINCT day FROM genai_usage
+        WHERE sessions > 0 OR (sessions IS NULL AND (COALESCE(tokens_in, 0) > 0 OR COALESCE(tokens_out, 0) > 0
+          OR COALESCE(tokens_cache_read, 0) > 0 OR COALESCE(tokens_cache_write, 0) > 0))
+        """
 }

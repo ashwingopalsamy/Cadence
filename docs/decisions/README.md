@@ -20,3 +20,13 @@ Other settled choices: Apache-2.0 licence (section 16); GitHub CI deferred, `mak
 - A day's first seal stands. `edited` means changed after that seal.
 - Workdays before the ledger began are reported as `before_ledger`, not as unsealed.
 - Known limit, documented in section 12.4: a short private title can be guessed against its digest. A per-entry salt would fix it and is left for a later decision because it changes the payload format.
+
+## Planner decisions for envelope ingest, T2.6 (2026-10-30)
+
+- `ingest.run` records the window the runner asked for, not the one the header claims. The header must name the collector being run, so one collector cannot write as another.
+- A ticket key that opens a collected title moves to the entry's ticket and leaves the title, as in section 7.2.
+- Field ownership is read from the ledger: any field an `entry.updated` by another actor changed is yours. The ledger itself refuses a collector or import edit to an entry it did not create.
+- Collected presence uses source `collected`, is cut at the day boundary, and is written only where no span of that day already is. Spans shorter than a minute are dropped.
+- A leave record is ignored once anyone other than that collector has declared the day. The collector may change its own declarations.
+- `genai.usage.sessions` may be null when a source does not count sessions. The summary and the proof share one query for AI days.
+- Bad links are dropped with a warning and the record is kept. Any other bad field skips the record.

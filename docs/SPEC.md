@@ -677,7 +677,7 @@ CREATE TABLE plan_tasks (
 CREATE TABLE presence_spans (
   id INTEGER PRIMARY KEY, day TEXT NOT NULL,
   start_at TEXT NOT NULL, end_at TEXT NOT NULL,
-  source TEXT NOT NULL                    -- input | wake | unlock | powerlog | manual
+  source TEXT NOT NULL                    -- input | wake | unlock | powerlog | manual | collected
 );
 CREATE TABLE genai_sessions (
   session_id TEXT PRIMARY KEY, tool TEXT NOT NULL, day TEXT NOT NULL,

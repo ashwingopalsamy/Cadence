@@ -212,7 +212,7 @@ private struct Builder {
             dayRows[r.text("date") ?? ""] = r
         }
         var aiDays = Set<String>()
-        for r in try query("SELECT DISTINCT day FROM genai_sessions UNION SELECT DISTINCT day FROM genai_usage WHERE sessions > 0") {
+        for r in try query(Journal.aiDaysSQL) {
             if let d = r.text("day") { aiDays.insert(d) }
         }
         let firstAIDay = aiDays.min()

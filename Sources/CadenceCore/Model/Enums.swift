@@ -49,6 +49,8 @@ public enum ExportPolicy: String, Sendable, Hashable, CaseIterable, Codable {
 
 public enum PresenceSource: String, Sendable, Hashable, CaseIterable, Codable {
     case input, wake, unlock, powerlog, manual
+    /// From a collector envelope: fills gaps between the spans the Mac observed, never overrides them.
+    case collected
 }
 
 public enum LinkKind: String, Sendable, Hashable, CaseIterable, Codable {
