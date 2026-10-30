@@ -11,8 +11,8 @@ struct Cadence: ParsableCommand {
         version: CadenceVersion.app,
         subcommands: [
             LogCommand.self, PlanCommand.self, DayCommand.self, TodayCommand.self, InboxCommand.self,
-            QueryCommand.self, StreakCommand.self, StandupCommand.self, ExportCommand.self, RebuildCommand.self,
-            DoctorCommand.self, ConfigCommand.self, BackupCommand.self, Dev.self,
+            QueryCommand.self, StreakCommand.self, StandupCommand.self, ExportCommand.self, VerifyCommand.self,
+            BackupCommand.self, RebuildCommand.self, DoctorCommand.self, ConfigCommand.self, Dev.self,
         ]
     )
 

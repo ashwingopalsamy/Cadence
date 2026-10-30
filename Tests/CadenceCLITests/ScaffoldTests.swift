@@ -46,7 +46,7 @@ import Testing
         #expect(try cli.run(["config", "bogus"]).status == 1)
         #expect(try cli.run(["nonsense"]).status == 1)
         #expect(try cli.run(["config", "path", "--bogus"]).status == 1)
-        #expect(try cli.run(["help", "verify"]).status == 1)
+        #expect(try cli.run(["help", "frobnicate"]).status == 1)
         #expect(try cli.run(["help", "config", "get"]).status == 0)
         #expect(try cli.run(["--help"]).status == 0)
         #expect(try cli.run(["--version"]).status == 0)
