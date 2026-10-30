@@ -58,6 +58,13 @@ struct PayloadReader {
         return s
     }
 
+    /// An IANA zone name such as "Asia/Kolkata" that this system knows.
+    func zone(_ key: String) throws(CadenceError) -> String {
+        let s = try string(key)
+        guard EventPayload.isZone(s) else { throw fail(key, "must be a known time zone name") }
+        return s
+    }
+
     func time(_ key: String) throws(CadenceError) -> String {
         let s = try string(key)
         guard Timestamp.parse(s) != nil else { throw fail(key, "must be an RFC 3339 time") }
@@ -202,9 +209,10 @@ public struct DayMark: Sendable, Equatable, JSONRepresentable {
     init(_ json: JSONValue, owner: String) throws(CadenceError) {
         let r = try PayloadReader(json, owner: owner, keys: ["day", "tz", "at", "source"])
         day = try r.day("day")
-        tz = try r.string("tz")
+        tz = try r.zone("tz")
         at = try r.time("at")
         source = try r.enumValue("source")
+        guard EventPayload.isWithinWorkday(at, day: day, tz: tz) else { throw r.fail("at", "is outside the day") }
     }
 }
 
@@ -234,10 +242,15 @@ public struct PresenceSpanPayload: Sendable, Equatable, JSONRepresentable {
         let r = try PayloadReader(
             json, owner: "presence.span", keys: ["day", "tz", "start", "end", "source"])
         day = try r.day("day")
-        tz = try r.string("tz")
+        tz = try r.zone("tz")
         start = try r.time("start")
         end = try r.time("end")
         source = try r.enumValue("source")
+        guard let a = Timestamp.parse(start), let b = Timestamp.parse(end), a <= b else {
+            throw r.fail("end", "must not be before start")
+        }
+        guard EventPayload.isWithinWorkday(start, day: day, tz: tz), EventPayload.isWithinWorkday(end, day: day, tz: tz)
+        else { throw r.fail("start", "the span is outside the day") }
     }
 }
 
@@ -261,7 +274,7 @@ public struct DayDeclared: Sendable, Equatable, JSONRepresentable {
     public init(json: JSONValue) throws(CadenceError) {
         let r = try PayloadReader(json, owner: "day.declared", keys: ["day", "tz", "kind", "label"])
         day = try r.day("day")
-        tz = try r.string("tz")
+        tz = try r.zone("tz")
         kind = try r.enumValue("kind")
         label = try r.optionalString("label")
     }
@@ -293,7 +306,7 @@ public struct DayNoted: Sendable, Equatable, JSONRepresentable {
     public init(json: JSONValue) throws(CadenceError) {
         let r = try PayloadReader(json, owner: "day.noted", keys: ["day", "tz", "focus", "note", "on_call"])
         day = try r.day("day")
-        tz = try r.string("tz")
+        tz = try r.zone("tz")
         focus = try r.optionalString("focus")
         note = try r.optionalString("note")
         onCall = try r.optionalBool("on_call")
@@ -353,7 +366,7 @@ public struct PlanCommitted: Sendable, Equatable, JSONRepresentable {
     public init(json: JSONValue) throws(CadenceError) {
         let r = try PayloadReader(json, owner: "plan.committed", keys: ["day", "tz", "focus", "tasks"])
         day = try r.day("day")
-        tz = try r.string("tz")
+        tz = try r.zone("tz")
         focus = try r.optionalString("focus")
         tasks = try r.strings("tasks")
     }
@@ -444,7 +457,7 @@ public struct DaySealed: Sendable, Equatable, JSONRepresentable {
     public init(json: JSONValue) throws(CadenceError) {
         let r = try PayloadReader(json, owner: "day.sealed", keys: ["day", "tz", "counts", "plan", "head"])
         day = try r.day("day")
-        tz = try r.string("tz")
+        tz = try r.zone("tz")
         counts = try r.counts("counts")
         plan = try PlanCounts(r.raw("plan"), owner: "day.sealed.plan")
         head = try r.string("head")
@@ -818,22 +831,80 @@ public enum EventPayload: Sendable, Equatable {
         guard Timestamp.parse(task.plannedAt) != nil else {
             throw .validation("plan.added.planned_at: must be an RFC 3339 time")
         }
-        guard task.position >= 0 else { throw .validation("plan.added.position: must not be negative") }
-        if let m = task.estimateMin, m < 0 { throw .validation("plan.added.estimate_min: must not be negative") }
+        guard task.resolvedAt == nil, task.reason == nil, task.reasonNote == nil, task.linkedEntries.isEmpty else {
+            throw .validation("plan.added: an open task has no resolution, reason or linked entries")
+        }
+        try validateTaskFields(task, owner: "plan.added")
         try requireCanonical(task.json, data, owner: "plan.added")
         return task
     }
 
+    /// Field rules shared by `plan.added` and the task a `plan.updated` produces.
+    static func validateTaskFields(_ task: PlanTask, owner: String) throws(CadenceError) {
+        guard isTitle(task.title) else { throw .validation("\(owner).title: must be 1 to 500 characters without control characters") }
+        guard task.position >= 0 else { throw .validation("\(owner).position: must not be negative") }
+        if let m = task.estimateMin, m < 0 { throw .validation("\(owner).estimate_min: must not be negative") }
+    }
+
+    /// Checks a task a `plan.updated` produced: the stored task with the changes applied must still be
+    /// a complete, canonical task that passes the `plan.added` field rules.
+    static func validatedUpdatedTask(_ data: JSONValue) throws(CadenceError) -> PlanTask {
+        let task = try PlanTask(json: data)
+        try validateTaskFields(task, owner: "plan.updated")
+        try requireCanonical(task.json, data, owner: "plan.updated")
+        return task
+    }
+
     private static func decodeEntry(_ data: JSONValue) throws(CadenceError) -> Entry {
+        try validatedEntry(data, owner: "entry.created")
+    }
+
+    /// The rules for a stored entry, used by `entry.created` and for the entry an `entry.updated`
+    /// produces, so an update can never leave a row that `entry.created` would refuse.
+    static func validatedEntry(_ data: JSONValue, owner: String) throws(CadenceError) -> Entry {
         let entry = try Entry(json: data)
-        guard LocalDate(entry.day) != nil else { throw .validation("entry.created.day: must be a date as YYYY-MM-DD") }
+        guard LocalDate(entry.day) != nil else { throw .validation("\(owner).day: must be a date as YYYY-MM-DD") }
+        guard isTitle(entry.title) else { throw .validation("\(owner).title: must be 1 to 500 characters without control characters") }
         if let t = entry.occurredAt, Timestamp.parse(t) == nil {
-            throw .validation("entry.created.occurred_at: must be an RFC 3339 time")
+            throw .validation("\(owner).occurred_at: must be an RFC 3339 time")
         }
-        if let d = entry.durationS, d < 0 { throw .validation("entry.created.duration_s: must not be negative") }
-        guard entry.quantity >= 0 else { throw .validation("entry.created.quantity: must not be negative") }
-        try requireCanonical(entry.json, data, owner: "entry.created")
+        if let d = entry.durationS, d < 0 { throw .validation("\(owner).duration_s: must not be negative") }
+        guard entry.quantity >= 0 else { throw .validation("\(owner).quantity: must not be negative") }
+        for link in entry.links {
+            let url = link.url.lowercased()
+            guard url.hasPrefix("https://") || url.hasPrefix("http://") else {
+                throw .validation("\(owner).links: only http and https links are stored")
+            }
+        }
+        // Section 10.2: attrs is flat and holds strings, integers and booleans.
+        for (key, value) in entry.attrs {
+            switch value {
+            case .string, .int, .bool: continue
+            default: throw .validation("\(owner).attrs.\(key): must be a string, integer or boolean")
+            }
+        }
+        try requireCanonical(entry.json, data, owner: owner)
         return entry
+    }
+
+    static func isTitle(_ text: String) -> Bool {
+        (1...500).contains(text.count)
+            && !text.unicodeScalars.contains { $0.properties.generalCategory == .control }
+    }
+
+    private static let zoneCache = ZoneCache()
+
+    static func isZone(_ name: String) -> Bool { zoneCache.isKnown(name) }
+
+    /// Whether `instant` can belong to workday `day` in `tz` for any day boundary (00:00 to 23:59):
+    /// its local date is the day itself or the next one. The boundary is config, and payloads are
+    /// checked without config, so this is the widest window any boundary allows.
+    static func isWithinWorkday(_ instant: String, day: String, tz: String) -> Bool {
+        guard let date = Timestamp.parse(instant), let local = LocalDate(day), let zone = TimeZone(identifier: tz) else {
+            return false
+        }
+        let days = LocalDate.floorDiv(Timestamp.localSeconds(date, in: zone), 86_400)
+        return days == local.epochDays || days == local.epochDays + 1
     }
 
     private static func requireCanonical(_ encoded: JSONValue, _ input: JSONValue, owner: String)
@@ -845,5 +916,21 @@ public enum EventPayload: Sendable, Equatable {
         for key in want.keys.sorted() where want[key] != got[key] {
             throw .validation("\(owner).\(key): is not in canonical form")
         }
+    }
+}
+
+/// `TimeZone(identifier:)` is slow enough to matter during a rebuild, so answers are cached.
+final class ZoneCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var known: [String: Bool] = [:]
+
+    func isKnown(_ name: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if let answer = known[name] { return answer }
+        // Only IANA names: TimeZone also accepts abbreviations such as "IST" that mean different zones.
+        let answer = name.contains("/") || name == "UTC" ? TimeZone(identifier: name) != nil : false
+        known[name] = answer
+        return answer
     }
 }

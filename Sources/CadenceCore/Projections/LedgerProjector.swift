@@ -5,13 +5,19 @@
 /// `cadence rebuild` reproduce the tables byte for byte. Two derived rules:
 ///
 /// - A day row is created the first time any event refers to the day. Its zone is the zone the
-///   event carries, or the profile zone from `ledger.genesis` for events without one (plan tasks,
-///   entries). A day keeps the zone it was created with, so travel never rewrites history.
+///   first event that carries one gives it (day marks, spans, declarations, notes, commits, seals).
+///   Until then it holds the profile zone from `ledger.genesis`, marked provisional in meta, so a
+///   plan or backfill written before a travel day starts does not fix the wrong zone. Once set from
+///   an event the zone never changes, so later travel never rewrites history.
 /// - `days.kind` is `workday` until a `day.declared` says otherwise. Weekends are derived at read
 ///   time from the configured workdays, so changing config never needs a rebuild.
 ///
-/// Unknown event types are ignored, so an older binary can rebuild a ledger that a newer one
-/// extended (it will refuse to write to it, see `Migrator`).
+/// Unknown event types are ignored, so events a newer binary adds within the same schema version
+/// do not stop a rebuild. A newer schema version is refused outright (see `Migrator`).
+///
+/// Every reference is checked: an update, resolution, commit or status change that names a task or
+/// entry that does not exist, or that would leave a row the creating event's rules would refuse,
+/// fails the append.
 public struct LedgerProjector: Projector {
     public init() {}
 
@@ -49,7 +55,7 @@ public struct LedgerProjector: Projector {
 
         case .dayEnded(let mark):
             try ensureDay(mark.day, tz: mark.tz, seq: event.seq, db: db)
-            try db.run("UPDATE days SET last_activity = ? WHERE date = ?", [.text(mark.at), .text(mark.day)])
+            try widenActivity(day: mark.day, first: nil, last: mark.at, db: db)
             try touchDay(mark.day, seq: seq, db: db)
 
         case .presenceSpan(let span):
@@ -97,28 +103,31 @@ public struct LedgerProjector: Projector {
 
         case .planUpdated(let changes):
             let id = try subjectID(event, prefix: "task:")
+            guard var object = try taskJSON(id, db: db)?.objectValue else {
+                throw CadenceError.integrity("event \(event.seq) (plan.updated) refers to an unknown plan task \(id)")
+            }
             for (field, change) in changes.fields.sorted(by: { $0.key < $1.key }) {
-                switch field {
-                case "title":
-                    try db.run("UPDATE plan_tasks SET title = ? WHERE id = ?", [try text(change.new, field), .text(id)])
-                case "ticket":
-                    let ticket = change.new.isNull ? nil : try Ticket(json: change.new)
-                    try db.run(
-                        "UPDATE plan_tasks SET ticket_key = ?, ticket_class = ? WHERE id = ?",
-                        [SQLValue(ticket?.key), SQLValue(ticket?.class.rawValue), .text(id)])
-                case "estimate_min":
-                    try db.run("UPDATE plan_tasks SET estimate_min = ? WHERE id = ?", [try optionalInt(change.new, field), .text(id)])
-                case "position":
-                    try db.run("UPDATE plan_tasks SET position = ? WHERE id = ?", [try int(change.new, field), .text(id)])
-                default:
+                guard ["title", "ticket", "estimate_min", "position"].contains(field) else {
                     throw CadenceError.integrity("event \(event.seq): plan.updated cannot change \(field)")
                 }
+                object[field] = change.new
             }
-            try db.run("UPDATE plan_tasks SET updated_seq = ? WHERE id = ?", [seq, .text(id)])
-            try requireChanged(db, "plan task \(id)", event: event)
+            let task: PlanTask
+            do {
+                task = try EventPayload.validatedUpdatedTask(.object(object))
+            } catch {
+                throw CadenceError.integrity("event \(event.seq): \(error.message)")
+            }
+            try db.run(
+                "UPDATE plan_tasks SET title = ?, ticket_key = ?, ticket_class = ?, estimate_min = ?, position = ?, updated_seq = ? WHERE id = ?",
+                [.text(task.title), SQLValue(task.ticket?.key), SQLValue(task.ticket?.class.rawValue),
+                 SQLValue(task.estimateMin), .int(task.position), seq, .text(id)])
 
         case .planResolved(let resolved):
             let id = try subjectID(event, prefix: "task:")
+            for entryID in resolved.links where try db.first("SELECT 1 AS x FROM entries WHERE id = ?", [.text(entryID)]) == nil {
+                throw CadenceError.integrity("event \(event.seq) (plan.resolved) links an unknown entry \(entryID)")
+            }
             let resolvedAt: SQLValue = resolved.status.isResolved || resolved.status == .moved ? .text(event.at) : .null
             try db.run(
                 """
@@ -134,7 +143,24 @@ public struct LedgerProjector: Projector {
             if let focus = committed.focus {
                 try db.run("UPDATE days SET focus = ? WHERE date = ?", [.text(focus), .text(committed.day)])
             }
-            for (index, taskID) in committed.tasks.enumerated() {
+            // Listed tasks take positions 1...n in order; the day's other tasks follow in their old order,
+            // so positions never collide.
+            guard Set(committed.tasks).count == committed.tasks.count else {
+                throw CadenceError.integrity("event \(event.seq) (plan.committed) lists a task twice")
+            }
+            for taskID in committed.tasks {
+                guard let row = try db.first("SELECT day FROM plan_tasks WHERE id = ?", [.text(taskID)]) else {
+                    throw CadenceError.integrity("event \(event.seq) (plan.committed) refers to an unknown plan task \(taskID)")
+                }
+                guard row.text("day") == committed.day else {
+                    throw CadenceError.integrity("event \(event.seq) (plan.committed) lists task \(taskID) from another day")
+                }
+            }
+            let listed = Set(committed.tasks)
+            let others = try db.query(
+                "SELECT id FROM plan_tasks WHERE day = ? ORDER BY position, created_seq", [.text(committed.day)]
+            ).compactMap { $0.text("id") }.filter { !listed.contains($0) }
+            for (index, taskID) in (committed.tasks + others).enumerated() {
                 try db.run(
                     "UPDATE plan_tasks SET position = ?, updated_seq = ? WHERE id = ?",
                     [.int(Int64(index + 1)), seq, .text(taskID)])
@@ -160,44 +186,49 @@ public struct LedgerProjector: Projector {
 
         case .entryUpdated(let changes):
             let id = try subjectID(event, prefix: "entry:")
+            guard var object = try entryJSON(id, db: db)?.objectValue else {
+                throw CadenceError.integrity("event \(event.seq) (entry.updated) refers to an unknown entry \(id)")
+            }
             for (field, change) in changes.fields.sorted(by: { $0.key < $1.key }) {
-                let new = change.new
-                switch field {
-                case "title", "kind", "family", "export":
-                    try db.run("UPDATE entries SET \(field) = ? WHERE id = ?", [try text(new, field), .text(id)])
-                case "occurred_at":
-                    try db.run("UPDATE entries SET occurred_at = ? WHERE id = ?", [try optionalText(new, field), .text(id)])
-                case "duration_s":
-                    try db.run("UPDATE entries SET duration_s = ? WHERE id = ?", [try optionalInt(new, field), .text(id)])
-                case "quantity":
-                    try db.run("UPDATE entries SET quantity = ? WHERE id = ?", [try int(new, field), .text(id)])
-                case "ticket":
-                    let ticket = new.isNull ? nil : try Ticket(json: new)
-                    try db.run(
-                        "UPDATE entries SET ticket_key = ?, ticket_class = ? WHERE id = ?",
-                        [SQLValue(ticket?.key), SQLValue(ticket?.class.rawValue), .text(id)])
-                case "links", "tags", "attrs":
-                    try db.run("UPDATE entries SET \(field) = ? WHERE id = ?", [.text(try canonical(new)), .text(id)])
-                case "day":
-                    let day = try text(new, field)
-                    if case .text(let date) = day { try ensureDay(date, tz: nil, seq: event.seq, db: db) }
-                    try db.run("UPDATE entries SET day = ? WHERE id = ?", [day, .text(id)])
-                case "backfilled", "after_seal":
-                    guard let flag = new.boolValue else { throw CadenceError.integrity("event \(event.seq): \(field) must be a boolean") }
-                    try db.run("UPDATE entries SET \(field) = ? WHERE id = ?", [SQLValue(flag), .text(id)])
-                default:
+                guard Self.editableEntryFields.contains(field) else {
                     throw CadenceError.integrity("event \(event.seq): entry.updated cannot change \(field)")
                 }
+                object[field] = change.new
             }
-            try db.run("UPDATE entries SET updated_seq = ? WHERE id = ?", [seq, .text(id)])
-            try requireChanged(db, "entry \(id)", event: event)
+            let entry: Entry
+            do {
+                entry = try EventPayload.validatedEntry(.object(object), owner: "entry.updated")
+            } catch {
+                throw CadenceError.integrity("event \(event.seq): \(error.message)")
+            }
+            try ensureDay(entry.day, tz: nil, seq: event.seq, db: db)
+            try db.run(
+                """
+                UPDATE entries SET day = ?, kind = ?, family = ?, title = ?, occurred_at = ?, duration_s = ?, quantity = ?,
+                  ticket_key = ?, ticket_class = ?, links = ?, tags = ?, attrs = ?, backfilled = ?, after_seal = ?,
+                  export = ?, updated_seq = ? WHERE id = ?
+                """,
+                [.text(entry.day), .text(entry.kind.rawValue), .text(entry.family.rawValue), .text(entry.title),
+                 SQLValue(entry.occurredAt), SQLValue(entry.durationS), .int(entry.quantity),
+                 SQLValue(entry.ticket?.key), SQLValue(entry.ticket?.class.rawValue),
+                 .text(try canonical(.array(entry.links.map(\.json)))), .text(try canonical(.array(entry.tags.map(JSONValue.string)))),
+                 .text(try canonical(.object(entry.attrs))), SQLValue(entry.backfilled), SQLValue(entry.afterSeal),
+                 .text(entry.export.rawValue), seq, .text(id)])
 
         case .entryStatus(let change):
             let id = try subjectID(event, prefix: "entry:")
+            guard let current = try db.first("SELECT status FROM entries WHERE id = ?", [.text(id)])?.text("status") else {
+                throw CadenceError.integrity("event \(event.seq) (entry.status) refers to an unknown entry \(id)")
+            }
+            guard current == change.from.rawValue else {
+                throw CadenceError.integrity("event \(event.seq) (entry.status) says from \(change.from.rawValue), but the entry is \(current)")
+            }
             try db.run("UPDATE entries SET status = ?, updated_seq = ? WHERE id = ?", [.text(change.to.rawValue), seq, .text(id)])
-            try requireChanged(db, "entry \(id)", event: event)
 
         case .daySealed(let sealed):
+            guard sealed.head == event.prev else {
+                throw CadenceError.integrity("event \(event.seq) (day.sealed) head is not the event before the seal")
+            }
             try ensureDay(sealed.day, tz: sealed.tz, seq: event.seq, db: db)
             try db.run(
                 "UPDATE days SET sealed_at = ?, seal_event = ? WHERE date = ?",
@@ -241,13 +272,73 @@ public struct LedgerProjector: Projector {
     // MARK: - Helpers
 
     private func ensureDay(_ date: String, tz: String?, seq: Int64, db: SQLiteDatabase) throws {
-        let zone: String
-        if let tz {
-            zone = tz
-        } else {
-            zone = try db.first("SELECT value FROM meta WHERE key = 'projection.profile_tz'")?.text("value") ?? "UTC"
+        let provisional = "projection.provisional_tz." + date
+        let exists = try db.first("SELECT 1 AS x FROM days WHERE date = ?", [.text(date)]) != nil
+        if exists {
+            // The first event that carries a zone replaces a provisional profile zone.
+            if let tz, try db.first("SELECT 1 AS x FROM meta WHERE key = ?", [.text(provisional)]) != nil {
+                try db.run("UPDATE days SET tz = ? WHERE date = ?", [.text(tz), .text(date)])
+                try db.run("DELETE FROM meta WHERE key = ?", [.text(provisional)])
+            }
+            return
         }
-        try db.run("INSERT OR IGNORE INTO days (date, tz, updated_seq) VALUES (?, ?, ?)", [.text(date), .text(zone), .int(seq)])
+        if let tz {
+            try db.run("INSERT INTO days (date, tz, updated_seq) VALUES (?, ?, ?)", [.text(date), .text(tz), .int(seq)])
+        } else {
+            let zone = try db.first("SELECT value FROM meta WHERE key = 'projection.profile_tz'")?.text("value") ?? "UTC"
+            try db.run("INSERT INTO days (date, tz, updated_seq) VALUES (?, ?, ?)", [.text(date), .text(zone), .int(seq)])
+            try db.run("INSERT INTO meta (key, value) VALUES (?, '1')", [.text(provisional)])
+        }
+    }
+
+    static let editableEntryFields: Set<String> = [
+        "title", "kind", "family", "export", "occurred_at", "duration_s", "quantity", "ticket", "links", "tags", "attrs",
+        "day", "backfilled", "after_seal",
+    ]
+
+    /// The stored entry as the JSON `entry.created` carries, so an update can be checked by the same rules.
+    private func entryJSON(_ id: String, db: SQLiteDatabase) throws -> JSONValue? {
+        guard let r = try db.first("SELECT * FROM entries WHERE id = ?", [.text(id)]) else { return nil }
+        return [
+            "id": .string(id), "day": .string(r.text("day") ?? ""), "kind": .string(r.text("kind") ?? ""),
+            "family": .string(r.text("family") ?? ""), "title": .string(r.text("title") ?? ""),
+            "occurred_at": r.text("occurred_at").map(JSONValue.string) ?? .null,
+            "duration_s": r.int("duration_s").map(JSONValue.int) ?? .null, "quantity": .int(r.int("quantity") ?? 1),
+            "ticket": Self.ticketJSON(r), "links": try stored(r.text("links")), "tags": try stored(r.text("tags")),
+            "attrs": try stored(r.text("attrs")), "origin": .string(r.text("origin") ?? ""),
+            "source": r.text("source").map(JSONValue.string) ?? .null,
+            "source_ref": r.text("source_ref").map(JSONValue.string) ?? .null,
+            "status": .string(r.text("status") ?? ""), "backfilled": .bool(r.int("backfilled") == 1),
+            "after_seal": .bool(r.int("after_seal") == 1), "export": .string(r.text("export") ?? ""),
+        ]
+    }
+
+    /// The stored task as the JSON `plan.added` carries.
+    private func taskJSON(_ id: String, db: SQLiteDatabase) throws -> JSONValue? {
+        guard let r = try db.first("SELECT * FROM plan_tasks WHERE id = ?", [.text(id)]) else { return nil }
+        return [
+            "id": .string(id), "day": .string(r.text("day") ?? ""), "position": .int(r.int("position") ?? 0),
+            "title": .string(r.text("title") ?? ""), "ticket": Self.ticketJSON(r),
+            "estimate_min": r.int("estimate_min").map(JSONValue.int) ?? .null, "origin": .string(r.text("origin") ?? ""),
+            "carried_from": r.text("carried_from").map(JSONValue.string) ?? .null, "status": .string(r.text("status") ?? ""),
+            "reason": r.text("reason").map(JSONValue.string) ?? .null,
+            "reason_note": r.text("reason_note").map(JSONValue.string) ?? .null,
+            "linked_entries": try stored(r.text("linked_entries")), "planned_at": .string(r.text("planned_at") ?? ""),
+            "resolved_at": r.text("resolved_at").map(JSONValue.string) ?? .null,
+        ]
+    }
+
+    private static func ticketJSON(_ r: SQLRow) -> JSONValue {
+        guard let key = r.text("ticket_key"), let cls = r.text("ticket_class") else { return .null }
+        return ["key": .string(key), "class": .string(cls)]
+    }
+
+    private func stored(_ text: String?) throws -> JSONValue {
+        do {
+            return try JSONParser.parse(text ?? "null")
+        } catch {
+            throw CadenceError.integrity("a stored projection value is not JSON: \(error)")
+        }
     }
 
     private func touchDay(_ date: String, seq: SQLValue, db: SQLiteDatabase) throws {
@@ -300,24 +391,6 @@ public struct LedgerProjector: Projector {
     }
 
     private func canonical(_ values: [JSONValue]) throws -> String { try canonical(.array(values)) }
-
-    private func text(_ value: JSONValue, _ field: String) throws -> SQLValue {
-        guard let s = value.stringValue else { throw CadenceError.integrity("\(field) must be a string") }
-        return .text(s)
-    }
-
-    private func optionalText(_ value: JSONValue, _ field: String) throws -> SQLValue {
-        value.isNull ? .null : try text(value, field)
-    }
-
-    private func int(_ value: JSONValue, _ field: String) throws -> SQLValue {
-        guard let i = value.intValue else { throw CadenceError.integrity("\(field) must be an integer") }
-        return .int(i)
-    }
-
-    private func optionalInt(_ value: JSONValue, _ field: String) throws -> SQLValue {
-        value.isNull ? .null : try int(value, field)
-    }
 
     private func sql(_ db: SQLiteDatabase, _ body: () throws -> Void) throws(CadenceError) {
         do {
