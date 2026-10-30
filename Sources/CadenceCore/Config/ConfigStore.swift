@@ -43,28 +43,7 @@ public enum ConfigStore {
         } catch {
             throw .validation("config cannot be written as canonical JSON")
         }
-        let folder = url.deletingLastPathComponent()
-        do {
-            try FileManager.default.createDirectory(
-                at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        } catch {
-            throw .io("cannot create \(folder.lastPathComponent)")
-        }
-        let temp = folder.appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
-        let fd = open(temp.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
-        guard fd >= 0 else { throw .io("cannot create a temporary file beside \(url.lastPathComponent)") }
-        var ok = fchmod(fd, 0o600) == 0
-        var offset = 0
-        while ok && offset < bytes.count {
-            let n = bytes[offset...].withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
-            if n < 0 { ok = false } else { offset += n }
-        }
-        ok = ok && fsync(fd) == 0
-        ok = (close(fd) == 0) && ok
-        guard ok, rename(temp.path, url.path) == 0 else {
-            unlink(temp.path)
-            throw .io("cannot write \(url.lastPathComponent)")
-        }
+        try PrivateFile.save(bytes, to: url)
     }
 
     public static func check(_ url: URL) -> ConfigFileCheck {
