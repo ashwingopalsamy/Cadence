@@ -53,7 +53,7 @@ extension CadenceMCP {
         for day in LocalDate.range(range.from, through: range.to) {
             let view = try journal.dayView(day)
             let section = "\n\n---\n\n" + DayRendering.human(view) + "\n" + DayRing(view).text
-            if text.count + section.count > MCPServer.maxResultCharacters - 200 {
+            if text.count + section.count > ToolText.budget {
                 text += "\n\n---\n\nCut at \(MCPServer.maxResultCharacters) characters before \(day). Read cadence://day/YYYY-MM-DD for a single day."
                 break
             }
@@ -63,8 +63,9 @@ extension CadenceMCP {
     }
 
     private static func cut(_ text: String) -> String {
-        guard text.count > MCPServer.maxResultCharacters else { return text }
-        return String(text.prefix(MCPServer.maxResultCharacters - 120))
+        // The budget leaves room for the JSON around the text and its escapes, so the server never cuts it again.
+        guard text.count > ToolText.budget else { return text }
+        return String(text.prefix(ToolText.budget - 120))
             + "\nCut at \(MCPServer.maxResultCharacters) characters; use query for this date to page through the entries."
     }
 }
