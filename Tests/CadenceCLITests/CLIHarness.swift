@@ -24,8 +24,13 @@ struct CLIHome {
         return root
     }()
 
+    /// The pretend user home (`HOME`): `.claude`, `.claude.json` and `.local/bin` live here, never in the real one.
+    let userHome: URL
+
     init() {
-        home = Self.root.appendingPathComponent("home-\(UUID().uuidString)", isDirectory: true)
+        let id = UUID().uuidString
+        home = Self.root.appendingPathComponent("home-\(id)", isDirectory: true)
+        userHome = Self.root.appendingPathComponent("user-\(id)", isDirectory: true)
     }
 
     var database: String { home.appendingPathComponent("cadence.db").path }
@@ -53,6 +58,9 @@ struct CLIHome {
         process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         environment["CADENCE_HOME"] = home.path
+        // Every run acts on a throwaway user home, so doctor and setup never read or write the real one.
+        environment["HOME"] = userHome.path
+        environment["CADENCE_AGENT_LABEL"] = nil
         for (key, value) in extra { environment[key] = value }
         process.environment = environment
         let out = Pipe()
@@ -88,6 +96,7 @@ struct CLIHome {
 
     func remove() {
         try? FileManager.default.removeItem(at: home)
+        try? FileManager.default.removeItem(at: userHome)
     }
 }
 

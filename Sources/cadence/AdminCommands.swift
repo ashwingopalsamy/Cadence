@@ -35,7 +35,8 @@ struct RebuildCommand: ParsableCommand {
 }
 
 struct DoctorCommand: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "doctor", abstract: "Check the store, the chain, the config and file modes.")
+    static let configuration = CommandConfiguration(commandName: "doctor",
+        abstract: "Check the store, the chain, the config, file modes and the Claude Code setup.")
 
     @OptionGroup var output: OutputOptions
 
@@ -57,6 +58,7 @@ struct DoctorCommand: ParsableCommand {
         checks += Self.permissionChecks(context)
         checks += Self.storeChecks(context)
         checks.append(Self.configCheck(context))
+        checks += Self.integrationChecks(context)
 
         let failed = checks.contains { $0.status == .fail }
         let human = checks.map { "\($0.status.rawValue.padding(toLength: 4, withPad: " ", startingAt: 0))  \($0.name): \($0.detail)" }
@@ -171,6 +173,15 @@ struct DoctorCommand: ParsableCommand {
             checks.append(Check(name: "ledger", status: .fail, detail: error.message))
         }
         return checks
+    }
+
+    /// Claude Code hooks, MCP registration and skill, the spool backlog, `cleanupPeriodDays` and the collector agent.
+    /// These are advice: they warn and never fail, so a Mac without Claude Code still passes.
+    static func integrationChecks(_ context: CLIContext) -> [Check] {
+        AgentChecks(
+            paths: ClaudeCodePaths(userHome: context.userHome), roots: context.roots, clock: context.clock,
+            environment: context.environment, runner: SystemProcessRunner(), platform: .current, uid: UInt32(geteuid())
+        ).run().map { Check(name: $0.name, status: $0.level == .ok ? .ok : .warn, detail: $0.detail) }
     }
 
     static func configCheck(_ context: CLIContext) -> Check {

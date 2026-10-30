@@ -1,40 +1,41 @@
 # Claude Code integration
 
-Two files let Claude Code work with Cadence. The hooks record session and task events, and the skill tells Claude Code when and how to log work. The MCP server is registered separately.
+Two files let Claude Code work with Cadence. The hooks record session and task events, and the skill tells Claude Code when and how to log work. The MCP server is registered with Claude Code. `cadence setup claude-code` does all three for you.
 
 ## Files
 
 - `hooks.json` is the hooks block. It runs `cadence hook <event>` for SessionStart, SessionEnd, Stop and TaskCompleted. Each call reads the hook JSON from stdin, appends one allowlisted line to the spool and exits 0. The spool write never opens the database, so Claude Code does not wait on the ledger.
 - `skills/cadence/SKILL.md` is the skill. It asks Claude Code to log one line per outcome, in your words, and never to invent times, tickets or counts.
 
+Both files are also embedded in the `cadence` binary, so `cadence setup claude-code` works from `~/.local/bin` with no repo around. A test keeps the embedded copies equal to these files byte for byte. After you edit either file, run `tools/embed_claude_code.py` to refresh them.
+
 ## Install
 
-Install the binary first. `make install` links it at `~/.local/bin/cadence`. The install script arrives with T3.2, so until then copy the built binary there yourself. `cadence doctor` then checks the store, the ledger, file modes and the config.
+Install the binary first. `make install` links it at `~/.local/bin/cadence`. The install script arrives with T3.2, so until then copy the built binary there yourself.
 
-1. Register the MCP server for your user account:
-
-   ```sh
-   claude mcp add --transport stdio --scope user cadence -- "$HOME/.local/bin/cadence" mcp
-   ```
-
-   `cadence mcp` is not wired into the CLI yet, so this step fails until it is.
-
-2. Merge the hooks into `~/.claude/settings.json`. If that file exists, back it up first, keep the hooks you already have, and add the four entries from `hooks.json` to the `hooks` object. You can also ask Claude Code to do the merge for you.
+1. See what would change. This prints the hooks that would be merged, the registration command and the skill path, and changes nothing:
 
    ```sh
-   cp ~/.claude/settings.json ~/.claude/settings.json.bak
+   cadence setup claude-code --print
    ```
 
-3. Copy the skill into your personal skills folder:
+2. Make the changes:
 
    ```sh
-   mkdir -p ~/.claude/skills
-   cp -R integrations/claude-code/skills/cadence ~/.claude/skills/
+   cadence setup claude-code --apply
    ```
 
-   The skill calls `log_entry` and `log_entries`, which arrive with T2.2. Until then it has nothing to call.
+   `--apply` does three things, and does nothing the second time:
 
-4. Once `cadence mcp` exists, start a new Claude Code session and run `/mcp` to check that `cadence` is connected. Then ask Claude Code to log something you finished today, and run `cadence today` to see the entry.
+   - It merges the four hooks into `~/.claude/settings.json`. Your other settings and hooks stay as they are, and a hook that already runs `cadence hook <event>` is not added again. If the file exists, it is saved first as `~/.claude/settings.json.cadence-backup` (mode 0600). A file that is not valid JSON is left alone with an error.
+   - It registers the MCP server by running `claude mcp add --transport stdio --scope user cadence -- "$HOME/.local/bin/cadence" mcp`, with `claude` found on your PATH. Without `claude` on PATH it skips this step and says so. A `cadence` server that is already registered is left alone.
+   - It copies the skill to `~/.claude/skills/cadence/SKILL.md`. A different file there is saved as `SKILL.md.cadence-backup` first.
+
+3. Start a new Claude Code session and run `/mcp` to check that `cadence` is connected. Then ask Claude Code to log something you finished today, and run `cadence today` to see the entry.
+
+4. Run `cadence doctor`. It checks the registration, the hooks, the skill, the hook spool backlog, the collector agent and `cleanupPeriodDays` in `~/.claude/settings.json` along with the store, the ledger, file modes and the config. These checks warn and do not fail.
+
+To do it by hand instead: register the server with the `claude mcp add` command above, add the four entries from `hooks.json` to the `hooks` object in `~/.claude/settings.json` after backing the file up, and copy `skills/cadence` into `~/.claude/skills/`.
 
 ## What Claude Code can and cannot do
 
@@ -43,4 +44,5 @@ Claude Code can log, plan and read. The MCP server has no tool that accepts prop
 ## Notes
 
 - With `claudeCode.injectPlanAtSessionStart` in `config.json` (on by default), the SessionStart hook prints one line with today's plan, and Claude Code adds it to its context. The hook reads the store read-only with a 200 ms limit and prints nothing if that fails.
+- Claude Code deletes transcripts older than `cleanupPeriodDays`, 30 by default. Set it to at least 400 in `~/.claude/settings.json` so the transcripts collector still sees October (docs/SPEC.md section 10.4). `cadence setup` does not change it; `cadence doctor` warns when it is lower.
 - Keep `~/.claude/settings.json` and your real `config.json` out of the repo. They hold your local paths and settings.

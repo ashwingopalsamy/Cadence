@@ -248,19 +248,36 @@ public final class SpoolDrain {
         return day.days(until: today) > keepDays
     }
 
-    var stateURL: URL { roots.state.appendingPathComponent(Self.stateName) }
+    var stateURL: URL { Self.stateURL(in: roots) }
+
+    static func stateURL(in roots: FileRoots) -> URL { roots.state.appendingPathComponent(stateName) }
+
+    /// The saved byte offset of each spool file.
+    enum OffsetState: Equatable {
+        case missing
+        case loaded([String: Int])
+        /// The file exists but is not a state file this version can read.
+        case unreadable
+    }
+
+    static func offsetState(in roots: FileRoots) -> OffsetState {
+        let url = stateURL(in: roots)
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
+        guard let data = try? Data(contentsOf: url),
+            let object = (try? JSONParser.parse(bytes: [UInt8](data)))?.objectValue,
+            let files = object["files"]?.objectValue
+        else { return .unreadable }
+        var out: [String: Int] = [:]
+        for (name, value) in files {
+            if let n = value.intValue, n >= 0, isSpoolFile(name) { out[name] = Int(n) }
+        }
+        return .loaded(out)
+    }
 
     /// A missing or unreadable state file is an empty one: the session rows keep a replay harmless.
     func loadOffsets() -> [String: Int] {
-        guard let data = try? Data(contentsOf: stateURL),
-            let object = (try? JSONParser.parse(bytes: [UInt8](data)))?.objectValue,
-            let files = object["files"]?.objectValue
-        else { return [:] }
-        var out: [String: Int] = [:]
-        for (name, value) in files {
-            if let n = value.intValue, n >= 0, Self.isSpoolFile(name) { out[name] = Int(n) }
-        }
-        return out
+        if case .loaded(let offsets) = Self.offsetState(in: roots) { return offsets }
+        return [:]
     }
 
     func saveOffsets(_ offsets: [String: Int]) throws(CadenceError) {

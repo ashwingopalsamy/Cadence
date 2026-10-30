@@ -7,13 +7,23 @@ struct CLIContext {
     let roots: FileRoots
     let clock: any Clock
     let environment: [String: String]
+    /// The user's home folder, where `~/.claude`, `~/.claude.json` and `~/.local/bin` live. It is `HOME` when that
+    /// is an absolute path, so tests and `HOME=... cadence setup claude-code` act on a throwaway home.
+    let userHome: URL
 
     static func current() -> CLIContext {
         let environment = ProcessInfo.processInfo.environment
-        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        let home = userHomeFolder(environment)
         return CLIContext(
             roots: FileRoots.resolve(environment: environment, userHome: home), clock: SystemClock(),
-            environment: environment)
+            environment: environment, userHome: home)
+    }
+
+    static func userHomeFolder(_ environment: [String: String]) -> URL {
+        if let explicit = environment["HOME"], explicit.hasPrefix("/") {
+            return URL(fileURLWithPath: explicit, isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
     }
 
     /// How long a write waits for another process. The hidden `CADENCE_BUSY_TIMEOUT_MS` shortens it for tests.
