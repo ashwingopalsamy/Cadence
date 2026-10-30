@@ -1,0 +1,464 @@
+import Foundation
+
+/// One entry to record. Fields override whatever the capture parser finds in `text`.
+public struct LogRequest: Sendable {
+    public var text: String
+    public var kind: EntryKind?
+    public var date: LocalDate?
+    /// RFC 3339, or "HH:MM" local time on the entry's day.
+    public var occurredAt: String?
+    public var ticket: String?
+    public var links: [Link]
+    public var quantity: Int64?
+    public var durationMin: Int64?
+    public var note: String?
+
+    public init(
+        text: String, kind: EntryKind? = nil, date: LocalDate? = nil, occurredAt: String? = nil,
+        ticket: String? = nil, links: [Link] = [], quantity: Int64? = nil, durationMin: Int64? = nil,
+        note: String? = nil
+    ) {
+        self.text = text
+        self.kind = kind
+        self.date = date
+        self.occurredAt = occurredAt
+        self.ticket = ticket
+        self.links = links
+        self.quantity = quantity
+        self.durationMin = durationMin
+        self.note = note
+    }
+}
+
+/// A presence span as a day shows it.
+public struct PresenceRange: Sendable, Equatable {
+    public var start: String
+    public var end: String
+    public var source: PresenceSource
+
+    public init(start: String, end: String, source: PresenceSource) {
+        self.start = start
+        self.end = end
+        self.source = source
+    }
+}
+
+/// Everything recorded for one day. A day with no data has no invented values.
+public struct DayView: Sendable, Equatable {
+    public var day: Day
+    public var tasks: [PlanTask]
+    public var entries: [Entry]
+    public var presence: [PresenceRange]
+
+    public init(day: Day, tasks: [PlanTask], entries: [Entry], presence: [PresenceRange]) {
+        self.day = day
+        self.tasks = tasks
+        self.entries = entries
+        self.presence = presence
+    }
+}
+
+public struct EntryQuery: Sendable {
+    public static let maxLimit = 200
+
+    public var from: LocalDate
+    public var to: LocalDate
+    public var kinds: [EntryKind]
+    public var families: [Family]
+    public var origins: [Origin]
+    /// Empty means accepted and proposed.
+    public var statuses: [EntryStatus]
+    public var cursor: String?
+    public var limit: Int
+
+    public init(
+        from: LocalDate, to: LocalDate, kinds: [EntryKind] = [], families: [Family] = [], origins: [Origin] = [],
+        statuses: [EntryStatus] = [.accepted, .proposed], cursor: String? = nil, limit: Int = 200
+    ) {
+        self.from = from
+        self.to = to
+        self.kinds = kinds
+        self.families = families
+        self.origins = origins
+        self.statuses = statuses
+        self.cursor = cursor
+        self.limit = limit
+    }
+}
+
+extension Link {
+    /// A link whose kind is guessed from the URL path: `/pull/` is a PR, `/browse/` a ticket.
+    public static func inferred(url: String) -> Link {
+        let lower = url.lowercased()
+        if lower.contains("/pull/") || lower.contains("/pulls/") { return Link(kind: .pr, url: url) }
+        if lower.contains("/browse/") { return Link(kind: .ticket, url: url) }
+        return Link(kind: .other, url: url)
+    }
+}
+
+/// The rules every writer shares: the CLI, the MCP server and the app all record and read through here.
+/// Every write is one `store.append` inside one transaction, so a call either happens whole or not at all.
+public final class Journal {
+    public let store: SQLiteStore
+    public let config: Config
+    private let clock: any Clock
+    private let ids: any IdentifierSource
+    private let classifier: TicketClassifier
+    private let zoneValue: TimeZone
+
+    static let maxTitle = 200
+    static let maxText = 2000
+    static let maxNote = 1000
+    static let maxLinks = 5
+
+    public init(store: SQLiteStore, config: Config, clock: any Clock, ids: any IdentifierSource) throws(CadenceError) {
+        guard let zone = TimeZone(identifier: config.profile.timezone) else {
+            throw .validation("profile.timezone: unknown time zone '\(config.profile.timezone)'")
+        }
+        self.store = store
+        self.config = config
+        self.clock = clock
+        self.ids = ids
+        self.zoneValue = zone
+        self.classifier = try TicketClassifier(rules: config.tickets)
+        // Reading must not need the write lock, so only an empty ledger takes it.
+        if try store.eventCount() == 0 {
+            var profile: [String: JSONValue] = ["timezone": .string(config.profile.timezone)]
+            if let name = config.profile.name { profile["name"] = .string(name) }
+            if let role = config.profile.role { profile["role"] = .string(role) }
+            try store.ensureGenesis(profile: .object(profile))
+        }
+    }
+
+    public var zone: TimeZone { zoneValue }
+
+    public func today() -> LocalDate {
+        config.dayBoundary.day(of: clock.now(), in: zone)
+    }
+
+    // MARK: - Writes
+
+    public func log(_ request: LogRequest, actor: Actor, origin: Origin) throws(CadenceError) -> Entry {
+        let text = Self.clean(request.text, limit: Self.maxText + 1)
+        guard !text.isEmpty else { throw .validation("text must not be empty") }
+        guard text.count <= Self.maxText else { throw .validation("text is too long (at most \(Self.maxText) characters)") }
+        let now = clock.now()
+        let today = self.today()
+        let parsed = CaptureParser.parse(
+            text, context: CaptureContext(now: now, zone: zone, boundary: config.dayBoundary, classifier: classifier))
+
+        let title = Self.clean(parsed.title, limit: Self.maxTitle)
+        guard !title.isEmpty else { throw .validation("the entry has no title") }
+
+        let day = request.date ?? parsed.day
+        guard day <= today else { throw .validation("date: \(day) is in the future") }
+
+        let kind = request.kind ?? parsed.kind
+        var ticket = parsed.ticket
+        if let text = request.ticket { ticket = try self.ticket(from: text) }
+
+        let occurred: Date?
+        if let at = request.occurredAt {
+            occurred = try instant(at, on: day)
+        } else if let found = parsed.occurredAt {
+            occurred = day == parsed.day ? found : try instant(Timestamp.clockTime(found, in: zone), on: day)
+        } else {
+            occurred = day == today ? now : nil
+        }
+
+        var quantity = parsed.quantity
+        if let n = request.quantity {
+            guard (1...50).contains(n) else { throw .validation("quantity: must be between 1 and 50") }
+            quantity = n
+        }
+
+        let durationS: Int64?
+        if let minutes = request.durationMin {
+            guard (1...720).contains(minutes) else { throw .validation("duration: must be between 1 and 720 minutes") }
+            durationS = minutes * 60
+        } else {
+            durationS = parsed.durationS
+        }
+
+        var links = parsed.links
+        for link in request.links {
+            guard link.url.lowercased().hasPrefix("https://"), link.url.count > "https://".count,
+                !link.url.contains(where: { $0.isWhitespace || $0.unicodeScalars.contains { $0.properties.generalCategory == .control } })
+            else { throw .validation("link: only https links are accepted") }
+            if !links.contains(link) { links.append(link) }
+        }
+        guard links.count <= Self.maxLinks else { throw .validation("links: at most \(Self.maxLinks) per entry") }
+
+        var attrs: [String: JSONValue] = [:]
+        if let note = request.note {
+            let cleaned = Self.clean(note, limit: Self.maxNote + 1)
+            guard cleaned.count <= Self.maxNote else { throw .validation("note: at most \(Self.maxNote) characters") }
+            if !cleaned.isEmpty { attrs["note"] = .string(cleaned) }
+        }
+
+        let isAgent = origin == .agent
+        return try store.transact { () throws(CadenceError) -> Entry in
+            let sealed = try self.rows("SELECT sealed_at FROM days WHERE date = ?", [.text(day.description)]).first?
+                .text("sealed_at") != nil
+            let entry = Entry(
+                id: self.ids.next(), day: day.description, kind: kind,
+                family: EntryKind.family(for: kind, ticketClass: ticket?.class), title: title,
+                occurredAt: occurred.map { Timestamp.local($0, in: self.zone) }, durationS: durationS,
+                quantity: quantity, ticket: ticket, links: links, tags: parsed.tags, attrs: attrs, origin: origin,
+                status: isAgent && day < today ? .proposed : .accepted, backfilled: day < today, afterSeal: sealed,
+                export: kind == .note ? .digest : .include)
+            try self.append([EventPayload.entryCreated(entry).draft(actor: actor)])
+            return entry
+        }
+    }
+
+    public func planAdd(
+        title: String, day: LocalDate?, estimateMin: Int64?, origin: PlanOrigin, actor: Actor
+    ) throws(CadenceError) -> PlanTask {
+        let cleaned = Self.clean(title, limit: Self.maxTitle)
+        guard !cleaned.isEmpty else { throw .validation("title must not be empty") }
+        if let estimateMin, !(1...1440).contains(estimateMin) {
+            throw .validation("estimate: must be between 1 and 1440 minutes")
+        }
+        let day = day ?? today()
+        let ticket = classifier.firstTicket(in: cleaned).map {
+            Ticket(key: $0.key, class: $0.selfInitiated ? .selfInitiated : .assigned)
+        }
+        let plannedAt = Timestamp.local(clock.now(), in: zone)
+        return try store.transact { () throws(CadenceError) -> PlanTask in
+            let highest = try self.rows(
+                "SELECT COALESCE(MAX(position), 0) AS highest FROM plan_tasks WHERE day = ?", [.text(day.description)]
+            ).first?.int("highest") ?? 0
+            let task = PlanTask(
+                id: self.ids.next(), day: day.description, position: highest + 1, title: cleaned, ticket: ticket,
+                estimateMin: estimateMin, origin: origin, plannedAt: plannedAt)
+            try self.append([EventPayload.planAdded(task).draft(actor: actor)])
+            return task
+        }
+    }
+
+    public func planResolve(
+        taskID: String, status: TaskStatus, reason: String?, note: String?, links: [String], actor: Actor
+    ) throws(CadenceError) -> PlanTask {
+        guard status == .done || status == .slipped || status == .dropped else {
+            throw .validation("status: a task is resolved as done, slipped or dropped")
+        }
+        let reason = reason.map { Self.clean($0, limit: 100) }.flatMap { $0.isEmpty ? nil : $0 }
+        if status == .slipped, reason == nil { throw .validation("a slipped task needs a reason") }
+        let note = note.map { Self.clean($0, limit: Self.maxNote) }.flatMap { $0.isEmpty ? nil : $0 }
+        return try store.transact { () throws(CadenceError) -> PlanTask in
+            guard try self.rows("SELECT id FROM plan_tasks WHERE id = ?", [.text(taskID)]).first != nil else {
+                throw .notFound("no plan task with id \(taskID)")
+            }
+            for link in links where try self.rows("SELECT id FROM entries WHERE id = ?", [.text(link)]).first == nil {
+                throw .notFound("no entry with id \(link)")
+            }
+            try self.append([
+                EventPayload.planResolved(PlanResolved(status: status, reason: reason, reasonNote: note, links: links))
+                    .draft(actor: actor, id: taskID)
+            ])
+            return try self.task(taskID)
+        }
+    }
+
+    public func startDay(_ day: LocalDate?, at: String?, actor: Actor) throws(CadenceError) {
+        try markDay(day, at: at, actor: actor) { mark in .dayStarted(mark) }
+    }
+
+    public func endDay(_ day: LocalDate?, at: String?, actor: Actor) throws(CadenceError) {
+        try markDay(day, at: at, actor: actor) { mark in .dayEnded(mark) }
+    }
+
+    private func markDay(
+        _ day: LocalDate?, at: String?, actor: Actor, payload: (DayMark) -> EventPayload
+    ) throws(CadenceError) {
+        let today = self.today()
+        let day = day ?? today
+        guard day <= today else { throw .validation("date: \(day) is in the future") }
+        let instant: Date
+        if let at {
+            instant = try self.instant(at, on: day)
+        } else {
+            guard day == today else { throw .validation("a time is needed for a day that is not today") }
+            instant = clock.now()
+        }
+        let mark = DayMark(
+            day: day.description, tz: zone.identifier, at: Timestamp.local(instant, in: zone),
+            source: at != nil || actor != .app ? .manual : .input)
+        try store.transact { () throws(CadenceError) -> Void in
+            try self.append([payload(mark).draft(actor: actor)])
+        }
+    }
+
+    public func declare(_ day: LocalDate, kind: DayKind, label: String?, actor: Actor) throws(CadenceError) {
+        let label = label.map { Self.clean($0, limit: 100) }.flatMap { $0.isEmpty ? nil : $0 }
+        let declared = DayDeclared(day: day.description, tz: zone.identifier, kind: kind, label: label)
+        try store.transact { () throws(CadenceError) -> Void in
+            try self.append([EventPayload.dayDeclared(declared).draft(actor: actor)])
+        }
+    }
+
+    /// Inbox moves: proposed to accepted or dismissed, accepted to dismissed, dismissed to accepted.
+    /// The entry's origin never changes.
+    public func setStatus(entryID: String, to: EntryStatus, note: String?, actor: Actor) throws(CadenceError) -> Entry {
+        let note = note.map { Self.clean($0, limit: Self.maxNote) }.flatMap { $0.isEmpty ? nil : $0 }
+        return try store.transact { () throws(CadenceError) -> Entry in
+            let current = try self.entry(entryID)
+            let allowed: Set<EntryStatus>
+            switch current.status {
+            case .proposed: allowed = [.accepted, .dismissed]
+            case .accepted: allowed = [.dismissed]
+            case .dismissed: allowed = [.accepted]
+            case .deleted: allowed = []
+            }
+            guard allowed.contains(to) else {
+                throw .validation("an entry that is \(current.status.rawValue) cannot become \(to.rawValue)")
+            }
+            try self.append([
+                EventPayload.entryStatus(EntryStatusChange(from: current.status, to: to, note: note))
+                    .draft(actor: actor, id: entryID)
+            ])
+            return try self.entry(entryID)
+        }
+    }
+
+    // MARK: - Reads
+
+    /// A day with no row is a workday or a weekend by the configured workdays, with no data.
+    public func dayView(_ day: LocalDate) throws(CadenceError) -> DayView {
+        let key = SQLValue.text(day.description)
+        var view: Day
+        if let row = try rows("SELECT * FROM days WHERE date = ?", [key]).first {
+            view = try Readers.day(row)
+        } else {
+            view = Day(date: day.description, tz: zone.identifier)
+        }
+        view.kind = DayRules(config: config).kind(of: day, declared: try store.declaredKind(of: day))
+        let tasks = try rows("SELECT * FROM plan_tasks WHERE day = ? ORDER BY position, created_seq", [key])
+            .map { (row) throws(CadenceError) -> PlanTask in try Readers.task(row) }
+        let entries = try rows(
+            """
+            SELECT * FROM entries WHERE day = ? AND status IN ('accepted', 'proposed')
+            ORDER BY COALESCE(occurred_at, ''), created_seq
+            """, [key]
+        ).map { (row) throws(CadenceError) -> Entry in try Readers.entry(row) }
+        let presence = try rows("SELECT * FROM presence_spans WHERE day = ? ORDER BY start_at, id", [key]).map {
+            row -> PresenceRange in
+            PresenceRange(
+                start: row.text("start_at") ?? "", end: row.text("end_at") ?? "",
+                source: PresenceSource(rawValue: row.text("source") ?? "") ?? .manual)
+        }
+        return DayView(day: view, tasks: tasks, entries: entries, presence: presence)
+    }
+
+    /// Entries by day, then occurred time (missing times first), then creation. The cursor is the base64 of the
+    /// last entry's creation sequence; the next page starts after that entry's place in the order.
+    public func query(_ q: EntryQuery) throws(CadenceError) -> (entries: [Entry], next: String?) {
+        guard q.from <= q.to else { throw .validation("from must not be after to") }
+        let limit = min(max(q.limit, 1), EntryQuery.maxLimit)
+        var sql = "SELECT * FROM entries WHERE day >= ? AND day <= ?"
+        var args: [SQLValue] = [.text(q.from.description), .text(q.to.description)]
+        func restrict(_ column: String, _ values: [String]) {
+            guard !values.isEmpty else { return }
+            sql += " AND \(column) IN (" + values.map { _ in "?" }.joined(separator: ", ") + ")"
+            args += values.map { SQLValue.text($0) }
+        }
+        restrict("kind", q.kinds.map(\.rawValue))
+        restrict("family", q.families.map(\.rawValue))
+        restrict("origin", q.origins.map(\.rawValue))
+        restrict("status", (q.statuses.isEmpty ? [.accepted, .proposed] : q.statuses).map(\.rawValue))
+        if let cursor = q.cursor {
+            guard let data = Data(base64Encoded: cursor), let text = String(data: data, encoding: .utf8),
+                let seq = Int64(text),
+                try rows("SELECT 1 FROM entries WHERE created_seq = ?", [.int(seq)]).first != nil
+            else { throw .validation("cursor is not valid") }
+            sql += """
+                 AND (day, COALESCE(occurred_at, ''), created_seq) >
+                (SELECT day, COALESCE(occurred_at, ''), created_seq FROM entries WHERE created_seq = ?)
+                """
+            args.append(.int(seq))
+        }
+        sql += " ORDER BY day, COALESCE(occurred_at, ''), created_seq LIMIT ?"
+        args.append(.int(Int64(limit + 1)))
+        var found = try rows(sql, args).map { (row) throws(CadenceError) -> Entry in try Readers.entry(row) }
+        var next: String?
+        if found.count > limit {
+            found.removeLast()
+            if let last = try rows("SELECT created_seq FROM entries WHERE id = ?", [.text(found[found.count - 1].id)]).first?
+                .int("created_seq")
+            {
+                next = Data(String(last).utf8).base64EncodedString()
+            }
+        }
+        return (found, next)
+    }
+
+    /// Proposals waiting for a decision, oldest first.
+    public func inbox() throws(CadenceError) -> [Entry] {
+        try rows("SELECT * FROM entries WHERE status = 'proposed' ORDER BY day, COALESCE(occurred_at, ''), created_seq")
+            .map { (row) throws(CadenceError) -> Entry in try Readers.entry(row) }
+    }
+
+    public func entry(_ id: String) throws(CadenceError) -> Entry {
+        guard let row = try rows("SELECT * FROM entries WHERE id = ?", [.text(id)]).first else {
+            throw .notFound("no entry with id \(id)")
+        }
+        return try Readers.entry(row)
+    }
+
+    public func task(_ id: String) throws(CadenceError) -> PlanTask {
+        guard let row = try rows("SELECT * FROM plan_tasks WHERE id = ?", [.text(id)]).first else {
+            throw .notFound("no plan task with id \(id)")
+        }
+        return try Readers.task(row)
+    }
+
+    /// Every event for a subject such as "entry:<id>", "task:<id>" or "day:2026-10-29", in order.
+    public func history(subject: String) throws(CadenceError) -> [Event] {
+        try store.events(subject: subject)
+    }
+
+    // MARK: - Helpers
+
+    private func rows(_ sql: String, _ parameters: [SQLValue] = []) throws(CadenceError) -> [SQLRow] {
+        do {
+            return try store.db.query(sql, parameters)
+        } catch {
+            throw error.cadenceError
+        }
+    }
+
+    private func append(_ drafts: [EventDraft]) throws(CadenceError) {
+        _ = try store.append(drafts, then: { _ in })
+    }
+
+    private func ticket(from text: String) throws(CadenceError) -> Ticket {
+        guard let match = classifier.firstTicket(in: text) else { throw .validation("ticket: no ticket key found") }
+        return Ticket(key: match.key, class: match.selfInitiated ? .selfInitiated : .assigned)
+    }
+
+    /// "HH:MM" on `day` (a time before the day boundary falls on the next calendar date), or an RFC 3339 instant.
+    private func instant(_ text: String, on day: LocalDate) throws(CadenceError) -> Date {
+        if let (hour, minute) = Timestamp.parseClock(text) {
+            let before = hour * 60 + minute < config.dayBoundary.hour * 60 + config.dayBoundary.minute
+            return Timestamp.resolve(before ? day.adding(days: 1) : day, hour: hour, minute: minute, in: zone)
+        }
+        if let date = Timestamp.parse(text) { return date }
+        throw .validation("time must be HH:MM or an RFC 3339 time")
+    }
+
+    /// Control characters out, whitespace collapsed, cut to `limit` characters.
+    static func clean(_ raw: String, limit: Int) -> String {
+        var spaced = String.UnicodeScalarView()
+        for scalar in raw.unicodeScalars {
+            if scalar == "\n" || scalar == "\t" || scalar == "\r" {
+                spaced.append(" ")
+            } else if scalar.properties.generalCategory != .control {
+                spaced.append(scalar)
+            }
+        }
+        let collapsed = String(spaced).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard collapsed.count > limit else { return collapsed }
+        return String(collapsed.prefix(limit)).trimmingCharacters(in: .whitespaces)
+    }
+}

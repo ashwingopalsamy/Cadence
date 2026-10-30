@@ -9,7 +9,10 @@ struct Cadence: ParsableCommand {
         abstract: "A local work log: ledger, CLI, MCP server and collectors.",
         discussion: "Exit codes: 0 ok, 1 usage, 2 validation, 3 store busy, 4 not found.",
         version: CadenceVersion.app,
-        subcommands: [ConfigCommand.self, Dev.self]
+        subcommands: [
+            LogCommand.self, PlanCommand.self, DayCommand.self, TodayCommand.self, InboxCommand.self,
+            QueryCommand.self, RebuildCommand.self, DoctorCommand.self, ConfigCommand.self, Dev.self,
+        ]
     )
 
     /// ArgumentParser reports usage errors with status 64. Cadence's contract is 1 for usage and 2 for

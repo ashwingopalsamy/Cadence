@@ -37,3 +37,17 @@ public struct DayRules: Sendable, Equatable {
         now > graceEnd(of: date, in: zone)
     }
 }
+
+extension SQLiteStore {
+    /// The kind the latest `day.declared` gave `date`, if any. `days.kind` cannot answer this alone:
+    /// it reads `workday` both by default and when a weekend was declared a workday.
+    public func declaredKind(of date: LocalDate) throws(CadenceError) -> DayKind? {
+        let declared = try readEvents(
+            "SELECT * FROM events WHERE subject = ? AND type = 'day.declared' ORDER BY seq DESC LIMIT 1",
+            [.text("day:\(date)")]
+        ).first
+        guard let declared, case .dayDeclared(let payload)? = try? EventPayload(type: declared.type, data: declared.data)
+        else { return nil }
+        return payload.kind
+    }
+}
