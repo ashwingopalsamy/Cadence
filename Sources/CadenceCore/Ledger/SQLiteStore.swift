@@ -16,7 +16,7 @@ public final class SQLiteStore: Store {
     public let clock: any Clock
     public let ids: any IdentifierSource
     public let projector: any Projector
-    private let hashing: EventHashing
+    let hashing: EventHashing
 
     /// Opens the store at `path`. Read-write opens create the file and migrate it; read-only opens
     /// never write and accept any schema version for reading.
