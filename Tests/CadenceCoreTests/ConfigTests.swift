@@ -82,6 +82,7 @@ import Testing
         #expect(config.aiMarkers == ["Generated with Claude Code", "Co-Authored-By: Claude"])
         #expect(config.genai.priority == ["endpoint", "transcripts", "import"])
         #expect(config.genai.prices == nil)
+        #expect(config.genai.standupLine == false)
         #expect(config.signals.count == 6)
         #expect(config.profile.backfillFrom == nil)
     }
@@ -104,6 +105,20 @@ import Testing
         #expect(config.signals == ["mentoring"])
         #expect(config.profile.backfillFrom == LocalDate("2026-10-01"))
         #expect(try Config.parse(CanonicalJSON.string(config.json)) == config)
+    }
+
+    @Test func theStandupAILineIsOffUntilSwitchedOn() throws {
+        let defaults = Config.defaults(timezone: "UTC")
+        #expect(defaults.genai.standupLine == false)
+        #expect(try defaults.value(at: "genai.standupLine") == .bool(false))
+        let on = try Config.parse(#"{"cadence":"config/1","profile":{"timezone":"UTC"},"genai":{"standupLine":true}}"#)
+        #expect(on.genai.standupLine == true && on.genai.priority == Config.defaultPriority)
+        #expect(try Config.parse(CanonicalJSON.string(on.json)) == on)
+        let set = try defaults.setting("genai.standupLine", to: "true")
+        #expect(set.genai.standupLine == true)
+        #expect(try set.setting("genai.standupLine", to: "false").genai.standupLine == false)
+        // null puts the default back.
+        #expect(try set.setting("genai.standupLine", to: "null").genai.standupLine == false)
     }
 
     // MARK: Validation
@@ -156,6 +171,8 @@ import Testing
         Bad(text: with(#""genai":{"priority":["endpoint","guess"]}"#), expected: "genai.priority[1]: must be one of endpoint, transcripts, import"),
         Bad(text: with(#""genai":{"priority":["import","import"]}"#), expected: "genai.priority[1]: duplicate \"import\""),
         Bad(text: with(#""genai":{"prices":[]}"#), expected: "genai.prices: must be an object"),
+        Bad(text: with(#""genai":{"standupLine":"yes"}"#), expected: "genai.standupLine: must be true or false"),
+        Bad(text: with(#""genai":{"standupline":true}"#), expected: "genai.standupline: unknown key"),
         Bad(text: with(#""ai":{"markers":[3]}"#), expected: "ai.markers[0]: must be a string"),
         Bad(text: with(#""hosts":"git.example.com""#), expected: "hosts: must be an array of strings"),
     ]

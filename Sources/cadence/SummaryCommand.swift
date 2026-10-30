@@ -9,7 +9,8 @@ struct SummaryCommand: ParsableCommand {
         discussion: """
             Ranges are read in the profile time zone. week is Monday to today and month is the 1st to today. \
             cycle is the review cycle: from profile.backfillFrom to today, or from the last 1 October when \
-            that is not set. A dash, or null in JSON, means there is no data.
+            that is not set. A dash, or null in JSON, means there is no data. The sentence your review needs is \
+            written from the AI days, AI-assisted merges and agent-logged entries of the range.
             """)
 
     @OptionGroup var output: OutputOptions

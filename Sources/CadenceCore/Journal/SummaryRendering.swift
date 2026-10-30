@@ -12,6 +12,29 @@ public enum SummaryRendering {
 
     public static func plural(_ count: Int, _ word: String) -> String { "\(count) \(word)\(count == 1 ? "" : "s")" }
 
+    static let maxModels = 6
+
+    /// "endpoint (3 days), import (1 day)".
+    static func sources(_ days: [String: Int]) -> String {
+        days.sorted { $0.key < $1.key }.map { "\($0.key) (\(plural($0.value, "day")))" }.joined(separator: ", ")
+    }
+
+    /// "2 of 3 (67%)", with the PRs left out for want of a recorded marker.
+    static func assisted(_ assisted: AssistedMerges?) -> String {
+        guard let assisted else { return "-" }
+        var text = "\(assisted.share.value) of \(assisted.share.of)"
+        if let percent = assisted.share.percent { text += " (\(percent)%)" }
+        if assisted.unrecorded > 0 { text += ", \(assisted.unrecorded) without a recorded marker" }
+        return text
+    }
+
+    /// "median 42m over 3 of 5 sessions".
+    static func sessionLength(_ length: SessionLength?) -> String {
+        guard let length else { return "-" }
+        let median = length.medianSeconds < 60 ? "\(length.medianSeconds)s" : Format.duration(Int64(length.medianSeconds))
+        return "median \(median) over \(length.measured) of \(plural(length.sessions, "session"))"
+    }
+
     public static func spread(_ spread: ClockSpread?) -> String {
         guard let spread else { return "-" }
         return "median \(spread.median), from \(spread.earliest) to \(spread.latest) over \(plural(spread.days, "day"))"
@@ -32,6 +55,16 @@ public enum SummaryRendering {
         lines.append(finding.isEmpty ? "No counted data in this range yet." : "You " + finding.joined(separator: ", ") + ".")
         lines.append("")
 
+        // The sentence a review needs, labelled as the spec names it, with what it is built from.
+        if let sentence = s.reviewSentence {
+            lines.append("The sentence your review needs")
+            lines.append(sentence)
+            lines.append("Computed by Cadence from the figures below. Tokens back it up and are not the headline.")
+        } else {
+            lines.append("The sentence your review needs: -")
+        }
+        lines.append("")
+
         var rows: [[String]] = [
             ["Sealed workdays", ratio(s.sealedWorkdays, of: s.sealedWorkdays == nil ? nil : s.countedWorkdays)
                 + (s.beforeLedger > 0 ? " (\(s.beforeLedger) before the ledger began)" : "")],
@@ -44,9 +77,25 @@ public enum SummaryRendering {
             ["First activity", spread(s.firstActivity)],
             ["Last activity", spread(s.lastActivity)],
             ["AI days", ratio(s.aiDays, of: s.aiDays == nil ? nil : s.aiCountedDays)],
+            ["AI-assisted merges", assisted(s.assistedMerges)],
+            ["Agent-logged entries", n(s.agentEntries)],
             ["AI sessions", n(s.aiSessions)],
+            ["AI session length", sessionLength(s.sessionLength)],
             ["Output tokens", s.outputTokens.map { tokens in
-                "\(tokens) from " + s.tokenSources.sorted { $0.key < $1.key }.map { "\($0.key) (\(plural($0.value, "day")))" }.joined(separator: ", ")
+                "\(tokens) from " + sources(s.tokenSources)
+            } ?? "-"],
+            ["Cache reuse", s.cacheReuse.flatMap { reuse in
+                reuse.percent.map { percent in
+                    "\(percent)% (\(reuse.cacheRead) cache read of \(reuse.cacheRead + reuse.input) input and cache read tokens) from "
+                        + sources(reuse.sources)
+                }
+            } ?? "-"],
+            ["Model mix", s.modelMix.map { mix in
+                let shown = mix.models.prefix(maxModels).map { share in
+                    "\(share.model == "*" ? "unknown model" : share.model) \(mix.percent(of: share).map { "\($0)%" } ?? "-")"
+                }
+                let more = mix.models.count > maxModels ? ", and \(mix.models.count - maxModels) more" : ""
+                return shown.joined(separator: ", ") + more + " of output tokens"
             } ?? "-"],
             ["Streak", "\(s.streak.current) now, best \(s.streak.best)"],
         ]

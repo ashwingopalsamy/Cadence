@@ -29,6 +29,21 @@
       "assigned": 1,
       "self_initiated": 0,
       "definition": "Merged PRs authored, from the GitHub collector"
+    },
+    "ai_assisted_merges": {
+      "value": 1,
+      "of": 1,
+      "percent": 100,
+      "unrecorded": 0,
+      "definition": "Merged PRs listed in days that recorded an AI marker, out of listed merged PRs with a recorded marker; computed by Cadence, not recomputed by the verifier"
+    },
+    "agent_entries": {
+      "value": 1,
+      "definition": "Items listed in days with origin agent, which is self-reported; computed by Cadence, not recomputed by the verifier"
+    },
+    "review_sentence": {
+      "text": "100% of merged PRs were AI-assisted. Your agent logged 1 entry you accepted.",
+      "definition": "Written from the figures beside it and computed by Cadence; the verifier recomputes only merged_prs and reviews"
     }
   },
   "days": [
@@ -38,11 +53,11 @@
       "first_activity": "09:42",
       "last_activity": "-",
       "sealed_at": "2026-10-01T17:24:10+05:30",
-      "seal_ev": "771af3a3c143b6217dabc8a9733671bcd8b2f56c2116628f5a4b8581b91f4489",
+      "seal_ev": "75acce94b854f4c697fbfd8b49c398c10ca466ddea8cc7ff28e06f3d500dda08",
       "items": [
         {
-          "ev": "0e94b3311464e1336f0d613d6a49a00f02a8f0834f6121f89980e436ef4ab498",
-          "last_ev": "0e94b3311464e1336f0d613d6a49a00f02a8f0834f6121f89980e436ef4ab498",
+          "ev": "99b023119a02f07258ebfb9ecf9335c5a436764b92b809a481f1b15a04c0f367",
+          "last_ev": "99b023119a02f07258ebfb9ecf9335c5a436764b92b809a481f1b15a04c0f367",
           "kind": "pr.merged",
           "family": "delivery",
           "title": "ACME-482901 Batch settlement writes",
@@ -63,8 +78,8 @@
           }
         },
         {
-          "ev": "d72676be3a777649b35ff2d068a741d71e67662df4731dcefccd24c605a54555",
-          "last_ev": "d72676be3a777649b35ff2d068a741d71e67662df4731dcefccd24c605a54555",
+          "ev": "064b315d862d4a18cf24c612097bb499f75cdc8931201da55bf5a2f8d8c7c005",
+          "last_ev": "064b315d862d4a18cf24c612097bb499f75cdc8931201da55bf5a2f8d8c7c005",
           "kind": "work.done",
           "family": "delivery",
           "title": "Fixed flaky ledger test with deterministic clock",
@@ -78,8 +93,8 @@
           }
         },
         {
-          "ev": "db9f5c7587923a359c89c2e3067af9f967c8bcea57831c27a7dfc8efe3db8124",
-          "last_ev": "db9f5c7587923a359c89c2e3067af9f967c8bcea57831c27a7dfc8efe3db8124",
+          "ev": "05f1d7d127fe4ef2aeaab969da43f5c4234d6d122b3688c8179f6328b9ad7ca2",
+          "last_ev": "05f1d7d127fe4ef2aeaab969da43f5c4234d6d122b3688c8179f6328b9ad7ca2",
           "kind": "note",
           "origin": "self",
           "redacted": true,
@@ -90,8 +105,8 @@
           }
         },
         {
-          "ev": "64904ab16ef2fcac75192540dd41302a8aa5011443231b8d5ea7c995dccd3937",
-          "last_ev": "64904ab16ef2fcac75192540dd41302a8aa5011443231b8d5ea7c995dccd3937",
+          "ev": "253bc7a115684767eb5a66bf60b7877255b9a4162223ac9ca56e2d909a7c19cc",
+          "last_ev": "253bc7a115684767eb5a66bf60b7877255b9a4162223ac9ca56e2d909a7c19cc",
           "kind": "discussion.raised",
           "family": "leadership",
           "title": "Raised retry storms risk in arch sync",
@@ -177,9 +192,9 @@
         "actor": "collector:github",
         "type": "entry.created",
         "subject": "entry:01JB00000000000000000E0001",
-        "data_digest": "4456346148441a0c8f48a326cf93fc28e250942a997b7eca98c3fbad5b4e75c6",
+        "data_digest": "beb1c7492842dc3a3ad496c8125d18d29326dd7b2e30ce310573c460239f6ef2",
         "prev": "a79f5adaa7e422920331ed56a30e198f98e0382056b30d20bc6294c2ffa91f27",
-        "hash": "0e94b3311464e1336f0d613d6a49a00f02a8f0834f6121f89980e436ef4ab498",
+        "hash": "99b023119a02f07258ebfb9ecf9335c5a436764b92b809a481f1b15a04c0f367",
         "data": {
           "id": "01JB00000000000000000E0001",
           "day": "2026-10-01",
@@ -198,7 +213,9 @@
             }
           ],
           "tags": [],
-          "attrs": {},
+          "attrs": {
+            "ai_assisted": true
+          },
           "origin": "collected",
           "source": "github",
           "source_ref": "github:PR_kwDOAcme405:merged",
@@ -217,8 +234,8 @@
         "type": "entry.created",
         "subject": "entry:01JB00000000000000000E0002",
         "data_digest": "52515a299a3698322d9fd7aa47b69e940eeccaf59c112b6427f29496bc4daa39",
-        "prev": "0e94b3311464e1336f0d613d6a49a00f02a8f0834f6121f89980e436ef4ab498",
-        "hash": "d72676be3a777649b35ff2d068a741d71e67662df4731dcefccd24c605a54555",
+        "prev": "99b023119a02f07258ebfb9ecf9335c5a436764b92b809a481f1b15a04c0f367",
+        "hash": "064b315d862d4a18cf24c612097bb499f75cdc8931201da55bf5a2f8d8c7c005",
         "data": {
           "id": "01JB00000000000000000E0002",
           "day": "2026-10-01",
@@ -248,8 +265,8 @@
         "type": "entry.created",
         "subject": "entry:01JB00000000000000000E0003",
         "data_digest": "57adfab4c34fb907587f128851ef5a1f60624cf831b056c004987f3839874646",
-        "prev": "d72676be3a777649b35ff2d068a741d71e67662df4731dcefccd24c605a54555",
-        "hash": "db9f5c7587923a359c89c2e3067af9f967c8bcea57831c27a7dfc8efe3db8124"
+        "prev": "064b315d862d4a18cf24c612097bb499f75cdc8931201da55bf5a2f8d8c7c005",
+        "hash": "05f1d7d127fe4ef2aeaab969da43f5c4234d6d122b3688c8179f6328b9ad7ca2"
       },
       {
         "v": 1,
@@ -260,8 +277,8 @@
         "type": "entry.created",
         "subject": "entry:01JB00000000000000000E0004",
         "data_digest": "ba2f9279a049308610913b7c7f7d391c890a43754624cba33c8202a3ab1136bd",
-        "prev": "db9f5c7587923a359c89c2e3067af9f967c8bcea57831c27a7dfc8efe3db8124",
-        "hash": "64904ab16ef2fcac75192540dd41302a8aa5011443231b8d5ea7c995dccd3937",
+        "prev": "05f1d7d127fe4ef2aeaab969da43f5c4234d6d122b3688c8179f6328b9ad7ca2",
+        "hash": "253bc7a115684767eb5a66bf60b7877255b9a4162223ac9ca56e2d909a7c19cc",
         "data": {
           "id": "01JB00000000000000000E0004",
           "day": "2026-10-01",
@@ -291,8 +308,8 @@
         "type": "plan.resolved",
         "subject": "task:01JB00000000000000000T0001",
         "data_digest": "bfe0d87d51bf89a4965cc32434480deca1ac050c7ed32f2709b422f480b93206",
-        "prev": "64904ab16ef2fcac75192540dd41302a8aa5011443231b8d5ea7c995dccd3937",
-        "hash": "78b00186e062271072bd0559aa54910e48c8955571c527fb7d662e5c7770a9aa",
+        "prev": "253bc7a115684767eb5a66bf60b7877255b9a4162223ac9ca56e2d909a7c19cc",
+        "hash": "c6978d10adff97a10fb66e3f1e0e590d4057454727a04ddbcef6b7f7093ef6a2",
         "data": {
           "status": "done",
           "reason": null,
@@ -310,8 +327,8 @@
         "type": "day.sealed",
         "subject": "day:2026-10-01",
         "data_digest": "883b0c0fe2a59a26c1df0618e76072ad3b20f20311bcd80e280de3e24ff4cc9c",
-        "prev": "78b00186e062271072bd0559aa54910e48c8955571c527fb7d662e5c7770a9aa",
-        "hash": "771af3a3c143b6217dabc8a9733671bcd8b2f56c2116628f5a4b8581b91f4489",
+        "prev": "c6978d10adff97a10fb66e3f1e0e590d4057454727a04ddbcef6b7f7093ef6a2",
+        "hash": "75acce94b854f4c697fbfd8b49c398c10ca466ddea8cc7ff28e06f3d500dda08",
         "data": {
           "counts": {
             "entries": 4,
@@ -334,8 +351,8 @@
         "type": "witness.checkpoint",
         "subject": "day:2026-10-01",
         "data_digest": "36c80edf766e19c4df936c84c88c99eefb2c71a84a188cbbd364cf5b9e92031e",
-        "prev": "771af3a3c143b6217dabc8a9733671bcd8b2f56c2116628f5a4b8581b91f4489",
-        "hash": "34cdc6e179092c6a82b7d08c417d5e94d368efb8348d83170bb83f83241d19ad",
+        "prev": "75acce94b854f4c697fbfd8b49c398c10ca466ddea8cc7ff28e06f3d500dda08",
+        "hash": "4e2581e6bc5609d1a2be87140de00fcc1febe3795092f041137f24a19aac8a82",
         "data": {
           "purpose": "standup"
         }
@@ -345,7 +362,7 @@
   "witnesses": [
     {
       "date": "2026-10-01",
-      "code": "34cdc6e179092c6a",
+      "code": "4e2581e6bc5609d1",
       "where": "stand-up message"
     }
   ],
@@ -358,5 +375,5 @@
     "references",
     "witnesses"
   ],
-  "export_digest": "beff80c1b2d3682f82628e5ba289adb62b8e256ca317538c9beb4c0e58d540ff"
+  "export_digest": "465189afa52e15745dac065edb244edc02f5a0a4d593b9c35df382aa96a63b2f"
 }

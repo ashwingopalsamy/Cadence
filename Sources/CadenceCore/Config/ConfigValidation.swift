@@ -216,8 +216,9 @@ extension Config {
     }
 
     private static func genai(_ value: JSONValue) throws(CadenceError) -> GenAI {
-        let m = try object(value, "genai", allowed: ["priority", "prices"])
+        let m = try object(value, "genai", allowed: ["priority", "prices", "standupLine"])
         var genai = GenAI()
+        genai.standupLine = try bool(m, "standupLine", "genai", default: false)
         if let p = try optionalStrings(m, "priority", "genai") {
             guard !p.isEmpty else { throw fail("genai.priority", "must not be empty") }
             for (i, entry) in p.enumerated() {

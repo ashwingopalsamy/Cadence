@@ -62,7 +62,9 @@ extension Config {
 
         top["hosts"] = .array(hosts.map { .string($0) })
         top["ai"] = .object(["markers": .array(aiMarkers.map { .string($0) })])
-        var genaiObject: [String: JSONValue] = ["priority": .array(genai.priority.map { .string($0) })]
+        var genaiObject: [String: JSONValue] = [
+            "priority": .array(genai.priority.map { .string($0) }), "standupLine": .bool(genai.standupLine),
+        ]
         if let p = genai.prices { genaiObject["prices"] = .object(p) }
         top["genai"] = .object(genaiObject)
         top["signals"] = .array(signals.map { .string($0) })

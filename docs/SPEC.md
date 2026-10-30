@@ -1239,7 +1239,7 @@ Model mix| Share of output tokens by model| daily pick| Detail
   * Unknown is not zero. Days before your first source, or with no source at all, are hatched and say "no record".
   * Every number shows its source on hover: "from endpoint", "from transcripts", "imported", "estimated".
   * Never stored: prompts, responses, code, file names. Working folders become project aliases.
-  * The stand-up line is off by default. When on, it reads "AI: 4 sessions · 2 of 3 merges AI-assisted".
+  * The stand-up line is off by default (`genai.standupLine` in config, `true` to turn it on). When on, it follows the counts line and reads "AI: 4 sessions · 2 of 3 merges AI-assisted". A part with no record is left out, and with neither part the line is not written.
 
 
 **The sentence your review needs** , computed for the cycle recap and the proof summary: "AI on 17 of 19 workdays. 64% of merged PRs were AI-assisted. Your agent logged 31 entries you accepted." Tokens back it up underneath; they are not the headline.
@@ -1275,6 +1275,9 @@ october.cadence-proof.json (shape; arrays shortened)
     "merged_prs":      { "value": 14, "assigned": 11, "self_initiated": 3, "definition": "Merged PRs authored, from the GitHub collector; …" },
     "reviews":         { "value": 47, "definition": "Review entries, one per PR per day" },
     "ai_days":         { "value": 17, "of": 19, "definition": "Counted workdays with an AI coding session or usage record, from the first day any AI source recorded" },
+    "ai_assisted_merges": { "value": 9, "of": 14, "percent": 64, "unrecorded": 0, "definition": "Merged PRs listed in days that recorded an AI marker, out of listed merged PRs with a recorded marker; …" },
+    "agent_entries":   { "value": 31, "definition": "Items listed in days with origin agent, which is self-reported; …" },
+    "review_sentence": { "text": "AI on 17 of 19 workdays. 64% of merged PRs were AI-assisted. Your agent logged 31 entries you accepted.", "definition": "Written from the figures beside it and computed by Cadence; …" },
     "private_events":  { "value": 3, "definition": "Events in range exported as hashes only: private notes and reasons, entries marked digest or exclude, and entries not accepted" }
   },
   "days": [{
@@ -1309,7 +1312,7 @@ october.cadence-proof.json (shape; arrays shortened)
   * **Redaction is visible:** an item with policy `exclude` is left out of `days`, but its event stays in the chain as hash-only, and `summary.private_events` counts every hash-only event in range.
   * **Seals:** a day's seal is its first seal. Sealing again later never undoes a seal that counted. `edited` means an `entry.updated` after that seal; status changes are not edits.
   * **Days before the ledger:** workdays before the ledger began (a backfill) are not counted as unsealed; `sealed_workdays.before_ledger` reports them.
-  * **Summary** carries a definition next to every number, so an agent reading it never has to guess what a metric means. The verifier recomputes `merged_prs` and `reviews` from the items; the other numbers are computed by Cadence.
+  * **Summary** carries a definition next to every number, so an agent reading it never has to guess what a metric means. The verifier recomputes `merged_prs` and `reviews` from the items; the other numbers are computed by Cadence. That includes `ai_assisted_merges`, `agent_entries` and `review_sentence` (section 11), whose figures can still be counted from the file: `origin` on the items, and `attrs.ai_assisted` in each included entry's payload in the chain. A figure with no record is null, and a clause of the sentence with no figure is left out.
   * **Witnesses** are the codes that ended your stand-up messages. Slack sets those message timestamps, not you, so each one shows that the chain up to that event existed by then.
   * **Canonical JSON** must match byte for byte across Swift and Python. Keys are ASCII and sorted. `"` and `\` are escaped, as are `\b \f \n \r \t`; other characters below U+0020 become lowercase `\u00xx`; everything else is raw UTF-8, `/` included. Integers stay within ±253, and there are no floats. Swift uses a small custom writer, not `JSONEncoder`, which escapes slashes. Shared vectors in `Tests/Vectors/c14n.json` run in both the Swift tests and the Python verifier inside `make check`.
 

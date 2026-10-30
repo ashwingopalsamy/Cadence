@@ -99,6 +99,8 @@ private struct Builder {
         let afterSeal: Bool
         let createdSeq: Int64
         let updatedSeq: Int64
+        /// The PR's AI marker as recorded in attrs; nil when none is recorded.
+        let aiAssisted: Bool?
 
         var isPublic: Bool { status == .accepted && export == .include }
         var isListed: Bool { status == .accepted && (export == .include || export == .digest) }
@@ -138,7 +140,7 @@ private struct Builder {
                 status: r.text("status").flatMap(EntryStatus.init(rawValue:)),
                 export: r.text("export").flatMap(ExportPolicy.init(rawValue:)), backfilled: r.int("backfilled") == 1,
                 afterSeal: r.int("after_seal") == 1, createdSeq: r.int("created_seq") ?? 0,
-                updatedSeq: r.int("updated_seq") ?? 0)
+                updatedSeq: r.int("updated_seq") ?? 0, aiAssisted: GenAIMetrics.marker(inAttrs: r.text("attrs")))
         }
         var entryByID: [String: EntryRow] = [:]
         for e in entries { entryByID[e.id] = e }
@@ -279,7 +281,7 @@ private struct Builder {
         // no AI record anywhere, AI days are unknown. Both are null, as in `Journal.summary`.
         let githubSeen = try !query("SELECT 1 AS x FROM entries WHERE source = 'github' LIMIT 1").isEmpty
         func known(_ n: Int) -> JSONValue { githubSeen ? .int(Int64(n)) : .null }
-        let summary: JSONValue = [
+        let base: JSONValue = [
             "sealed_workdays": [
                 "value": .int(Int64(sealedInGrace)), "of": .int(Int64(countable.count)),
                 "before_ledger": .int(Int64(beforeLedger)),
@@ -309,6 +311,28 @@ private struct Builder {
                 "definition": "Events in range exported as hashes only: private notes and reasons, entries marked digest or exclude, and entries not accepted",
             ],
         ]
+
+        // The figures behind "the sentence your review needs" (docs/SPEC.md section 11), counted from the items in
+        // `days` like merged_prs. The verifier recomputes only merged_prs and reviews; these say so in their definitions.
+        // Unknown is null: no GitHub record means no marker figure, and no listed item means no agent count.
+        let assisted = githubSeen ? GenAIMetrics.assistedMerges(merged.map(\.aiAssisted)) : nil
+        let agentEntries = listed.isEmpty ? nil : listed.filter { $0.origin == Origin.agent.rawValue }.count
+        let aiShare = firstAIDay == nil ? nil : Share(aiCountable.filter(aiDays.contains).count, of: aiCountable.count)
+        var summaryFields = base.objectValue ?? [:]
+        summaryFields["ai_assisted_merges"] = GenAIMetrics.assistedJSON(
+            assisted,
+            definition:
+                "Merged PRs listed in days that recorded an AI marker, out of listed merged PRs with a recorded marker; PRs with no recorded marker are in neither number and are counted as unrecorded. A marker is text in the PR body, so it shows a claim, not proof of AI use. Each marker sits in its entry's payload in the chain where the export policy is include; computed by Cadence, not recomputed by the verifier"
+        )
+        summaryFields["agent_entries"] = [
+            "value": GenAIMetrics.number(agentEntries),
+            "definition": "Items listed in days with origin agent, which is self-reported like origin self: plausible, not proven; computed by Cadence from the same items, not recomputed by the verifier",
+        ]
+        summaryFields["review_sentence"] = [
+            "text": ReviewSentence.make(aiDays: aiShare, assisted: assisted, agentEntries: agentEntries).map(JSONValue.string) ?? .null,
+            "definition": .string(ReviewSentence.definition),
+        ]
+        let summary = JSONValue.object(summaryFields)
 
         let witnesses = try store.witnesses(from: request.from, through: request.to)
         var subject: [String: JSONValue] = [:]

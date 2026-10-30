@@ -208,6 +208,29 @@ import Testing
         #expect(some.structured?["streak"] != nil && some.structured?["plan_done"] != nil)
     }
 
+    @Test func summaryCarriesTheSection11FiguresAndTheReviewSentence() throws {
+        let h = try ToolHarness()
+        try seed(h, ["Merged ACME-482913 retry budget", "Reviewed a design doc"])
+        let before = try h.call("summary")
+        // Entries from the CLI are self-reported: a known zero agent entries. No PR, session or usage row exists, so
+        // the other figures are null rather than 0.
+        #expect(before.structured?["ai"]?["agent_entries"]?["value"] == 0)
+        #expect(before.structured?["ai"]?["assisted_merges"]?["value"] == .null)
+        #expect(before.structured?["ai"]?["session_length"]?["median_seconds"] == .null)
+        #expect(before.structured?["ai"]?["cache_reuse"]?["percent"] == .null)
+        #expect(before.structured?["ai"]?["model_mix"]?["models"] == .null)
+        // An entry the agent logs over MCP is accepted with origin agent.
+        _ = try h.call("log_entry", ["text": "Fixed a flaky test"])
+        let after = try h.call("summary")
+        #expect(after.structured?["ai"]?["agent_entries"]?["value"] == 1)
+        #expect(after.structured?["review_sentence"]?["text"] == "Your agent logged 1 entry you accepted.")
+        #expect(after.text.contains("The sentence your review needs\nYour agent logged 1 entry you accepted."))
+        // Nothing logged at all: no sentence.
+        let empty = try ToolHarness().call("summary")
+        #expect(empty.structured?["review_sentence"]?["text"] == .null)
+        #expect(empty.text.contains("The sentence your review needs: -"))
+    }
+
     @Test func summaryTakesMonthCycleAndACustomRange() throws {
         let h = try ToolHarness()
         try seed(h, ["Fixed a bug"])

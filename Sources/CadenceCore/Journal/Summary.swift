@@ -101,8 +101,22 @@ public struct Summary: Sendable, Equatable {
     public var outputTokens: Int?
     /// Days each source supplied the pick.
     public var tokenSources: [String: Int]
+    /// Merged PRs with an AI marker, out of merged PRs whose marker was recorded (docs/SPEC.md section 11.1).
+    public var assistedMerges: AssistedMerges? = nil
+    /// Accepted entries with origin agent.
+    public var agentEntries: Int? = nil
+    /// Median Claude Code session length; nil when no session has both a start and an end.
+    public var sessionLength: SessionLength? = nil
+    public var cacheReuse: CacheReuse? = nil
+    public var modelMix: ModelMix? = nil
 
     public var streak: Streak
+
+    /// "The sentence your review needs", written only from the figures above. Nil when none is known.
+    public var reviewSentence: String? {
+        ReviewSentence.make(
+            aiDays: aiDays.map { Share($0, of: aiCountedDays) }, assisted: assistedMerges, agentEntries: agentEntries)
+    }
 
     static let definitions: [String: String] = [
         "sealed_workdays": "Workdays wrapped up by 23:59 the next day, counted from the day the ledger began; leave and holidays excluded, days still inside that window not counted yet, and workdays before the ledger began reported as before_ledger",
@@ -111,6 +125,12 @@ public struct Summary: Sendable, Equatable {
         "reviews": "Review entries, one per PR per day",
         "ai_days": "Counted workdays with an AI coding session or usage record, from the first day any AI source recorded",
         "output_tokens": "Output tokens, one source per day by priority (endpoint, transcripts, import), never summed across sources",
+        "ai_assisted_merges": "Merged PRs whose body carried an AI marker when the GitHub collector read it, out of merged PRs with a recorded marker; PRs with no recorded marker are in neither number and are counted as unrecorded. A marker is text in the PR body, so it shows a claim, not proof of AI use",
+        "agent_entries": "Accepted entries with origin agent; proposed, dismissed and deleted ones are not counted",
+        "session_length": GenAIMetrics.sessionLengthDefinition,
+        "cache_reuse": GenAIMetrics.cacheReuseDefinition,
+        "model_mix": GenAIMetrics.modelMixDefinition,
+        "review_sentence": ReviewSentence.definition,
     ]
 
     private static func number(_ value: Int?) -> JSONValue { value.map { .int(Int64($0)) } ?? .null }
@@ -147,10 +167,36 @@ public struct Summary: Sendable, Equatable {
             "ai": [
                 "days": ["value": Self.number(aiDays), "of": .int(Int64(aiCountedDays)), "definition": .string(d["ai_days"] ?? "")],
                 "sessions": Self.number(aiSessions),
+                "session_length": [
+                    "median_seconds": Self.number(sessionLength?.medianSeconds),
+                    // Sessions are known but none has an end: a measured count of 0, not an unknown one.
+                    "measured": Self.number(aiSessions == nil ? nil : (sessionLength?.measured ?? 0)),
+                    "of": Self.number(aiSessions), "definition": .string(d["session_length"] ?? ""),
+                ],
+                "assisted_merges": GenAIMetrics.assistedJSON(assistedMerges, definition: d["ai_assisted_merges"] ?? ""),
+                "agent_entries": ["value": Self.number(agentEntries), "definition": .string(d["agent_entries"] ?? "")],
                 "output_tokens": [
                     "value": Self.number(outputTokens), "sources": Self.counts(tokenSources.isEmpty ? nil : tokenSources),
                     "definition": .string(d["output_tokens"] ?? ""),
                 ],
+                "cache_reuse": [
+                    "percent": Self.number(cacheReuse?.percent),
+                    "cache_read_tokens": cacheReuse.map { .int($0.cacheRead) } ?? .null,
+                    "input_tokens": cacheReuse.map { .int($0.input) } ?? .null,
+                    "sources": Self.counts(cacheReuse?.sources), "definition": .string(d["cache_reuse"] ?? ""),
+                ],
+                "model_mix": [
+                    "models": modelMix.map { mix in
+                        .array(mix.models.map { share in
+                            ["model": .string(share.model), "output_tokens": .int(share.outputTokens), "percent": Self.number(mix.percent(of: share))]
+                        })
+                    } ?? .null,
+                    "total_output_tokens": modelMix.map { .int($0.totalOutputTokens) } ?? .null,
+                    "sources": Self.counts(modelMix?.sources), "definition": .string(d["model_mix"] ?? ""),
+                ],
+            ],
+            "review_sentence": [
+                "text": reviewSentence.map { .string($0) } ?? .null, "definition": .string(d["review_sentence"] ?? ""),
             ],
             "streak": streak.json,
             // Findings come from the templates and thresholds of phase 4 (T4.x). Never invented here.
@@ -235,7 +281,7 @@ extension Journal {
 
         // Entries: every accepted entry in range.
         let entryRows = try rows(
-            "SELECT kind, family, origin, source, ticket_class FROM entries WHERE status = 'accepted' AND day >= ? AND day <= ?",
+            "SELECT kind, family, origin, source, ticket_class, attrs FROM entries WHERE status = 'accepted' AND day >= ? AND day <= ?",
             [low, high])
         // No entry in range means no record, which is not a count of zero.
         let entriesKnown = ledgerStart.map { to >= $0 } == true && !entryRows.isEmpty
@@ -275,12 +321,15 @@ extension Journal {
         let aiCountable = countable.filter { day in firstAIDay.map { day >= $0 } ?? false }
         let firstSessionDay = try rows("SELECT MIN(day) AS d FROM genai_sessions").first?.text("d")
         let sessionsKnown = firstSessionDay.map { $0 <= to.description } ?? false
-        let sessionCount =
-            try rows("SELECT COUNT(*) AS n FROM genai_sessions WHERE day >= ? AND day <= ?", [low, high]).first?.int("n").map(Int.init) ?? 0
+        let sessionRows = try rows("SELECT started_at, ended_at FROM genai_sessions WHERE day >= ? AND day <= ?", [low, high])
+        let sessionCount = sessionRows.count
+        let sessionLength = sessionsKnown
+            ? GenAIMetrics.sessionLength(sessionRows.map { (started: $0.text("started_at"), ended: $0.text("ended_at")) }) : nil
         // One source per day and tool (the daily pick), never summed across sources.
         var tokens: Int?
         var tokenDays: [String: Set<LocalDate>] = [:]
-        for pick in try genaiDays(from: from, to: to) {
+        let picks = try genaiDays(from: from, to: to)
+        for pick in picks {
             // Unknown is not zero: a pick whose output tokens are unknown adds nothing.
             guard let out = pick.tokens.output else { continue }
             tokens = (tokens ?? 0) + Int(out)
@@ -303,6 +352,9 @@ extension Journal {
             firstActivity: spread("first_activity"), lastActivity: spread("last_activity"),
             aiDays: aiCountable.isEmpty ? nil : aiCountable.filter(aiDays.contains).count, aiCountedDays: aiCountable.count,
             aiSessions: sessionsKnown ? sessionCount : nil, outputTokens: tokens, tokenSources: tokenSources,
+            assistedMerges: prsKnown ? GenAIMetrics.assistedMerges(merged.map { GenAIMetrics.marker(inAttrs: $0.text("attrs")) }) : nil,
+            agentEntries: entriesKnown ? entryRows.filter { $0.text("origin") == Origin.agent.rawValue }.count : nil,
+            sessionLength: sessionLength, cacheReuse: GenAIMetrics.cacheReuse(picks), modelMix: GenAIMetrics.modelMix(picks),
             streak: streak)
     }
 }

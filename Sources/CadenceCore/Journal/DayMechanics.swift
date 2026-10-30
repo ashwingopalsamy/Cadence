@@ -251,6 +251,7 @@ extension Journal {
         if merged > 0 { parts.append("PRs merged \(merged)") }
         if sessions > 0 { parts.append("Claude Code \(sessions) session\(sessions == 1 ? "" : "s")") }
         if !parts.isEmpty { lines.append(parts.joined(separator: " \u{00B7} ")) }
+        if config.genai.standupLine, let line = try aiStandupLine(day: key, sessions: Int(sessions)) { lines.append(line) }
 
         // The same day a seal carries open tasks to, so Next shows where they went.
         let next = try carryTarget(after: day, today: self.today(), rules: DayRules(config: config))
@@ -273,6 +274,25 @@ extension Journal {
         }
         lines.append("Blockers: none")
         return lines
+    }
+
+    /// The optional line of docs/SPEC.md section 11.2, "AI: 4 sessions · 2 of 3 merges AI-assisted". A part with no
+    /// record is left out, so the line is nil rather than "AI: 0 sessions". The merges are the same rows as the
+    /// counts line above; those with no recorded AI marker are left out of the "of".
+    private func aiStandupLine(day: SQLValue, sessions: Int) throws(CadenceError) -> String? {
+        var parts: [String] = []
+        if sessions > 0 { parts.append("\(sessions) session\(sessions == 1 ? "" : "s")") }
+        let markers = try rows(
+            """
+            SELECT attrs FROM entries
+            WHERE day = ? AND status = 'accepted' AND kind = 'pr.merged' AND origin = 'collected' AND source = 'github'
+            ORDER BY created_seq
+            """, [day]
+        ).map { GenAIMetrics.marker(inAttrs: $0.text("attrs")) }
+        if let assisted = GenAIMetrics.assistedMerges(markers), assisted.share.of > 0 {
+            parts.append("\(assisted.share.value) of \(assisted.share.of) merge\(assisted.share.of == 1 ? "" : "s") AI-assisted")
+        }
+        return parts.isEmpty ? nil : "AI: " + parts.joined(separator: " \u{00B7} ")
     }
 
     private static func ticketSuffix(_ ticket: Ticket?, in title: String) -> String {

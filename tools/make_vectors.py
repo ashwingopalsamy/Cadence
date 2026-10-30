@@ -48,10 +48,10 @@ def build_chain(drafts):
 
 
 def entry(eid, day, kind, family, title, occurred_at, origin, source=None, source_ref=None,
-          ticket=None, links=None, export="include"):
+          ticket=None, links=None, export="include", attrs=None):
     return {"id": eid, "day": day, "kind": kind, "family": family, "title": title,
             "occurred_at": occurred_at, "ticket": ticket, "links": links or [], "tags": [],
-            "attrs": {}, "origin": origin, "source": source, "source_ref": source_ref,
+            "attrs": attrs or {}, "origin": origin, "source": source, "source_ref": source_ref,
             "status": "accepted", "backfilled": False, "after_seal": False, "export": export}
 
 
@@ -67,7 +67,8 @@ def valid_proof():
         ("2026-10-01T09:42:40.000Z", "collector:github", "entry.created", "entry:01JB00000000000000000E0001",
          entry("01JB00000000000000000E0001", "2026-10-01", "pr.merged", "delivery", "ACME-482901 Batch settlement writes",
                "2026-10-01T15:12:40+05:30", "collected", "github", "github:PR_kwDOAcme405:merged",
-               {"key": "ACME-482901", "class": "assigned"}, [{"kind": "pr", "url": pr_link}])),
+               {"key": "ACME-482901", "class": "assigned"}, [{"kind": "pr", "url": pr_link}],
+               attrs={"ai_assisted": True})),
         ("2026-10-01T10:05:11.000Z", "mcp", "entry.created", "entry:01JB00000000000000000E0002",
          entry("01JB00000000000000000E0002", "2026-10-01", "work.done", "delivery", "Fixed flaky ledger test with deterministic clock",
                "2026-10-01T15:35:11+05:30", "agent")),
@@ -117,6 +118,12 @@ def valid_proof():
             "sealed_workdays": {"value": 1, "of": 1, "definition": "Workdays wrapped up by 23:59 the next day; leave and holidays excluded"},
             "plan_done": {"value": 1, "of": 1, "definition": "Planned tasks marked done on their day"},
             "merged_prs": {"value": 1, "assigned": 1, "self_initiated": 0, "definition": "Merged PRs authored, from the GitHub collector"},
+            # Computed by Cadence from the same items; the verifier recomputes only merged_prs and reviews.
+            "ai_assisted_merges": {"value": 1, "of": 1, "percent": 100, "unrecorded": 0,
+                                   "definition": "Merged PRs listed in days that recorded an AI marker, out of listed merged PRs with a recorded marker; computed by Cadence, not recomputed by the verifier"},
+            "agent_entries": {"value": 1, "definition": "Items listed in days with origin agent, which is self-reported; computed by Cadence, not recomputed by the verifier"},
+            "review_sentence": {"text": "100% of merged PRs were AI-assisted. Your agent logged 1 entry you accepted.",
+                                "definition": "Written from the figures beside it and computed by Cadence; the verifier recomputes only merged_prs and reviews"},
         },
         "days": [{
             "date": "2026-10-01", "kind": "workday", "first_activity": "09:42", "last_activity": "-",
@@ -177,6 +184,11 @@ def tampered_variants(valid):
         "ev": item0(t)["ev"], "last_ev": item0(t)["last_ev"], "kind": "pr.merged", "origin": "collected", "redacted": True}))
     variant("summary", lambda t: t["summary"]["merged_prs"].update(value=40))
     variant("summary-unknown", lambda t: t["summary"]["merged_prs"].update(value=None))
+    # The review sentence is computed by Cadence, so the verifier cannot recompute it; an edit with a stale
+    # export_digest is still an accident it catches.
+    t = copy.deepcopy(valid)
+    t["summary"]["review_sentence"]["text"] = "AI on 19 of 19 workdays. 100% of merged PRs were AI-assisted. Your agent logged 31 entries you accepted."
+    out["tampered-sentence.json"] = t
     variant("witness-empty", lambda t: t["witnesses"].append({"date": "2026-10-01", "code": "", "where": "x"}))
     variant("witness-short", lambda t: t["witnesses"].append({"date": "2026-10-01", "code": "a", "where": "x"}))
     variant("witness-not-checkpoint", lambda t: t["witnesses"].__setitem__(0, dict(t["witnesses"][0], code=t["chain"]["events"][3]["hash"][:16])))

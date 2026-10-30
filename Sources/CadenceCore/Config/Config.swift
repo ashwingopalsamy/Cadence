@@ -110,10 +110,14 @@ public struct Config: Sendable, Equatable {
     public struct GenAI: Sendable, Equatable {
         public var priority: [String]
         public var prices: [String: JSONValue]?
+        /// The optional stand-up line, "AI: 4 sessions · 2 of 3 merges AI-assisted" (docs/SPEC.md section 11.2).
+        /// Off by default.
+        public var standupLine: Bool
 
-        public init(priority: [String] = Config.defaultPriority, prices: [String: JSONValue]? = nil) {
+        public init(priority: [String] = Config.defaultPriority, prices: [String: JSONValue]? = nil, standupLine: Bool = false) {
             self.priority = priority
             self.prices = prices
+            self.standupLine = standupLine
         }
     }
 
