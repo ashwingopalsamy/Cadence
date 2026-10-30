@@ -21,7 +21,7 @@ else
 IS_MAC :=
 endif
 
-.PHONY: build test test-fast check vectors proof-vectors guard guard-all guard-test hooks lint snapshots-check \
+.PHONY: build test test-fast check vectors proof-vectors guard guard-all guard-test ledger-stress hooks lint snapshots-check \
         app install uninstall run demo snapshots spike sounds entitlements clean help
 
 help:
@@ -70,6 +70,10 @@ guard-all:
 hooks:
 	tools/guard.sh --install-hooks
 
+# T1.5: concurrent writers through the CLI binary keep one valid chain.
+ledger-stress: build
+	CADENCE_BIN="$$($(SWIFT) build -c $(CONFIG) --show-bin-path)/cadence" bash tools/tests/ledger_stress.sh
+
 # The guard's own fixture tests.
 guard-test:
 	bash tools/tests/guard_test.sh
@@ -79,7 +83,7 @@ lint:
 	@if [ -x tools/lint_copy.sh ]; then tools/lint_copy.sh; else echo "SKIP lint: tools/lint_copy.sh arrives with the String Catalog (T3.19)"; fi
 
 # The one gate before every push (docs/SPEC.md section 14.6).
-check: build test app proof-vectors guard-test guard-all lint entitlements snapshots-check
+check: build test ledger-stress app proof-vectors guard-test guard-all lint entitlements snapshots-check
 	@echo "make check: all gates passed on $(UNAME)"
 
 demo:

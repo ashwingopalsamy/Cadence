@@ -14,7 +14,8 @@ let core: [Target] = [
         dependencies: [
             .target(name: "CSQLite", condition: .when(platforms: [.linux])),
             .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux])),
-        ]
+        ],
+        exclude: ["Store/Schema.sql"]
     ),
     .target(name: "CadenceIngest", dependencies: ["CadenceCore"]),
     .target(name: "CadenceMCP", dependencies: ["CadenceCore", "CadenceIngest"]),

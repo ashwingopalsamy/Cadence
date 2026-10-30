@@ -77,12 +77,13 @@ public final class SQLiteDatabase {
     public let readOnly: Bool
     private var handle: OpaquePointer?
     private var transactionDepth = 0
+    private var outerKind: TransactionKind = .deferred
 
     /// Opens (and for read-write, creates) the database at `path`.
     public init(path: String, readOnly: Bool = false, busyTimeoutMilliseconds: Int32 = 3000) throws(SQLiteError) {
         self.path = path
         self.readOnly = readOnly
-        if !readOnly && path != ":memory:" { Self.createPrivateFile(path) }
+        if !readOnly && path != ":memory:" { Self.makePrivateFile(path) }
         let flags = readOnly
             ? SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
             : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
@@ -98,7 +99,7 @@ public final class SQLiteDatabase {
         sqlite3_busy_timeout(db, busyTimeoutMilliseconds)
         try execute("PRAGMA foreign_keys = ON")
         if !readOnly && path != ":memory:" {
-            try execute("PRAGMA journal_mode = WAL")
+            try enableWAL(timeoutMilliseconds: busyTimeoutMilliseconds)
         }
     }
 
@@ -106,11 +107,36 @@ public final class SQLiteDatabase {
         sqlite3_close_v2(handle)
     }
 
-    /// Creates an empty file with mode 0600 if none exists, so the store is private from the start.
-    /// SQLite gives the -wal and -shm files the same mode as the database file.
-    private static func createPrivateFile(_ path: String) {
-        let fd = open(path, O_RDWR | O_CREAT | O_EXCL, 0o600)
-        if fd >= 0 { close(fd) }
+    /// Switches to WAL. Changing the journal mode does not wait on the busy handler, so two processes
+    /// opening a fresh store at once would see SQLITE_BUSY; retry until the busy timeout instead.
+    private func enableWAL(timeoutMilliseconds: Int32) throws(SQLiteError) {
+        var waited: Int32 = 0
+        while true {
+            let mode: String?
+            do {
+                if try first("PRAGMA journal_mode")?.text("journal_mode") == "wal" { return }
+                mode = try first("PRAGMA journal_mode = WAL")?.text("journal_mode")
+            } catch {
+                guard error.isBusy && waited < timeoutMilliseconds else { throw error }
+                usleep(10_000)
+                waited += 10
+                continue
+            }
+            guard mode == "wal" else {
+                throw SQLiteError(code: SQLITE_ERROR, message: "could not switch to WAL (journal mode \(mode ?? "unknown"))")
+            }
+            return
+        }
+    }
+
+    /// Creates the file with mode 0600 if it does not exist and tightens an existing one, so the store
+    /// is private from the start. SQLite gives the -wal and -shm files the database file's mode.
+    static func makePrivateFile(_ path: String) {
+        let fd = open(path, O_RDWR | O_CREAT, 0o600)
+        if fd >= 0 {
+            fchmod(fd, 0o600)
+            close(fd)
+        }
     }
 
     private func error(_ rc: Int32) -> SQLiteError {
@@ -148,7 +174,7 @@ public final class SQLiteDatabase {
         defer { sqlite3_finalize(statement) }
         try bind(parameters, to: statement)
         let count = sqlite3_column_count(statement)
-        let columns = (0..<count).map { String(cString: sqlite3_column_name(statement, $0)) }
+        let columns = (0..<count).map { i in sqlite3_column_name(statement, i).map { String(cString: $0) } ?? "column\(i)" }
         var rows: [SQLRow] = []
         while true {
             let rc = sqlite3_step(statement)
@@ -192,9 +218,13 @@ public final class SQLiteDatabase {
     }
 
     /// Runs `body` inside a transaction, committing on success and rolling back on any error.
-    /// Nested calls join the outer transaction through a savepoint.
+    /// Nested calls join the outer transaction through a savepoint. An immediate transaction cannot
+    /// nest inside a deferred one: a deferred read upgrading to a write skips the busy wait.
     public func transaction<T>(_ kind: TransactionKind = .deferred, _ body: () throws -> T) throws -> T {
         if transactionDepth > 0 {
+            if kind == .immediate && outerKind == .deferred {
+                throw SQLiteError(code: SQLITE_MISUSE, message: "an immediate transaction cannot nest inside a deferred one")
+            }
             let name = "sp\(transactionDepth)"
             try execute("SAVEPOINT \(name)")
             transactionDepth += 1
@@ -211,9 +241,14 @@ public final class SQLiteDatabase {
         }
         try execute("BEGIN \(kind.rawValue)")
         transactionDepth = 1
+        outerKind = kind
         defer { transactionDepth = 0 }
         do {
             let result = try body()
+            // SQLite can roll a transaction back on its own (disk full, interrupt); never pretend to commit.
+            guard sqlite3_get_autocommit(handle) == 0 else {
+                throw SQLiteError(code: SQLITE_ABORT, message: "the transaction was rolled back by SQLite")
+            }
             try execute("COMMIT")
             return result
         } catch {
@@ -241,16 +276,39 @@ public final class SQLiteDatabase {
     public var lastInsertRowID: Int64 { sqlite3_last_insert_rowid(handle) }
 
     /// Copies the database into a new file (`VACUUM INTO`), used for backups.
+    /// The copy is created empty with mode 0600 first, so backups are as private as the store.
     public func vacuum(into destination: String) throws(SQLiteError) {
-        try run("VACUUM INTO ?", [.text(destination)])
+        let fd = open(destination, O_RDWR | O_CREAT | O_EXCL, 0o600)
+        guard fd >= 0 else { throw SQLiteError(code: SQLITE_CANTOPEN, message: "cannot create \(destination)") }
+        close(fd)
+        do {
+            try run("VACUUM INTO ?", [.text(destination)])
+        } catch {
+            unlink(destination)
+            throw error
+        }
     }
 
     // MARK: - Statements
 
+    /// Prepares exactly one statement; trailing SQL is an error rather than silently ignored.
     private func prepare(_ sql: String) throws(SQLiteError) -> OpaquePointer? {
         var statement: OpaquePointer?
-        let rc = sqlite3_prepare_v2(handle, sql, -1, &statement, nil)
+        let utf8 = Array(sql.utf8CString)
+        var tailOffset = 0
+        let rc = utf8.withUnsafeBufferPointer { buffer -> Int32 in
+            guard let base = buffer.baseAddress else { return SQLITE_MISUSE }
+            var tail: UnsafePointer<CChar>?
+            let rc = sqlite3_prepare_v2(handle, base, Int32(buffer.count - 1), &statement, &tail)
+            if let tail { tailOffset = base.distance(to: tail) }
+            return rc
+        }
         guard rc == SQLITE_OK else { throw error(rc) }
+        let rest = utf8[tailOffset..<(utf8.count - 1)]
+        if rest.contains(where: { !($0 == 0x20 || $0 == 0x09 || $0 == 0x0A || $0 == 0x0D || $0 == 0x3B) }) {
+            sqlite3_finalize(statement)
+            throw SQLiteError(code: SQLITE_MISUSE, message: "only one statement may be prepared at a time")
+        }
         return statement
     }
 
@@ -270,8 +328,19 @@ public final class SQLiteDatabase {
             case .int(let i):
                 rc = sqlite3_bind_int64(statement, index, i)
             case .text(let s):
-                rc = sqlite3_bind_text(statement, index, s, -1, Self.transient)
+                // Bind by byte count, never as a NUL-terminated C string, so an embedded NUL is stored
+                // whole instead of silently truncating what was hashed.
+                let bytes = Array(s.utf8)
+                guard bytes.count <= Int32.max else { throw SQLiteError(code: SQLITE_TOOBIG, message: "text too large") }
+                rc = bytes.withUnsafeBufferPointer { buffer in
+                    buffer.baseAddress.map { base in
+                        base.withMemoryRebound(to: CChar.self, capacity: buffer.count) {
+                            sqlite3_bind_text(statement, index, $0, Int32(buffer.count), Self.transient)
+                        }
+                    } ?? sqlite3_bind_text(statement, index, "", 0, Self.transient)
+                }
             case .blob(let bytes):
+                guard bytes.count <= Int32.max else { throw SQLiteError(code: SQLITE_TOOBIG, message: "blob too large") }
                 rc = bytes.withUnsafeBytes { buffer in
                     sqlite3_bind_blob(statement, index, buffer.baseAddress, Int32(buffer.count), Self.transient)
                 }
