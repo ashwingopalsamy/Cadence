@@ -231,7 +231,8 @@ public struct LedgerProjector: Projector {
             }
             try ensureDay(sealed.day, tz: sealed.tz, seq: event.seq, db: db)
             try db.run(
-                "UPDATE days SET sealed_at = ?, seal_event = ? WHERE date = ?",
+                // The first seal stands: sealing again later must not undo a seal that counted.
+                "UPDATE days SET sealed_at = ?, seal_event = ? WHERE date = ? AND sealed_at IS NULL",
                 [.text(event.at), .text(event.hash), .text(sealed.day)])
             try touchDay(sealed.day, seq: seq, db: db)
 

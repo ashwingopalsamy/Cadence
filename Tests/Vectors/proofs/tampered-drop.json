@@ -79,9 +79,15 @@
         },
         {
           "ev": "db9f5c7587923a359c89c2e3067af9f967c8bcea57831c27a7dfc8efe3db8124",
+          "last_ev": "db9f5c7587923a359c89c2e3067af9f967c8bcea57831c27a7dfc8efe3db8124",
           "kind": "note",
           "origin": "self",
-          "redacted": true
+          "redacted": true,
+          "flags": {
+            "edited": false,
+            "after_seal": false,
+            "backfilled": false
+          }
         },
         {
           "ev": "64904ab16ef2fcac75192540dd41302a8aa5011443231b8d5ea7c995dccd3937",
@@ -321,5 +327,5 @@
     "references",
     "witnesses"
   ],
-  "export_digest": "44962bb3b571fb13e2892dd33c8b8f17d2631c2dba229ea8c986b12840098215"
+  "export_digest": "acb830784e227e5fd4874961e781045950d3c58d44535c3e4420b88e26f1ec8c"
 }

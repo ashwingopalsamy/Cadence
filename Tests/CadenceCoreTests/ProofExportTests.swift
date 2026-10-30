@@ -22,7 +22,7 @@ import Testing
         let head = try #require(try store.head()).hash
         try store.append([
             EventPayload.daySealed(DaySealed(
-                day: day, tz: zone, counts: [:], plan: PlanCounts(done: 0, slipped: 0, dropped: 0, moved: 0, open: 0),
+                day: day, tz: Self.zone, counts: [:], plan: PlanCounts(done: 0, slipped: 0, dropped: 0, moved: 0, open: 0),
                 head: head)).draft(actor: .app)
         ])
     }
@@ -39,7 +39,7 @@ import Testing
         ])
         clock.set(Timestamp.parse("2026-10-28T10:00:00Z")!)
         try store.append([
-            EventPayload.dayStarted(DayMark(day: "2026-10-28", tz: zone, at: "2026-10-28T09:41:00+05:30", source: .input)).draft(actor: .app),
+            EventPayload.dayStarted(DayMark(day: "2026-10-28", tz: Self.zone, at: "2026-10-28T09:41:00+05:30", source: .input)).draft(actor: .app),
             EventPayload.planAdded(PlanTask(
                 id: "T1", day: "2026-10-28", position: 1, title: "Batch settlement writes", ticket: nil, estimateMin: nil,
                 origin: .selfReported, carriedFrom: nil, status: .open, reason: nil, reasonNote: nil, linkedEntries: [],
@@ -80,7 +80,7 @@ import Testing
     static func request(_ clock: ManualClock) -> ProofRequest {
         ProofRequest(
             from: LocalDate("2026-10-27")!, to: LocalDate("2026-10-30")!, zone: zone, name: "Sample Person",
-            role: "Software Engineer", generatedAt: clock.now())
+            role: "Software Engineer", rules: DayRules(), generatedAt: clock.now())
     }
 
     static func python(_ file: URL) throws -> (status: Int32, output: String) {
@@ -113,7 +113,7 @@ import Testing
         let url = try Self.write(proof.bytes)
         let pass = try Self.python(url)
         #expect(pass.status == 0, "\(pass.output)")
-        #expect(pass.output.contains("RESULT  PASS"))
+        #expect(pass.output.contains("RESULT  PASS: the chain is complete"))
         #expect(pass.output.contains("witness 1 codes, all found in chain"))
 
         // Edit one byte of a title: the verifier must fail.
@@ -191,9 +191,13 @@ import Testing
         #expect(items[0]["ticket"] == ["key": "ACME-482901", "class": "assigned"])
         #expect(items[0]["links"] == ["https://git.example.com/acme/ledger-core/pull/405"])
         #expect(items[0]["occurred_at"] == "2026-10-28T15:12:40+05:30")
-        #expect(items[1] == ["ev": items[1]["ev"]!, "last_ev": items[1]["last_ev"]!, "kind": "note", "origin": "self", "redacted": true])
+        #expect(items[1] == [
+            "ev": items[1]["ev"]!, "last_ev": items[1]["last_ev"]!, "kind": "note", "origin": "self", "redacted": true,
+            "flags": ["edited": false, "after_seal": false, "backfilled": false],
+        ])
+        // Thu 29 was edited before its wrap-up, so it is not flagged; last_ev still points at the edit.
         let thu = days[2]["items"]!.arrayValue![0].objectValue!
-        #expect(thu["flags"]?.objectValue?["edited"] == true)
+        #expect(thu["flags"]?.objectValue?["edited"] == false)
         #expect(thu["ev"] != thu["last_ev"])
 
         let summary = root["summary"]!.objectValue!
@@ -243,5 +247,99 @@ import Testing
         request = Self.request(clock)
         request.zone = "Mars/Olympus"
         #expect(throws: CadenceError.self) { try ProofExporter.export(store, request) }
+    }
+}
+
+@Suite struct ProofAuditTests {
+    typealias T = ProofExportTests
+    static let zone = T.zone
+
+    @Test func privateTextNeverReachesTheFile() throws {
+        let (store, clock) = try T.october()
+        try store.append([
+            EventPayload.dayNoted(DayNoted(day: "2026-10-29", tz: Self.zone, focus: "SECRET-FOCUS", note: "SECRET-NOTE")).draft(actor: .cli),
+            EventPayload.planAdded(PlanTask(
+                id: "T9", day: "2026-10-29", position: 1, title: "Ship it", ticket: nil, estimateMin: nil, origin: .selfReported,
+                carriedFrom: nil, status: .open, reason: nil, reasonNote: nil, linkedEntries: [], plannedAt: "2026-10-29T10:00:00+05:30",
+                resolvedAt: nil)).draft(actor: .cli),
+            EventPayload.planCommitted(PlanCommitted(day: "2026-10-29", tz: Self.zone, focus: "SECRET-COMMIT", tasks: ["T9"])).draft(actor: .app),
+            EventPayload.planResolved(PlanResolved(status: .slipped, reason: "blocked", reasonNote: "SECRET-REASON")).draft(actor: .cli, id: "T9"),
+            EventPayload.dayDeclared(DayDeclared(day: "2026-10-30", tz: Self.zone, kind: .leavePlanned, label: "SECRET-LABEL")).draft(actor: .cli),
+            EventPayload.entryStatus(EntryStatusChange(from: .accepted, to: .dismissed, note: "SECRET-STATUS")).draft(actor: .cli, id: "E4"),
+            EventDraft(type: "future.thing", subject: "day:2026-10-29", data: ["text": "SECRET-FUTURE"], actor: .app),
+        ])
+        let proof = try ProofExporter.export(store, T.request(clock))
+        let text = String(decoding: proof.bytes, as: UTF8.self)
+        for secret in ["SECRET-FOCUS", "SECRET-NOTE", "SECRET-COMMIT", "SECRET-REASON", "SECRET-LABEL", "SECRET-STATUS", "SECRET-FUTURE", "Reviewed refunds PR"] {
+            #expect(!text.contains(secret), "\(secret)")
+        }
+        #expect(text.contains("Ship it"))  // task titles are work facts
+        #expect(try T.python(try T.write(proof.bytes)).status == 0)
+    }
+
+    @Test func aLaterSecondSealDoesNotUndoOneThatCounted() throws {
+        let (store, clock) = try T.october()
+        let before = try ProofExporter.export(store, T.request(clock))
+        clock.set(Timestamp.parse("2026-11-05T05:00:00Z")!)
+        try T.seal(store, "2026-10-28")
+        var request = T.request(clock)
+        request.generatedAt = Timestamp.parse("2026-10-30T03:00:00Z")!
+        let after = try ProofExporter.export(store, request)
+        func sealed(_ p: ProofFile) -> JSONValue? { p.json.objectValue?["summary"]?.objectValue?["sealed_workdays"]?.objectValue?["value"] }
+        #expect(sealed(after) == sealed(before))
+        let wed = after.json.objectValue!["days"]!.arrayValue![1].objectValue!
+        #expect(wed["seal_ev"] == before.json.objectValue!["days"]!.arrayValue![1].objectValue!["seal_ev"])
+        #expect(try T.python(try T.write(after.bytes)).status == 0)
+        let live = try store.projectionDump()
+        try store.rebuild()
+        #expect(try store.projectionDump() == live)
+    }
+
+    @Test func editedMeansChangedAfterTheSealNotAStatusChange() throws {
+        let (store, clock) = try T.october()
+        // E4 is on the sealed 28th: accepting a dismissed entry back is a status change, not an edit.
+        try store.append([
+            EventPayload.entryStatus(EntryStatusChange(from: .accepted, to: .dismissed)).draft(actor: .cli, id: "E4"),
+            EventPayload.entryStatus(EntryStatusChange(from: .dismissed, to: .accepted)).draft(actor: .cli, id: "E4"),
+            EventPayload.entryUpdated(Changes(fields: ["title": Change(old: "x", new: "ACME-482901 Batch settlement writes v2")])).draft(actor: .cli, id: "E1"),
+        ])
+        let proof = try ProofExporter.export(store, T.request(clock))
+        let items = proof.json.objectValue!["days"]!.arrayValue![1].objectValue!["items"]!.arrayValue!.map { $0.objectValue! }
+        let e1 = items.first { $0["kind"] == "pr.merged" }!
+        let e4 = items.first { $0["kind"] == "review.given" }!
+        #expect(e1["flags"]?.objectValue?["edited"] == true)
+        #expect(e4["flags"]?.objectValue?["edited"] == false)
+        // The 29th's edit happened before its seal.
+        let thu = proof.json.objectValue!["days"]!.arrayValue![2].objectValue!["items"]!.arrayValue![0].objectValue!
+        #expect(thu["flags"]?.objectValue?["edited"] == false)
+        #expect(try T.python(try T.write(proof.bytes)).status == 0)
+    }
+
+    @Test func workdaysBeforeTheLedgerBeganAreNotCountedAsUnsealed() throws {
+        let (store, clock) = try T.october()
+        var request = T.request(clock)
+        request.from = LocalDate("2026-10-19")!
+        let proof = try ProofExporter.export(store, request)
+        let sealed = proof.json.objectValue!["summary"]!.objectValue!["sealed_workdays"]!.objectValue!
+        // The ledger began Mon 26 Oct: 19 to 23 Oct are before it. 26 and 27 are unsealed past grace.
+        #expect(sealed["before_ledger"] == 5)
+        #expect(sealed["of"] == 4)
+        #expect(sealed["value"] == 2)
+    }
+
+    @Test func rangesAreBounded() throws {
+        let (store, clock) = try T.october()
+        var request = T.request(clock)
+        request.from = LocalDate("1990-01-01")!
+        #expect(throws: CadenceError.self) { try ProofExporter.export(store, request) }
+    }
+
+    @Test func exportWorksOnAReadOnlyStore() throws {
+        let (store, clock) = try T.october()
+        let path = try #require(try store.db.first("PRAGMA database_list")?.text("file"))
+        let reader = try SQLiteStore(path: path, clock: clock, ids: CountingIDs(), readOnly: true)
+        let a = try ProofExporter.export(reader, T.request(clock))
+        let b = try ProofExporter.export(store, T.request(clock))
+        #expect(a.bytes == b.bytes)
     }
 }

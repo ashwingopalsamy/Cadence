@@ -12,8 +12,8 @@ public struct ProofRequest: Sendable {
     public var generatedAt: Date
 
     public init(
-        from: LocalDate, to: LocalDate, zone: String, name: String? = nil, role: String? = nil,
-        rules: DayRules = DayRules(), generatedAt: Date
+        from: LocalDate, to: LocalDate, zone: String, name: String? = nil, role: String? = nil, rules: DayRules,
+        generatedAt: Date
     ) {
         self.from = from
         self.to = to
@@ -45,38 +45,33 @@ public struct ProofFile: Sendable, Equatable {
 /// - An event belongs to the day its subject names (`day:`, `usage:`), or to the current day of the
 ///   entry, task or session it is about. Events about the ledger itself belong to the local date
 ///   they were recorded on.
-/// - Private means: an entry whose export policy is `digest` or `exclude`, or whose status is not
-///   `accepted` (proposed, dismissed and deleted entries never leave the Mac with their text).
-///   `digest` items appear in `days` as redacted stubs; `exclude` items do not appear at all. Both
-///   are counted in `summary.private_events`, so redaction is visible.
-/// - Summary numbers count only items present in `days`, and each one carries its definition.
+/// - Payloads are allow-listed (`exportablePayload`): only event types whose fields are work facts
+///   carry data. Free text that is the owner's own (day notes, focus lines, reason notes, status
+///   notes, collector errors, day labels) and every event type this binary does not know stay
+///   hash-only. Entries carry data only when accepted with policy `include`; proposed, dismissed and
+///   deleted entries never leave the Mac with their text. `digest` items appear in `days` as
+///   redacted stubs; `exclude` items do not appear at all. Every hash-only event in range is counted
+///   in `summary.private_events`, so redaction is visible.
+/// - A day's seal is its first seal: sealing again later never undoes one that counted.
+/// - Summary numbers count only items present in `days`, and each one carries its definition. Days
+///   before the ledger began are not counted as unsealed: they are reported as `before_ledger`.
 ///
 /// Read-only: an export never appends to the ledger.
 public enum ProofExporter {
     public static let format = "cadence.proof/1"
     public static let checks = ["export_digest", "sequence", "links", "payload_digests", "event_hashes", "references", "witnesses"]
 
+    /// A proof covers at most this many days (about three years).
+    public static let maxDays = 1100
+
     public static func export(_ store: SQLiteStore, _ request: ProofRequest) throws(CadenceError) -> ProofFile {
         guard request.from <= request.to else { throw .usage("the range starts after it ends") }
+        guard request.from.days(until: request.to) < maxDays else {
+            throw .usage("a proof covers at most \(maxDays) days; export a shorter range")
+        }
         guard let zone = TimeZone(identifier: request.zone) else { throw .validation("unknown time zone \(request.zone)") }
         return try store.transactRead { () throws(CadenceError) -> ProofFile in
             try Builder(store: store, request: request, zone: zone).build()
-        }
-    }
-}
-
-extension SQLiteStore {
-    /// Runs `body` in one read transaction, so a multi-query read sees a single snapshot even while
-    /// other processes append.
-    func transactRead<T>(_ body: () throws(CadenceError) -> T) throws(CadenceError) -> T {
-        do {
-            return try db.transaction(.deferred) { () throws -> T in try body() }
-        } catch let error as CadenceError {
-            throw error
-        } catch let error as SQLiteError {
-            throw error.cadenceError
-        } catch {
-            throw .io(String(describing: error))
         }
     }
 }
@@ -98,15 +93,33 @@ private struct Builder {
         let ticketKey: String?
         let ticketClass: String?
         let links: JSONValue
-        let status: String
-        let export: String
+        let status: EntryStatus?
+        let export: ExportPolicy?
         let backfilled: Bool
         let afterSeal: Bool
         let createdSeq: Int64
         let updatedSeq: Int64
 
-        var isPublic: Bool { status == "accepted" && export == "include" }
-        var isListed: Bool { status == "accepted" && export != "exclude" }
+        var isPublic: Bool { status == .accepted && export == .include }
+        var isListed: Bool { status == .accepted && (export == .include || export == .digest) }
+    }
+
+    /// Whether an in-range event of a known type may carry its payload. Everything not named here,
+    /// including types a newer binary adds, is hash-only.
+    static func exportablePayload(_ event: Event, entry: EntryRow?) -> Bool {
+        let data = event.data.objectValue ?? [:]
+        func isNull(_ key: String) -> Bool { data[key] == nil || data[key] == .null }
+        switch event.type {
+        case "ledger.genesis", "day.started", "day.ended", "presence.span", "plan.added", "plan.updated",
+            "day.sealed", "witness.checkpoint", "genai.session", "genai.usage":
+            return true
+        case "day.declared": return isNull("label")
+        case "plan.resolved": return isNull("reason_note")
+        case "plan.committed": return isNull("focus")
+        case "entry.created", "entry.updated": return entry?.isPublic ?? false
+        case "entry.status": return (entry?.isPublic ?? false) && isNull("note")
+        default: return false  // day.noted, ingest.run, config.classifier, unknown types
+        }
     }
 
     func build() throws(CadenceError) -> ProofFile {
@@ -121,9 +134,11 @@ private struct Builder {
                 id: r.text("id") ?? "", day: r.text("day") ?? "", kind: r.text("kind") ?? "", family: r.text("family") ?? "",
                 title: r.text("title") ?? "", occurredAt: r.text("occurred_at"), origin: r.text("origin") ?? "",
                 source: r.text("source"), ticketKey: r.text("ticket_key"), ticketClass: r.text("ticket_class"),
-                links: (try? JSONParser.parse(r.text("links") ?? "[]")) ?? [], status: r.text("status") ?? "",
-                export: r.text("export") ?? "", backfilled: r.int("backfilled") == 1, afterSeal: r.int("after_seal") == 1,
-                createdSeq: r.int("created_seq") ?? 0, updatedSeq: r.int("updated_seq") ?? 0)
+                links: (try? JSONParser.parse(r.text("links") ?? "[]")) ?? [],
+                status: r.text("status").flatMap(EntryStatus.init(rawValue:)),
+                export: r.text("export").flatMap(ExportPolicy.init(rawValue:)), backfilled: r.int("backfilled") == 1,
+                afterSeal: r.int("after_seal") == 1, createdSeq: r.int("created_seq") ?? 0,
+                updatedSeq: r.int("updated_seq") ?? 0)
         }
         var entryByID: [String: EntryRow] = [:]
         for e in entries { entryByID[e.id] = e }
@@ -132,11 +147,14 @@ private struct Builder {
         var sessionDay: [String: String] = [:]
         for r in try query("SELECT session_id, day FROM genai_sessions") { sessionDay[r.text("session_id") ?? ""] = r.text("day") }
 
-        // The chain, genesis to head.
+        // The chain, genesis to head, collecting what the days need on the way.
         var chain: [JSONValue] = []
         var hashBySeq: [Int64: String] = [:]
         var privateEvents = 0
         var declared: [String: DayKind] = [:]
+        var firstSeal: [String: Int64] = [:]  // day -> seq of its first day.sealed
+        var updateSeqs: [String: [Int64]] = [:]  // entry id -> seqs of its entry.updated events
+        var ledgerStart: LocalDate? = nil
         var after: Int64 = 0
         while true {
             let page: [Event]
@@ -145,36 +163,44 @@ private struct Builder {
             for event in page {
                 hashBySeq[event.seq] = event.hash
                 var day: String? = nil
-                var isPrivate = false
+                var entry: EntryRow? = nil
                 let subject = event.subject ?? ""
                 if subject.hasPrefix("day:") {
                     day = String(subject.dropFirst(4))
                 } else if subject.hasPrefix("usage:") {
                     day = subject.split(separator: ":").dropFirst().first.map(String.init)
                 } else if subject.hasPrefix("entry:") {
-                    let entry = entryByID[String(subject.dropFirst(6))]
+                    let id = String(subject.dropFirst(6))
+                    entry = entryByID[id]
                     day = entry?.day
-                    isPrivate = !(entry?.isPublic ?? false)
+                    if event.type == "entry.updated" { updateSeqs[id, default: []].append(event.seq) }
                 } else if subject.hasPrefix("task:") {
                     day = taskDay[String(subject.dropFirst(5))]
                 } else if subject.hasPrefix("session:") {
                     day = sessionDay[String(subject.dropFirst(8))]
                 }
-                if day == nil, let at = Timestamp.parse(event.at) {
-                    day = LocalDate.fromEpochDays(LocalDate.floorDiv(Timestamp.localSeconds(at, in: zone), 86_400)).description
-                }
-                if event.type == "day.declared", let d = day, case .dayDeclared(let p)? = try? EventPayload(type: event.type, data: event.data) {
+                let recorded = Timestamp.parse(event.at).map { request.rules.boundary.day(of: $0, in: zone) }
+                if day == nil { day = recorded?.description }
+                if event.type == "ledger.genesis" { ledgerStart = recorded }
+                if event.type == "day.declared", let d = day,
+                    case .dayDeclared(let p)? = try? EventPayload(type: event.type, data: event.data)
+                {
                     declared[d] = p.kind
                 }
+                if event.type == "day.sealed", let d = day, firstSeal[d] == nil { firstSeal[d] = event.seq }
                 var e: [String: JSONValue] = [
                     "v": .int(event.v), "seq": .int(event.seq), "id": .string(event.id), "at": .string(event.at),
                     "actor": .string(event.actor.rawValue), "type": .string(event.type),
                     "subject": event.subject.map(JSONValue.string) ?? .null, "data_digest": .string(event.dataDigest),
                     "prev": .string(event.prev), "hash": .string(event.hash),
                 ]
-                let dayInRange = day.map(inRange) ?? false
-                if dayInRange && isPrivate { privateEvents += 1 }
-                if dayInRange && !isPrivate { e["data"] = event.data }
+                if day.map(inRange) ?? false {
+                    if Self.exportablePayload(event, entry: entry) {
+                        e["data"] = event.data
+                    } else {
+                        privateEvents += 1
+                    }
+                }
                 chain.append(.object(e))
             }
             after = page.last!.seq
@@ -186,13 +212,15 @@ private struct Builder {
             dayRows[r.text("date") ?? ""] = r
         }
         var aiDays = Set<String>()
-        for r in try query("SELECT DISTINCT day FROM genai_sessions UNION SELECT DISTINCT day FROM genai_usage") {
+        for r in try query("SELECT DISTINCT day FROM genai_sessions UNION SELECT DISTINCT day FROM genai_usage WHERE sessions > 0") {
             if let d = r.text("day") { aiDays.insert(d) }
         }
+        let firstAIDay = aiDays.min()
         let entriesByDay = Dictionary(grouping: entries.filter { $0.isListed && inRange($0.day) }, by: \.day)
 
         var days: [JSONValue] = []
-        var countable: [String] = []  // workdays whose outcome is final, for sealed and AI counts
+        var countable: [String] = []  // workdays since the ledger began whose outcome is final
+        var beforeLedger = 0
         var sealedInGrace = 0
         for date in LocalDate.range(request.from, through: request.to) {
             let key = date.description
@@ -201,32 +229,44 @@ private struct Builder {
             let items = entriesByDay[key] ?? []
             if row == nil && kind != .workday && items.isEmpty { continue }
             let dayZone = row?.text("tz").flatMap(TimeZone.init(identifier:)) ?? zone
+            let sealSeq = firstSeal[key]
+            let sealHash = sealSeq.flatMap { hashBySeq[$0] }
+            let sealedAt = row?.text("sealed_at").flatMap(Timestamp.parse)
             var d: [String: JSONValue] = ["date": .string(key), "kind": .string(kind.rawValue)]
-            if let label = row?.text("label") { d["label"] = .string(label) }
             d["first_activity"] = clock(row?.text("first_activity"), dayZone)
             d["last_activity"] = clock(row?.text("last_activity"), dayZone)
-            let sealedAt = row?.text("sealed_at").flatMap(Timestamp.parse)
             d["sealed_at"] = sealedAt.map { .string(Timestamp.local($0, in: dayZone)) } ?? .null
-            d["seal_ev"] = row?.text("seal_event").map(JSONValue.string) ?? .null
-            d["items"] = .array(items.map { item($0, hashBySeq: hashBySeq, zone: dayZone) })
+            d["seal_ev"] = sealHash.map(JSONValue.string) ?? .null
+            d["items"] = .array(items.map { entry in
+                // Edited means changed after the day's wrap-up: an entry.updated after the first seal.
+                let edited = sealSeq.map { seal in (updateSeqs[entry.id] ?? []).contains { $0 > seal } } ?? false
+                return item(entry, edited: edited, hashBySeq: hashBySeq, zone: dayZone)
+            })
             days.append(.object(d))
 
-            if kind == .workday {
-                let counts = sealedAt.map { request.rules.sealCounts($0, for: date, in: dayZone) } ?? false
-                if counts || request.rules.graceClosed(for: date, at: request.generatedAt, in: dayZone) {
-                    countable.append(key)
-                    if counts { sealedInGrace += 1 }
-                }
+            guard kind == .workday else { continue }
+            if let start = ledgerStart, date < start {
+                beforeLedger += 1
+                continue
+            }
+            let counts = sealedAt.map { request.rules.sealCounts($0, for: date, in: dayZone) } ?? false
+            if counts || request.rules.graceClosed(for: date, at: request.generatedAt, in: dayZone) {
+                countable.append(key)
+                if counts { sealedInGrace += 1 }
             }
         }
 
         // Summary.
+        let countableSet = Set(countable)
         let listed = entries.filter { $0.isListed && inRange($0.day) }
-        let merged = listed.filter { $0.kind == EntryKind.prMerged.rawValue && $0.origin == Origin.collected.rawValue }
+        let merged = listed.filter {
+            $0.kind == EntryKind.prMerged.rawValue && $0.origin == Origin.collected.rawValue && $0.source == "github"
+        }
         let reviews = listed.filter { $0.kind == EntryKind.reviewGiven.rawValue }
         let tasks = try query(
             "SELECT day, status, resolved_at FROM plan_tasks WHERE day >= ? AND day <= ? AND status != 'moved'",
-            [.text(request.from.description), .text(request.to.description)])
+            [.text(request.from.description), .text(request.to.description)]
+        ).filter { countableSet.contains($0.text("day") ?? "") }
         let doneOnDay = tasks.filter { r in
             guard r.text("status") == "done", let day = r.text("day").flatMap(LocalDate.init),
                 let at = r.text("resolved_at").flatMap(Timestamp.parse)
@@ -234,14 +274,16 @@ private struct Builder {
             let tz = dayRows[day.description]?.text("tz").flatMap(TimeZone.init(identifier:)) ?? zone
             return request.rules.boundary.day(of: at, in: tz) <= day
         }
+        let aiCountable = countable.filter { day in firstAIDay.map { day >= $0 } ?? false }
         let summary: JSONValue = [
             "sealed_workdays": [
                 "value": .int(Int64(sealedInGrace)), "of": .int(Int64(countable.count)),
-                "definition": "Workdays wrapped up by 23:59 the next day; leave and holidays excluded, and days still inside that window are not counted yet",
+                "before_ledger": .int(Int64(beforeLedger)),
+                "definition": "Workdays wrapped up by 23:59 the next day, counted from the day the ledger began; leave and holidays excluded, days still inside that window not counted yet, and workdays before the ledger began reported as before_ledger",
             ],
             "plan_done": [
                 "value": .int(Int64(doneOnDay.count)), "of": .int(Int64(tasks.count)),
-                "definition": "Planned tasks marked done by the end of their day; tasks moved to another day count on that day",
+                "definition": "Planned tasks on counted workdays marked done by the end of their day; tasks moved to another day count on that day",
             ],
             "merged_prs": [
                 "value": .int(Int64(merged.count)),
@@ -254,12 +296,12 @@ private struct Builder {
                 "definition": "Review entries, one per PR per day",
             ],
             "ai_days": [
-                "value": .int(Int64(countable.filter(aiDays.contains).count)), "of": .int(Int64(countable.count)),
-                "definition": "Counted workdays with a Claude Code session or usage record",
+                "value": .int(Int64(aiCountable.filter(aiDays.contains).count)), "of": .int(Int64(aiCountable.count)),
+                "definition": "Counted workdays with an AI coding session or usage record, from the first day any AI source recorded",
             ],
             "private_events": [
                 "value": .int(Int64(privateEvents)),
-                "definition": "Events in range exported as hashes only: entries marked digest or exclude, and entries not accepted",
+                "definition": "Events in range exported as hashes only: private notes and reasons, entries marked digest or exclude, and entries not accepted",
             ],
         ]
 
@@ -299,11 +341,12 @@ private struct Builder {
             witnesses: witnesses.count, exportDigest: digest)
     }
 
-    private func item(_ e: EntryRow, hashBySeq: [Int64: String], zone: TimeZone) -> JSONValue {
+    private func item(_ e: EntryRow, edited: Bool, hashBySeq: [Int64: String], zone: TimeZone) -> JSONValue {
         let ev = JSONValue.string(hashBySeq[e.createdSeq] ?? "")
         let last = JSONValue.string(hashBySeq[e.updatedSeq] ?? "")
-        if e.export == "digest" {
-            return ["ev": ev, "last_ev": last, "kind": .string(e.kind), "origin": .string(e.origin), "redacted": true]
+        let flags: JSONValue = ["edited": .bool(edited), "after_seal": .bool(e.afterSeal), "backfilled": .bool(e.backfilled)]
+        if e.export == .digest {
+            return ["ev": ev, "last_ev": last, "kind": .string(e.kind), "origin": .string(e.origin), "redacted": true, "flags": flags]
         }
         let urls = (e.links.arrayValue ?? []).compactMap { $0.objectValue?["url"] }
         return [
@@ -311,8 +354,7 @@ private struct Builder {
             "occurred_at": e.occurredAt.flatMap(Timestamp.parse).map { .string(Timestamp.local($0, in: zone)) } ?? .null,
             "origin": .string(e.origin), "source": e.source.map(JSONValue.string) ?? .null,
             "ticket": e.ticketKey.map { ["key": .string($0), "class": e.ticketClass.map(JSONValue.string) ?? .null] } ?? .null,
-            "links": .array(urls),
-            "flags": ["edited": .bool(e.updatedSeq != e.createdSeq), "after_seal": .bool(e.afterSeal), "backfilled": .bool(e.backfilled)],
+            "links": .array(urls), "flags": flags,
         ]
     }
 

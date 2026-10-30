@@ -74,6 +74,8 @@ import Testing
         #expect(try store.find(witnessCode: witness.code.uppercased())?.hash == witness.eventHash)
         #expect(try store.find(witnessCode: "cadence \(witness.code)")?.hash == witness.eventHash)
         #expect(try store.find(witnessCode: "0000000000000000") == nil)
+        #expect(try store.find(witnessCode: "`cadence \(witness.code)`.")?.hash == witness.eventHash)
+        #expect(try store.find(witnessCode: "\u{00A0}\t\(witness.code)\u{00A0}")?.hash == witness.eventHash)
         #expect(throws: CadenceError.self) { try store.find(witnessCode: "abc") }
         #expect(throws: CadenceError.self) { try store.find(witnessCode: "zzzzzzzzzzzzzzzz") }
         // A LIKE wildcard must not match anything.

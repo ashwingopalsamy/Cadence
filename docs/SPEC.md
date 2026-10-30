@@ -1240,7 +1240,7 @@ Model mix| Share of output tokens by model| daily pick| Detail
 
 ## 12. Proof export
 
-One JSON file with the hash chain, the days, the witnesses and its own verifier inside. It shows the log is consistent, ordered, unaltered since export and honestly labelled, with links to check against the source. It does not prove that self-reported work happened, and it says so.
+One JSON file with the hash chain, the days, the witnesses and its own verifier inside. It shows the log is consistent, ordered, matched item by item against its own events and honestly labelled, with links to check against the source. It does not prove that self-reported work happened, and it says so.
 
 **A chain that holds** Every event links to the one before it. Change, drop or reorder one and the verifier names it.
 
@@ -1263,11 +1263,12 @@ october.cadence-proof.json (shape; arrays shortened)
   "how_to_verify": "…plain-language steps, shown in 12.2…",
   "verifier_py": "…the script in 12.3, verbatim…",
   "summary": {
-    "sealed_workdays": { "value": 19, "of": 19, "definition": "Workdays wrapped up by 23:59 the next day; leave and holidays excluded" },
-    "plan_done":       { "value": 61, "of": 78, "definition": "Planned tasks marked done on their day" },
-    "merged_prs":      { "value": 14, "assigned": 11, "self_initiated": 3, "definition": "Merged PRs authored, from the GitHub collector" },
+    "sealed_workdays": { "value": 19, "of": 19, "before_ledger": 0, "definition": "Workdays wrapped up by 23:59 the next day, counted from the day the ledger began; …" },
+    "plan_done":       { "value": 61, "of": 78, "definition": "Planned tasks on counted workdays marked done by the end of their day; …" },
+    "merged_prs":      { "value": 14, "assigned": 11, "self_initiated": 3, "definition": "Merged PRs authored, from the GitHub collector; …" },
     "reviews":         { "value": 47, "definition": "Review entries, one per PR per day" },
-    "ai_days":         { "value": 17, "of": 19, "definition": "Workdays with a Claude Code session or usage record" }
+    "ai_days":         { "value": 17, "of": 19, "definition": "Counted workdays with an AI coding session or usage record, from the first day any AI source recorded" },
+    "private_events":  { "value": 3, "definition": "Events in range exported as hashes only: private notes and reasons, entries marked digest or exclude, and entries not accepted" }
   },
   "days": [{
     "date": "2026-10-28", "kind": "workday",
@@ -1279,7 +1280,8 @@ october.cadence-proof.json (shape; arrays shortened)
         "origin": "collected", "source": "github", "ticket": { "key": "ACME-482901", "class": "assigned" },
         "links": ["https://git.example.com/acme/ledger-core/pull/405"],
         "flags": { "edited": false, "after_seal": false, "backfilled": false } },
-      { "ev": "77d2…", "kind": "note", "origin": "self", "redacted": true }
+      { "ev": "77d2…", "last_ev": "77d2…", "kind": "note", "origin": "self", "redacted": true,
+        "flags": { "edited": false, "after_seal": false, "backfilled": false } }
     ]
   }],
   "chain": {
@@ -1296,9 +1298,11 @@ october.cadence-proof.json (shape; arrays shortened)
 ```
 
 
-  * **Chain:** every event from genesis to the last one before export, in order. Inside the range, events carry their payload unless the entry's export policy is `digest` (notes default to this). Outside the range they carry hashes only. A year is roughly 10,000 to 20,000 events, about 5 to 8 MB.
-  * **Redaction is visible:** an item with policy `exclude` is left out of `days`, but its event stays in the chain as hash-only, and the verifier reports "3 private events in range".
-  * **Summary** carries a definition next to every number, so an agent reading it never has to guess what a metric means.
+  * **Chain:** every event from genesis to the last one before export, in order. Outside the range events carry hashes only. Inside the range, payloads are allow-listed: day marks, presence spans, plan tasks, seals, witnesses and AI usage carry theirs; free text that is the owner's own (day notes and focus lines, reason notes, status notes, day labels, collector errors) and any event type the exporter does not know stay hash-only. Entries carry their payload only when accepted with export policy `include` (notes default to `digest`). An event belongs to the day its subject names, or to the current day of the entry, task or session it is about. A year is roughly 10,000 to 20,000 events; items appear both in `days` and in the chain, so expect 10 to 17 MB.
+  * **Redaction is visible:** an item with policy `exclude` is left out of `days`, but its event stays in the chain as hash-only, and `summary.private_events` counts every hash-only event in range.
+  * **Seals:** a day's seal is its first seal. Sealing again later never undoes a seal that counted. `edited` means an `entry.updated` after that seal; status changes are not edits.
+  * **Days before the ledger:** workdays before the ledger began (a backfill) are not counted as unsealed; `sealed_workdays.before_ledger` reports them.
+  * **Summary** carries a definition next to every number, so an agent reading it never has to guess what a metric means. The verifier recomputes `merged_prs` and `reviews` from the items; the other numbers are computed by Cadence.
   * **Witnesses** are the codes that ended your stand-up messages. Slack sets those message timestamps, not you, so each one shows that the chain up to that event existed by then.
   * **Canonical JSON** must match byte for byte across Swift and Python. Keys are ASCII and sorted. `"` and `\` are escaped, as are `\b \f \n \r \t`; other characters below U+0020 become lowercase `\u00xx`; everything else is raw UTF-8, `/` included. Integers stay within ±253, and there are no floats. Swift uses a small custom writer, not `JSONEncoder`, which escapes slashes. Shared vectors in `Tests/Vectors/c14n.json` run in both the Swift tests and the Python verifier inside `make check`.
 
@@ -1311,23 +1315,29 @@ how_to_verify
 ```
 This is a Cadence work log export. To check it:
 1. Save verifier_py from this file as verify.py and run: python3 verify.py THIS_FILE
-   (Python 3.8+, standard library only). PASS means the file is unaltered since export,
-   the event chain is complete and in order, and every item and seal refers to an event
-   in the chain.
+   (Python 3.8+, standard library only). PASS means the event chain is complete and in
+   order, and every item, seal, witness and the merged PR and review counts match the
+   events in the chain. The other summary numbers are computed by Cadence from the same
+   days; their definitions are next to them.
 2. Spot-check items with origin "collected": open a few links on the company network
    and compare title, date and state.
 3. Match witness codes to the last line of the person's stand-up messages for those
    dates. A match shows the log up to that point existed at the message's time.
 4. Treat origin "self" and "agent" items as self-reported: plausible, not proven.
-   Items flagged after_seal or edited were added or changed after that day's wrap-up.
+   Items flagged after_seal were added after that day's wrap-up, and items flagged
+   edited were changed after it.
 5. This file is tamper-evident, not tamper-proof: its owner could have rebuilt the
-   whole chain before the first witness. Witnesses narrow that window.
+   whole chain before the first witness. Witnesses narrow that window. export_digest
+   catches accidental edits only, since anyone can recompute it.
+6. Private notes and items marked private are in the chain as hashes only; the
+   summary counts them as private_events. Hash-only events still show their type,
+   subject and recorded time.
 ```
 
 
 ### 12.3 The verifier
 
-verify.py: 67 lines, standard library only, tested against a tampered file
+verify.py: about 130 lines, standard library only, tested against 20 tampered files
 
 tools/verify_proof.py, also embedded as verifier_py
 
@@ -1336,9 +1346,11 @@ tools/verify_proof.py, also embedded as verifier_py
 #!/usr/bin/env python3
 """Verify a cadence.proof/1 file. Python 3.8+, standard library only.
 Usage: python3 verify.py proof.json"""
-import hashlib, json, sys
+import hashlib, json, re, sys
+from datetime import datetime
 
 HEAD = ("v", "seq", "id", "at", "actor", "type", "subject", "data_digest", "prev")
+CODE = re.compile(r"[0-9a-f]{16}\Z")
 
 def canon(x):
     return json.dumps(x, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -1346,14 +1358,50 @@ def canon(x):
 def sha(x):
     return hashlib.sha256(canon(x)).hexdigest()
 
+def instant(text):
+    t = datetime.fromisoformat(text.replace("Z", "+00:00").replace("z", "+00:00"))
+    return int(t.timestamp())
+
+def replay(created, updates):
+    """The entry as its events leave it: entry.created data with each entry.updated change applied."""
+    entry = dict(created)
+    for u in updates:
+        for field, change in sorted(u["changes"].items()):
+            entry[field] = change[1]
+    return entry
+
+def check_item(it, date, by_hash, by_subject, fails):
+    e = by_hash.get(it["ev"])
+    if e is None:
+        return fails.append("%s: references an event that is not in the chain" % date)
+    if e["type"] != "entry.created" or not str(e["subject"]).startswith("entry:"):
+        return fails.append("%s: item %s does not cite an entry.created event" % (date, it["ev"][:16]))
+    history = by_subject[e["subject"]]
+    if it.get("last_ev") != history[-1]["hash"]:
+        fails.append("%s: item %s last_ev is not the entry's last event" % (date, it["ev"][:16]))
+    if it.get("redacted"):
+        if "data" in e:
+            fails.append("%s: item %s is marked redacted but its payload is in the chain" % (date, it["ev"][:16]))
+        return
+    updates = [x for x in history if x["type"] == "entry.updated"]
+    if "data" not in e or any("data" not in x for x in updates):
+        return fails.append("%s: item %s has no payload in the chain to check it against" % (date, it["ev"][:16]))
+    entry = replay(e["data"], [x["data"] for x in updates])
+    shown = {"kind": entry["kind"], "family": entry["family"], "title": entry["title"], "origin": entry["origin"],
+             "ticket": entry["ticket"], "links": [l["url"] for l in entry["links"]], "day": entry["day"]}
+    for field, value in sorted(shown.items()):
+        got = date if field == "day" else it.get(field)
+        if got != value:
+            fails.append("%s: item %s %s does not match its events" % (date, it["ev"][:16], field))
+
 def verify(p):
     fails, warns = [], []
-    if p.get("format") != "cadence.proof/1":
-        return ["unknown format " + repr(p.get("format"))], warns
+    if not isinstance(p, dict) or p.get("format") != "cadence.proof/1":
+        return ["unknown format " + repr(p.get("format") if isinstance(p, dict) else p)], warns
     body = {k: v for k, v in p.items() if k != "export_digest"}
     if sha(body) != p.get("export_digest"):
         fails.append("export_digest does not match the file: it was edited after export")
-    prev, hashes, last_at = "0" * 64, set(), ""
+    prev, last_at, by_hash, by_subject, by_code = "0" * 64, "", {}, {}, {}
     for i, e in enumerate(p["chain"]["events"], start=1):
         tag = "event %s" % e.get("seq")
         if e["seq"] != i:
@@ -1367,22 +1415,53 @@ def verify(p):
         if e["at"] < last_at:
             warns.append(tag + ": recorded time goes backwards (clock change?)")
         last_at, prev = max(last_at, e["at"]), e["hash"]
-        hashes.add(e["hash"])
+        by_hash[e["hash"]] = e
+        by_subject.setdefault(e["subject"], []).append(e)
+        by_code.setdefault(e["hash"][:16], []).append(e)
+    lo, hi = p["range"]["from"], p["range"]["to"]
+    counts = {"merged_prs": 0, "reviews": 0}
     for d in p["days"]:
-        for ref in [d.get("seal_ev")] + [it["ev"] for it in d["items"]]:
-            if ref and ref not in hashes:
-                fails.append("%s: references an event that is not in the chain" % d["date"])
+        date = d["date"]
+        if not lo <= date <= hi:
+            fails.append("%s: day is outside the range" % date)
+        if d.get("seal_ev") or d.get("sealed_at"):
+            s = by_hash.get(d.get("seal_ev"))
+            if s is None:
+                fails.append("%s: references an event that is not in the chain" % date)
+            elif s["type"] != "day.sealed" or s["subject"] != "day:" + date:
+                fails.append("%s: seal_ev is not this day's seal" % date)
+            elif not d.get("sealed_at") or instant(d["sealed_at"]) != instant(s["at"]):
+                fails.append("%s: sealed_at does not match the seal event" % date)
+        for it in d["items"]:
+            check_item(it, date, by_hash, by_subject, fails)
+            if it["kind"] == "pr.merged" and it["origin"] == "collected":
+                counts["merged_prs"] += 1
+            if it["kind"] == "review.given":
+                counts["reviews"] += 1
+    for key, n in sorted(counts.items()):
+        if key in p.get("summary", {}) and p["summary"][key]["value"] != n:
+            fails.append("summary %s says %s, the items show %d" % (key, p["summary"][key]["value"], n))
     for w in p.get("witnesses", []):
-        if not any(h.startswith(w["code"]) for h in hashes):
-            fails.append("witness %s (%s) matches no event" % (w["code"], w["date"]))
+        hit = by_code.get(w["code"], []) if CODE.match(str(w["code"])) else []
+        if not any(e["type"] == "witness.checkpoint" and e["subject"] == "day:" + w["date"] for e in hit):
+            fails.append("witness %s (%s) matches no checkpoint for that day" % (w["code"], w["date"]))
     return fails, warns
 
 def main(path):
-    with open(path, encoding="utf-8") as f:
-        p = json.load(f)
-    fails, warns = verify(p)
-    ev = p.get("chain", {}).get("events", [])
-    items = [it for d in p.get("days", []) for it in d["items"]]
+    try:
+        with open(path, encoding="utf-8") as f:
+            p = json.load(f)
+        fails, warns = verify(p)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as error:
+        print("FAIL    the file is not a readable proof: %s %s" % (type(error).__name__, error))
+        print("RESULT  FAIL")
+        return 1
+    if fails and fails[0].startswith("unknown format"):
+        print("FAIL    " + fails[0])
+        print("RESULT  FAIL")
+        return 1
+    ev = p["chain"]["events"]
+    items = [it for d in p["days"] for it in d["items"]]
     by_origin = {}
     for it in items:
         by_origin[it["origin"]] = by_origin.get(it["origin"], 0) + 1
@@ -1395,7 +1474,7 @@ def main(path):
         print("warn    " + w)
     for f in fails:
         print("FAIL    " + f)
-    print("RESULT  " + ("PASS: internally consistent and unaltered since export" if not fails else "FAIL"))
+    print("RESULT  " + ("PASS: the chain is complete and in order, and every item, seal and witness matches it" if not fails else "FAIL"))
     return 1 if fails else 0
 
 if __name__ == "__main__":
@@ -1411,7 +1490,7 @@ items   214: agent 31, collected 118, observed 22, self 43
 links   118 items carry a source link to check
 witness 19 codes, all found in chain
 warn    event 1204: recorded time goes backwards (clock change?)
-RESULT  PASS: internally consistent and unaltered since export
+RESULT  PASS: the chain is complete and in order, and every item, seal and witness matches it
 ```
 
 
@@ -1426,6 +1505,7 @@ links   118 items carry a source link to check
 witness 19 codes, all found in chain
 FAIL    export_digest does not match the file: it was edited after export
 FAIL    event 1388: payload changed after it was recorded
+FAIL    2026-10-28: item 1f07a9c2e4b1d530 title does not match its events
 RESULT  FAIL
 ```
 
@@ -1434,10 +1514,13 @@ RESULT  FAIL
 
 Proves| Does not prove
 ---|---
-The file has not been edited since export| That self-reported work happened
+Every item, seal and witness matches the chain, so no title, origin, link or seal was edited after recording without rebuilding the chain| That self-reported work happened
 No event was changed, dropped or reordered without rebuilding everything after it| That the owner did not rebuild the whole chain before the first witness
 The log up to each witness existed by that stand-up message| Who wrote it. There are no keys, by design; identity comes from your manager receiving it from you
 Which items came from the Mac, a collector, an agent or you, and which changed after sealing| That a collected item is still accurate. That is what the links are for
+The merged PR and review counts match the items| The other summary numbers, which Cadence computes from the same days
+Private items are present, counted and unchanged| Their text. A short private title with a guessable shape could be found by trying candidates against its digest; keep anything sensitive out of titles
+Nothing about events outside the range beyond their hashes| That their type, subject and recorded time are hidden: those stay visible so the chain can be checked
 
 Signing keys were left out on purpose. A key on the same laptop proves only that the laptop signed, adds key management to an open-source project, and would read as more certainty than the design has. Witnesses held by a third party do that job better.
 

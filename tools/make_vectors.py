@@ -92,7 +92,8 @@ def valid_proof():
     def item(seq, last=None, redacted=False):
         e = by_seq[seq]
         if redacted:
-            return {"ev": e["hash"], "kind": "note", "origin": "self", "redacted": True}
+            return {"ev": e["hash"], "last_ev": e["hash"], "kind": "note", "origin": "self", "redacted": True,
+                    "flags": {"edited": False, "after_seal": False, "backfilled": False}}
         d = e["data"]
         it = {"ev": e["hash"], "last_ev": (last or e)["hash"], "kind": d["kind"], "family": d["family"],
               "title": d["title"], "occurred_at": d["occurred_at"], "origin": d["origin"]}
@@ -160,6 +161,31 @@ def tampered_variants(valid):
     t = copy.deepcopy(valid)
     t["witnesses"][0]["code"] = "0123456789abcdef"
     out["tampered-witness.json"] = redigest(t)
+    # The cases below recompute export_digest, which anyone can do. Each must still fail because the
+    # days, the summary and the witnesses are checked against the chain itself.
+    def variant(name, change):
+        t = copy.deepcopy(valid)
+        change(t)
+        out["tampered-%s.json" % name] = redigest(t)
+    item0 = lambda t: t["days"][0]["items"][0]
+    variant("item-title", lambda t: item0(t).update(title="ACME-482901 Rewrote the whole ledger"))
+    variant("item-origin", lambda t: t["days"][0]["items"][1].update(origin="collected"))
+    variant("item-link", lambda t: item0(t)["links"].append("https://git.example.com/acme/other/pull/9"))
+    variant("item-last-ev", lambda t: item0(t).update(last_ev="f" * 64))
+    variant("item-fake", lambda t: t["days"][0]["items"].append(dict(item0(t), ev=t["chain"]["events"][2]["hash"])))
+    variant("item-redacted-unhidden", lambda t: t["days"][0]["items"].__setitem__(0, {
+        "ev": item0(t)["ev"], "last_ev": item0(t)["last_ev"], "kind": "pr.merged", "origin": "collected", "redacted": True}))
+    variant("summary", lambda t: t["summary"]["merged_prs"].update(value=40))
+    variant("witness-empty", lambda t: t["witnesses"].append({"date": "2026-10-01", "code": "", "where": "x"}))
+    variant("witness-short", lambda t: t["witnesses"].append({"date": "2026-10-01", "code": "a", "where": "x"}))
+    variant("witness-not-checkpoint", lambda t: t["witnesses"].__setitem__(0, dict(t["witnesses"][0], code=t["chain"]["events"][3]["hash"][:16])))
+    variant("seal-genesis", lambda t: t["days"][0].update(seal_ev=t["chain"]["events"][0]["hash"]))
+    variant("sealed-at", lambda t: t["days"][0].update(sealed_at="2026-10-01T23:00:00+05:30"))
+    variant("range", lambda t: t["range"].update(to="2026-09-30", **{"from": "2026-09-30"}))
+    def strip(t):
+        for e in t["chain"]["events"]:
+            e.pop("data", None)
+    variant("no-payloads", strip)
     return out
 
 

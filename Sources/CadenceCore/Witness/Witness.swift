@@ -38,10 +38,14 @@ public struct Witness: Sendable, Equatable {
         self.seq = event.seq
     }
 
-    /// Accepts the bare code or the whole `cadence <code>` line, in either case.
+    /// Accepts the bare code or the whole `cadence <code>` line, in either case, as pasted from a chat:
+    /// surrounding backticks, quotes, punctuation and any kind of space are ignored.
     static func normalise(_ text: String) throws(CadenceError) -> String {
-        var code = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if code.hasPrefix("cadence ") { code = String(code.dropFirst(8)).trimmingCharacters(in: .whitespaces) }
+        let noise = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters).union(.symbols)
+        var code = text.trimmingCharacters(in: noise).lowercased()
+        if code.hasPrefix("cadence"), code.count > 7 {
+            code = String(code.dropFirst(7)).trimmingCharacters(in: noise)
+        }
         guard code.utf8.count == codeLength, code.utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x61...0x66).contains($0) })
         else { throw .usage("a witness code is \(codeLength) hex characters") }
         return code
@@ -86,7 +90,9 @@ extension SQLiteStore {
     /// The event whose hash starts with `witnessCode` (a code or a whole `cadence <code>` line).
     public func find(witnessCode: String) throws(CadenceError) -> Event? {
         let code = try Witness.normalise(witnessCode)
-        // The code is checked as hex above, so it carries no LIKE wildcards; substr keeps it exact anyway.
-        return try readEvents("SELECT * FROM events WHERE substr(hash, 1, 16) = ? ORDER BY seq LIMIT 1", [.text(code)]).first
+        // A range on the unique hash index: every hash with this prefix sorts between code and code + "g".
+        return try readEvents(
+            "SELECT * FROM events WHERE hash >= ? AND hash < ? ORDER BY seq LIMIT 1", [.text(code), .text(code + "g")]
+        ).first
     }
 }

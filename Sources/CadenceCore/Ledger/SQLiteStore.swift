@@ -93,6 +93,20 @@ public final class SQLiteStore: Store {
         }
     }
 
+    /// Runs `body` in one read transaction, so a multi-query read sees a single snapshot even while
+    /// other processes append. Works on read-only stores too.
+    public func transactRead<T>(_ body: () throws(CadenceError) -> T) throws(CadenceError) -> T {
+        do {
+            return try db.transaction(.deferred) { () throws -> T in try body() }
+        } catch let error as CadenceError {
+            throw error
+        } catch let error as SQLiteError {
+            throw error.cadenceError
+        } catch {
+            throw .io(String(describing: error))
+        }
+    }
+
     private func appendLocked(_ drafts: [EventDraft]) throws(CadenceError) -> [Event] {
         var (seq, prev) = try headRow() ?? (0, Event.genesisPrev)
         if seq == 0, drafts.first?.type != "ledger.genesis" {
