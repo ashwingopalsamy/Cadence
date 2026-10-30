@@ -113,7 +113,7 @@ Every task has a tier. The tier is a floor, not a ceiling: on any doubt, move a 
 | [x] T1.17 ★ | `cadence export proof`: chain from genesis, hash-only outside the range, export policies, summary with definitions, witnesses, `export_digest`, embedded verifier and `how_to_verify` | planner | §12 | The Python verifier passes the export; editing one byte fails it |
 | [x] T1.18 | `cadence verify FILE [--recompute]` in Swift, matching Python on every vector | builder | §12.3 | Parity tests |
 | [x] T1.19 | Backups: daily `VACUUM INTO`, keeping 14 daily and 8 weekly | builder | §7.4 | Retention tests with an injected clock |
-| [ ] T1.20 | Deterministic ACME demo seed matching the spec's October example data | mechanic | §5 | Seeded totals equal the numbers in the spec |
+| [x] T1.20 | Deterministic ACME demo seed matching the spec's October example data | mechanic | §5 | Seeded totals equal the numbers in the spec |
 | [ ] T1.21 | Phase 1 audit | auditor | §3, §7, §12 | No open gaps |
 | [ ] T1.22 | Phase 1 audit follow-ups: `doctor` reports FileVault on macOS (`fdesetup status`); a leave or holiday declared after its grace window is flagged on the day in proofs; plan tasks added after the seal carry an after-seal flag and leave `plan_done` | builder | §3, §12, §13.1 | Tests for each; FileVault on the Mac |
 
