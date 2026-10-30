@@ -191,7 +191,7 @@ First activity| First input after the boundary with the session unlocked| Matche
 Last activity| End of the last activity span before the next boundary| Logout is inferred, never typed. Spans close after 5 minutes idle.
 Seal| Wrap-up seals the day| Seal at stand-up time; the day keeps collecting.
 After the seal| New collected entries join the day marked "after wrap-up"| A PR merged at 19:02 still counts without reopening anything.
-Grace window| Seal yesterday until the end of today| Forgetting once does not cost the streak if you account for it next morning.
+Grace window| Seal yesterday until 23:59 today, calendar time in the day's zone| Forgetting once does not cost the streak if you account for it next morning. The proof states the same rule.
 Streak| Consecutive workdays sealed; leave and holidays are skipped| Rewards accounting for every workday, not hours.
 Edits after seal| Allowed, recorded as amendments with timestamps| Honest history beats a locked log.
 
@@ -1001,7 +1001,7 @@ Command| Does
 `cadence import genai FILE --map MAP [--dry-run]`| Import usage history, such as your October data
 `cadence presence backfill --since 2026-10-01`| First and last activity from the power log, where it exists
 `cadence export proof --from --to [-o FILE]`| Write a proof file
-`cadence verify FILE [--recompute]`| Check a proof file; `--recompute` replays it into projections
+`cadence verify FILE [--recompute]`| Check a proof file; `--recompute` also reports what it could not recompute: hash-only events in range, whose payloads stay on the owner's Mac. Items are always re-derived from their events
 `cadence hook <event>` · `cadence mcp`| Claude Code integration
 `cadence doctor` · `cadence rebuild` · `cadence config get|set|path`| Health checks, projection rebuild, settings
 
@@ -1337,7 +1337,7 @@ This is a Cadence work log export. To check it:
 
 ### 12.3 The verifier
 
-verify.py: about 130 lines, standard library only, tested against 20 tampered files
+verify.py: about 130 lines, standard library only, tested against 21 tampered files
 
 tools/verify_proof.py, also embedded as verifier_py
 
@@ -1439,8 +1439,9 @@ def verify(p):
             if it["kind"] == "review.given":
                 counts["reviews"] += 1
     for key, n in sorted(counts.items()):
-        if key in p.get("summary", {}) and p["summary"][key]["value"] != n:
-            fails.append("summary %s says %s, the items show %d" % (key, p["summary"][key]["value"], n))
+        value = p.get("summary", {}).get(key, {}).get("value", n)
+        if value != n and not (value is None and n == 0):
+            fails.append("summary %s says %s, the items show %d" % (key, value, n))
     for w in p.get("witnesses", []):
         hit = by_code.get(w["code"], []) if CODE.match(str(w["code"])) else []
         if not any(e["type"] == "witness.checkpoint" and e["subject"] == "day:" + w["date"] for e in hit):

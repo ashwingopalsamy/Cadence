@@ -176,6 +176,7 @@ def tampered_variants(valid):
     variant("item-redacted-unhidden", lambda t: t["days"][0]["items"].__setitem__(0, {
         "ev": item0(t)["ev"], "last_ev": item0(t)["last_ev"], "kind": "pr.merged", "origin": "collected", "redacted": True}))
     variant("summary", lambda t: t["summary"]["merged_prs"].update(value=40))
+    variant("summary-unknown", lambda t: t["summary"]["merged_prs"].update(value=None))
     variant("witness-empty", lambda t: t["witnesses"].append({"date": "2026-10-01", "code": "", "where": "x"}))
     variant("witness-short", lambda t: t["witnesses"].append({"date": "2026-10-01", "code": "a", "where": "x"}))
     variant("witness-not-checkpoint", lambda t: t["witnesses"].__setitem__(0, dict(t["witnesses"][0], code=t["chain"]["events"][3]["hash"][:16])))

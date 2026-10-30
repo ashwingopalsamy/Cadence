@@ -327,6 +327,21 @@ import Testing
         #expect(sealed["value"] == 2)
     }
 
+    @Test func unknownIsNullNotZero() throws {
+        let clock = ManualClock(Timestamp.parse("2026-10-28T04:00:00Z")!)
+        let store = try TestStore.make(clock: clock, projector: LedgerProjector())
+        try store.ensureGenesis(profile: ["timezone": .string(Self.zone)])
+        try store.append([EventPayload.entryCreated(T.entry("E1", day: "2026-10-28", title: "Fixed the flaky test")).draft(actor: .cli)])
+        let proof = try ProofExporter.export(store, T.request(clock))
+        let summary = proof.json.objectValue!["summary"]!.objectValue!
+        #expect(summary["merged_prs"]?.objectValue?["value"] == .null)
+        #expect(summary["merged_prs"]?.objectValue?["assigned"] == .null)
+        #expect(summary["reviews"]?.objectValue?["value"] == .null)
+        #expect(summary["ai_days"]?.objectValue?["value"] == .null)
+        #expect(summary["ai_days"]?.objectValue?["of"] == .null)
+        #expect(try T.python(try T.write(proof.bytes)).status == 0)
+    }
+
     @Test func rangesAreBounded() throws {
         let (store, clock) = try T.october()
         var request = T.request(clock)

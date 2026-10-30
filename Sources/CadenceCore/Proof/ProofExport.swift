@@ -275,6 +275,10 @@ private struct Builder {
             return request.rules.boundary.day(of: at, in: tz) <= day
         }
         let aiCountable = countable.filter { day in firstAIDay.map { day >= $0 } ?? false }
+        // Unknown is not zero: with no GitHub record anywhere, PR and review numbers are unknown, and with
+        // no AI record anywhere, AI days are unknown. Both are null, as in `Journal.summary`.
+        let githubSeen = try !query("SELECT 1 AS x FROM entries WHERE source = 'github' LIMIT 1").isEmpty
+        func known(_ n: Int) -> JSONValue { githubSeen ? .int(Int64(n)) : .null }
         let summary: JSONValue = [
             "sealed_workdays": [
                 "value": .int(Int64(sealedInGrace)), "of": .int(Int64(countable.count)),
@@ -286,17 +290,18 @@ private struct Builder {
                 "definition": "Planned tasks on counted workdays marked done by the end of their day; tasks moved to another day count on that day",
             ],
             "merged_prs": [
-                "value": .int(Int64(merged.count)),
-                "assigned": .int(Int64(merged.filter { $0.ticketClass == TicketClass.assigned.rawValue }.count)),
-                "self_initiated": .int(Int64(merged.filter { $0.ticketClass == TicketClass.selfInitiated.rawValue }.count)),
+                "value": known(merged.count),
+                "assigned": known(merged.filter { $0.ticketClass == TicketClass.assigned.rawValue }.count),
+                "self_initiated": known(merged.filter { $0.ticketClass == TicketClass.selfInitiated.rawValue }.count),
                 "definition": "Merged PRs authored, from the GitHub collector; assigned and self-initiated by ticket, the rest have no ticket",
             ],
             "reviews": [
-                "value": .int(Int64(reviews.count)),
+                "value": githubSeen || !reviews.isEmpty ? .int(Int64(reviews.count)) : .null,
                 "definition": "Review entries, one per PR per day",
             ],
             "ai_days": [
-                "value": .int(Int64(aiCountable.filter(aiDays.contains).count)), "of": .int(Int64(aiCountable.count)),
+                "value": firstAIDay == nil ? .null : .int(Int64(aiCountable.filter(aiDays.contains).count)),
+                "of": firstAIDay == nil ? .null : .int(Int64(aiCountable.count)),
                 "definition": "Counted workdays with an AI coding session or usage record, from the first day any AI source recorded",
             ],
             "private_events": [

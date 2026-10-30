@@ -183,20 +183,19 @@ public enum ProofVerifier {
             }
         }
         for key in counts.keys.sorted(by: cpLess) {
+            // p.get("summary", {}).get(key, {}).get("value", n)
+            let n = counts[key]!
             let summary = root["summary"] ?? .object([:])
-            switch summary {
-            case .object(let o):
-                guard let entry = o[key] else { continue }
-                let value = try get(entry, "value")
-                if !eq(value, .int(Int64(counts[key]!))) {
-                    fails.append("summary \(key) says \(str(value)), the items show \(counts[key]!)")
-                }
-            case .array(let a):
-                if a.contains(where: { eq($0, .string(key)) }) { throw Unreadable(kind: "TypeError", message: "list indices must be integers") }
-            case .string(let s):
-                if s.contains(key) { throw Unreadable(kind: "TypeError", message: "string indices must be integers") }
-            default:
-                throw Unreadable(kind: "TypeError", message: "argument of type '\(typeName(summary))' is not iterable")
+            guard case .object(let o) = summary else {
+                throw Unreadable(kind: "AttributeError", message: "'\(typeName(summary))' object has no attribute 'get'")
+            }
+            let entry = o[key] ?? .object([:])
+            guard case .object(let e) = entry else {
+                throw Unreadable(kind: "AttributeError", message: "'\(typeName(entry))' object has no attribute 'get'")
+            }
+            let value = e["value"] ?? .int(Int64(n))
+            if !eq(value, .int(Int64(n))) && !(value == .null && n == 0) {
+                fails.append("summary \(key) says \(str(value)), the items show \(n)")
             }
         }
         for w in try iter(root["witnesses"] ?? .array([])) {

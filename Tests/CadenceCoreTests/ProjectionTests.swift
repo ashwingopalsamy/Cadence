@@ -187,6 +187,27 @@ import Testing
         #expect(day.text("last_activity") == "2026-10-29T19:00:00+05:30")
     }
 
+    @Test func manualMarksCorrectAndObservedMarksWiden() throws {
+        let store = try Self.store()
+        func mark(_ start: Bool, _ at: String, _ source: PresenceSource) -> EventDraft {
+            let m = DayMark(day: "2026-10-29", tz: Self.zone, at: at, source: source)
+            return (start ? EventPayload.dayStarted(m) : EventPayload.dayEnded(m)).draft(actor: .cli)
+        }
+        try store.append([
+            mark(false, "2026-10-29T19:00:00+05:30", .manual),
+            mark(false, "2026-10-29T17:00:00+05:30", .manual),  // typo fixed: the latest manual mark wins
+            mark(true, "2026-10-29T10:00:00+05:30", .input),
+            mark(true, "2026-10-29T10:30:00+05:30", .input),  // observed marks only widen
+            mark(true, "2026-10-29T09:15:00+05:30", .manual),
+        ])
+        let day = try #require(try store.db.first("SELECT * FROM days WHERE date = '2026-10-29'"))
+        #expect(day.text("first_activity") == "2026-10-29T09:15:00+05:30")
+        #expect(day.text("last_activity") == "2026-10-29T17:00:00+05:30")
+        let live = try store.projectionDump()
+        try store.rebuild()
+        #expect(try store.projectionDump() == live)
+    }
+
     @Test func theFirstEventWithAZoneSetsADaysZone() throws {
         let store = try Self.store()
         try store.append([

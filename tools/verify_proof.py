@@ -94,8 +94,9 @@ def verify(p):
             if it["kind"] == "review.given":
                 counts["reviews"] += 1
     for key, n in sorted(counts.items()):
-        if key in p.get("summary", {}) and p["summary"][key]["value"] != n:
-            fails.append("summary %s says %s, the items show %d" % (key, p["summary"][key]["value"], n))
+        value = p.get("summary", {}).get(key, {}).get("value", n)
+        if value != n and not (value is None and n == 0):
+            fails.append("summary %s says %s, the items show %d" % (key, value, n))
     for w in p.get("witnesses", []):
         hit = by_code.get(w["code"], []) if CODE.match(str(w["code"])) else []
         if not any(e["type"] == "witness.checkpoint" and e["subject"] == "day:" + w["date"] for e in hit):

@@ -48,14 +48,24 @@ public struct LedgerProjector: Projector {
             let zone = genesis.profile["timezone"]?.stringValue ?? "UTC"
             try db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('projection.profile_tz', ?)", [.text(zone)])
 
+        // A manual mark is a correction (`cadence day start|end --at`): it sets the value, and the latest one
+        // wins. Observed marks and spans only ever widen the day.
         case .dayStarted(let mark):
             try ensureDay(mark.day, tz: mark.tz, seq: event.seq, db: db)
-            try widenActivity(day: mark.day, first: mark.at, last: nil, db: db)
+            if mark.source == .manual {
+                try db.run("UPDATE days SET first_activity = ? WHERE date = ?", [.text(mark.at), .text(mark.day)])
+            } else {
+                try widenActivity(day: mark.day, first: mark.at, last: nil, db: db)
+            }
             try touchDay(mark.day, seq: seq, db: db)
 
         case .dayEnded(let mark):
             try ensureDay(mark.day, tz: mark.tz, seq: event.seq, db: db)
-            try widenActivity(day: mark.day, first: nil, last: mark.at, db: db)
+            if mark.source == .manual {
+                try db.run("UPDATE days SET last_activity = ? WHERE date = ?", [.text(mark.at), .text(mark.day)])
+            } else {
+                try widenActivity(day: mark.day, first: nil, last: mark.at, db: db)
+            }
             try touchDay(mark.day, seq: seq, db: db)
 
         case .presenceSpan(let span):
