@@ -30,6 +30,9 @@ let core: [Target] = [
     .testTarget(name: "CadenceCoreTests", dependencies: ["CadenceCore"]),
     .testTarget(name: "CadenceIngestTests", dependencies: ["CadenceIngest"]),
     .testTarget(name: "CadenceMCPTests", dependencies: ["CadenceMCP"]),
+    // Runs the built `cadence` binary against a temp CADENCE_HOME. The dependency on `cadence` makes
+    // SwiftPM build the binary first; the tests find it next to the test bundle.
+    .testTarget(name: "CadenceCLITests", dependencies: ["cadence", "CadenceCore"]),
 ]
 
 let package = Package(

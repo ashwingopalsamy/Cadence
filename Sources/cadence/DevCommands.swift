@@ -20,7 +20,8 @@ struct DevAppend: ParsableCommand {
         guard context.environment["CADENCE_ALLOW_DEV"] == "1", !(context.environment["CADENCE_HOME"] ?? "").isEmpty else {
             throw CadenceError.usage("dev commands need CADENCE_HOME and CADENCE_ALLOW_DEV=1")
         }
-        let store = try context.openStore()
+        let store = try context.openStore(projector: NoProjector())
+        try store.ensureGenesis(profile: [:], actor: .cli)
         for n in 0..<count {
             try store.append([
                 EventDraft(type: "test.stress", subject: "test:\(label)", data: ["label": .string(label), "n": .int(Int64(n))], actor: .cli)
