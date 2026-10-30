@@ -5,7 +5,7 @@ import Testing
 
 @Suite struct SQLiteTests {
     static func tempPath() -> String {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cadence-sqlite-\(UUID().uuidString)")
+        let dir = TestStore.tempDirectory("sqlite")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("test.db").path
     }

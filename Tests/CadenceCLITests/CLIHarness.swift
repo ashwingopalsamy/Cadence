@@ -16,9 +16,16 @@ struct CLIRun {
 struct CLIHome {
     let home: URL
 
+    /// One folder per test process, removed when the process exits, so runs never leave homes behind in /tmp.
+    static let root: URL = {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("cadence-cli-tests-\(getpid())", isDirectory: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        atexit { try? FileManager.default.removeItem(at: CLIHome.root) }
+        return root
+    }()
+
     init() {
-        home = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cadence-cli-\(UUID().uuidString)", isDirectory: true)
+        home = Self.root.appendingPathComponent("home-\(UUID().uuidString)", isDirectory: true)
     }
 
     var database: String { home.appendingPathComponent("cadence.db").path }

@@ -17,8 +17,16 @@ final class CountingIDs: IdentifierSource, @unchecked Sendable {
 }
 
 enum TestStore {
-    static func tempDirectory() -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cadence-test-\(UUID().uuidString)")
+    /// One folder per test process, removed when the process exits, so runs never leave stores behind in /tmp.
+    static let root: URL = {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("cadence-tests-\(getpid())")
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        atexit { try? FileManager.default.removeItem(at: TestStore.root) }
+        return root
+    }()
+
+    static func tempDirectory(_ prefix: String = "store") -> URL {
+        let dir = root.appendingPathComponent("\(prefix)-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

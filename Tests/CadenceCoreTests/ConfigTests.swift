@@ -32,7 +32,7 @@ import Testing
     }
 
     func tempDir() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cadence-config-\(UUID().uuidString)")
+        let dir = TestStore.tempDirectory("config")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
