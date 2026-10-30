@@ -349,4 +349,69 @@ import Testing
         try blocker.execute("ROLLBACK")
         #expect(try cli.run(["log", "Fixed the secret flaky test"], environment: quick).status == 0)
     }
+
+    // MARK: seal, streak, standup
+
+    @Test func sealCarriesOpenTasksAndRefusesASecondSeal() throws {
+        defer { cli.remove() }
+        let today = try cli.today()
+        try cli.run(["log", "Fixed the flaky test"])
+        let task = try id(try cli.json(["plan", "add", "Write the RFC for ACME-482913"]), "task")
+        let sealed = try cli.json(["day", "seal"])
+        #expect(sealed["day"]?.stringValue == today.description)
+        #expect(sealed["counts_for_streak"]?.boolValue == true)
+        #expect(sealed["counts"]?["entries"]?.intValue == 1)
+        #expect(sealed["plan"]?["moved"]?.intValue == 1 && sealed["plan"]?["open"]?.intValue == 0)
+        let carried = try #require(sealed["carried"]?.arrayValue?.first)
+        #expect(carried["from"]?.stringValue == task)
+        #expect(carried["task"]?["origin"]?.stringValue == "carried")
+        #expect(carried["task"]?["carried_from"]?.stringValue == task)
+        #expect(sealed["streak"]?["best"] != nil)
+
+        let again = try cli.run(["day", "seal"])
+        #expect(again.status == 2)
+        #expect(again.stderr.contains("already wrapped up at"))
+        #expect(try cli.run(["day", "seal", "--date", "2999-01-01"]).status == 2)
+        #expect(try cli.run(["day", "seal", "--date", "nope"]).status == 2)
+    }
+
+    @Test func sealPrintsPlainText() throws {
+        defer { cli.remove() }
+        try cli.run(["plan", "add", "Leftover task"])
+        let result = try cli.run(["day", "seal"])
+        #expect(result.status == 0)
+        #expect(result.stdout.contains("Wrapped up"))
+        #expect(result.stdout.contains("Carried to"))
+        #expect(result.stdout.contains("Leftover task"))
+        #expect(!result.stdout.contains("\u{2013}") && !result.stdout.contains("\u{2014}"))
+    }
+
+    @Test func streakReportsTheRun() throws {
+        defer { cli.remove() }
+        let before = try cli.json(["streak"])
+        #expect(before["current"]?.intValue == 0 && before["best"]?.intValue == 0)
+        #expect(before["at_risk"]?.boolValue == false)
+        #expect(before["paused_by"]?.arrayValue?.isEmpty == true)
+        try cli.run(["day", "seal"])
+        let after = try cli.json(["streak"])
+        #expect(try #require(after["best"]?.intValue) >= after["current"]?.intValue ?? 0)
+        #expect(try cli.run(["streak"]).stdout.hasPrefix("Streak "))
+    }
+
+    @Test func standupPrintsTheTextAndItsWitnessCode() throws {
+        defer { cli.remove() }
+        try cli.run(["log", "Reviewed the settlement RFC", "--kind", "doc.reviewed"])
+        let text = try cli.run(["standup"])
+        #expect(text.status == 0)
+        let lines = text.stdout.split(separator: "\n").map(String.init)
+        #expect(lines.first?.hasPrefix("*") == true)
+        #expect(lines.contains("Blockers: none"))
+        #expect(lines.contains { $0.hasPrefix("\u{2022} Reviewed the settlement RFC") })
+        let json = try cli.json(["standup"])
+        let code = try #require(json["code"]?.stringValue)
+        #expect(code.count == 16)
+        #expect(json["text"]?.stringValue?.hasSuffix("cadence \(code)") == true)
+        #expect(lines.last == "cadence \(code)")
+        #expect(try cli.run(["standup", "--date", "2999-01-01"]).status == 2)
+    }
 }

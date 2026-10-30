@@ -101,8 +101,8 @@ extension Link {
 public final class Journal {
     public let store: SQLiteStore
     public let config: Config
-    private let clock: any Clock
-    private let ids: any IdentifierSource
+    let clock: any Clock
+    let ids: any IdentifierSource
     private let classifier: TicketClassifier
     private let zoneValue: TimeZone
 
@@ -420,7 +420,7 @@ public final class Journal {
 
     // MARK: - Helpers
 
-    private func rows(_ sql: String, _ parameters: [SQLValue] = []) throws(CadenceError) -> [SQLRow] {
+    func rows(_ sql: String, _ parameters: [SQLValue] = []) throws(CadenceError) -> [SQLRow] {
         do {
             return try store.db.query(sql, parameters)
         } catch {
@@ -428,7 +428,7 @@ public final class Journal {
         }
     }
 
-    private func append(_ drafts: [EventDraft]) throws(CadenceError) {
+    func append(_ drafts: [EventDraft]) throws(CadenceError) {
         _ = try store.append(drafts, then: { _ in })
     }
 
