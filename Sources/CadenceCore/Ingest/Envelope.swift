@@ -222,7 +222,10 @@ struct EnvelopeReader {
                 }
                 let link: Link
                 if let kindText = try l.optionalString("kind") {
-                    guard let linkKind = LinkKind(rawValue: kindText) else { throw l.fail("kind", "must be pr, ticket, doc or other") }
+                    guard let linkKind = LinkKind(rawValue: kindText) else {
+                        warnings.append("links[\(index)].kind: must be pr, ticket, doc or other; dropped")
+                        continue
+                    }
                     link = Link(kind: linkKind, url: url)
                 } else {
                     link = Link.inferred(url: url)
@@ -355,12 +358,13 @@ struct EnvelopeReader {
         return date
     }
 
-    /// `https`, or `http` on a host listed in `config.hosts`; a host is required and spaces or control characters are not allowed.
+    /// `https`, or `http` on a host listed in `config.hosts`. A host is required; spaces, control characters and
+    /// credentials in the URL are not allowed, so no password ever reaches the ledger.
     private func isKeptURL(_ url: String) -> Bool {
         guard url.count <= 2048,
             !url.unicodeScalars.contains(where: { $0.properties.generalCategory == .control || $0.properties.isWhitespace }),
             let parts = URLComponents(string: url), let scheme = parts.scheme?.lowercased(),
-            let host = parts.host?.lowercased(), !host.isEmpty
+            let host = parts.host?.lowercased(), !host.isEmpty, parts.user == nil, parts.password == nil
         else { return false }
         if scheme == "https" { return true }
         return scheme == "http" && context.httpHosts.contains(host)

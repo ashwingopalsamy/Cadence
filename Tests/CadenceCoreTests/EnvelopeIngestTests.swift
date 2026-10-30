@@ -138,11 +138,32 @@ import Testing
         #expect(entry.origin == .collected)
     }
 
-    @Test func aSourceRefRepeatedInOneEnvelopeIsCreatedThenUpdated() throws {
+    @Test func aSecondRecordForTheSameKeyInOneEnvelopeIsSkippedSoTheEnvelopeSettles() throws {
         let f = try Fixture()
-        let report = try f.ingest([Self.item("github:1", title: "One"), Self.item("github:1", title: "Two")])
-        #expect(report.count("created") == 1 && report.count("updated") == 1)
-        #expect(try f.entry(ref: "github:1").title == "Two")
+        let usageB = Self.usage.replacingOccurrences(of: "model-a\",\"sessions\":5", with: "model-a\",\"sessions\":2")
+            .replacingOccurrences(of: "claude-code:2026-09-18:model-a", with: "claude-code:2026-09-18:model-a:b")
+        let leaveB = Self.leave.replacingOccurrences(of: "leave:2026-09-25", with: "leave:b").replacingOccurrences(of: "Planned leave", with: "Other")
+        let records = [Self.item("github:1", title: "One"), Self.item("github:1", title: "Two"), Self.usage, usageB, Self.leave, leaveB]
+        let first = try f.ingest(records)
+        #expect(first.count("created") == 3 && first.count("skipped") == 3)
+        #expect(first.problems == [
+            "line 3: repeats what line 2 already says about source_ref github:1",
+            "line 5: repeats what line 4 already says about the usage row for 2026-09-18, claude-code, model-a",
+            "line 7: repeats what line 6 already says about the day 2026-09-25",
+        ])
+        #expect(try f.entry(ref: "github:1").title == "One")
+        let again = try f.ingest(records)
+        #expect(again.count("unchanged") == 3 && again.count("skipped") == 3 && again.count("updated") == 0)
+    }
+
+    @Test func theActorMustBeThisCollectorOrItsImport() throws {
+        let f = try Fixture()
+        #expect(throws: CadenceError.self) {
+            try f.journal.ingest(envelope: Array(Self.header().utf8), collector: "github", window: Self.window, actor: .importer("jira"))
+        }
+        #expect(throws: CadenceError.self) {
+            try f.journal.ingest(envelope: Array(Self.header().utf8), collector: "github", window: Self.window, actor: .cli)
+        }
     }
 
     // MARK: - Ownership
@@ -166,6 +187,16 @@ import Testing
         #expect(Set(changes.keys) == ["quantity"])
         let entry = try f.entry(ref: "github:1")
         #expect(entry.title == "My title" && entry.quantity == 2)
+    }
+
+    @Test func anImportNeverOwnsAField() throws {
+        let f = try Fixture()
+        try f.ingest([Self.item("x:1", title: "One")])
+        let text = ([Self.header()] + [Self.item("x:1", title: "Two")]).joined(separator: "\n")
+        try f.journal.ingest(envelope: Array(text.utf8), collector: "github", window: Self.window, actor: .importer("github"))
+        #expect(try f.entry(ref: "x:1").title == "Two")
+        #expect(try f.ingest([Self.item("x:1", title: "Three")]).count("updated") == 1)
+        #expect(try f.entry(ref: "x:1").title == "Three")
     }
 
     @Test func aCollectorOnlyEditsEntriesItCreated() throws {
@@ -295,9 +326,9 @@ import Testing
 
     @Test func linksMustBeHttpsOrHttpOnAListedHost() throws {
         let f = try Fixture(hosts: ["Git.Example.Com"])
-        let links = #","links":[{"url":"javascript:alert(1)"},{"url":"http://other.example.com/a"},{"url":"http://git.example.com/acme/x/pull/9"},{"kind":"doc","url":"https://docs.example.com/a"},{"url":"ftp://example.com/f"}]"#
+        let links = #","links":[{"url":"javascript:alert(1)"},{"url":"http://other.example.com/a"},{"url":"http://git.example.com/acme/x/pull/9"},{"kind":"doc","url":"https://docs.example.com/a"},{"url":"ftp://example.com/f"},{"url":"https://user:secret@git.example.com/a"},{"kind":"video","url":"https://example.com/v"}]"#
         let report = try f.ingest([Self.item("l:1", extra: links)])
-        #expect(report.count("created") == 1 && report.count("warnings") == 3 && report.count("skipped") == 0)
+        #expect(report.count("created") == 1 && report.count("warnings") == 5 && report.count("skipped") == 0)
         #expect(report.inbox == nil)
         #expect(try f.entry(ref: "l:1").links == [
             Link(kind: .pr, url: "http://git.example.com/acme/x/pull/9"), Link(kind: .doc, url: "https://docs.example.com/a"),
@@ -403,6 +434,18 @@ import Testing
             "2026-09-18 2026-09-18T22:00:00+05:30-2026-09-19T04:00:00+05:30",
             "2026-09-19 2026-09-19T04:00:00+05:30-2026-09-19T05:00:00+05:30",
         ])
+    }
+
+    @Test func presenceOnADayRecordedInAnotherZoneIsPlacedAndFinishes() throws {
+        let f = try Fixture()
+        try f.store.append([
+            EventPayload.dayDeclared(DayDeclared(day: "2026-09-18", tz: "Pacific/Kiritimati", kind: .workday)).draft(actor: .app)
+        ])
+        let report = try f.ingest([#"{"type":"presence.span","source_ref":"p:1","start":"2026-09-18T20:00:00+05:30","end":"2026-09-18T22:00:00+05:30"}"#])
+        #expect(report.count("created") + report.count("skipped") == 1)
+        let dump = try f.store.projectionDump()
+        try f.store.rebuild()
+        #expect(try f.store.projectionDump() == dump)
     }
 
     @Test func usageIsOneRowPerSourceAndChangesReplaceIt() throws {

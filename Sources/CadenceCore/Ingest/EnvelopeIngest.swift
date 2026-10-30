@@ -48,6 +48,9 @@ extension Journal {
     ) throws(CadenceError) -> IngestReport {
         guard Actor.isValidName(collector) else { throw .validation("collector: '\(collector)' is not a valid name") }
         let actor = actor ?? .collector(collector)
+        guard actor == .collector(collector) || actor == .importer(collector) else {
+            throw .validation("actor: must be collector:\(collector) or import:\(collector)")
+        }
         let runID = ids.next()
 
         let parts: (header: (Int, ArraySlice<UInt8>), records: [(Int, ArraySlice<UInt8>)])
@@ -57,7 +60,7 @@ extension Journal {
         } catch {
             let report = try recordRun(runID: runID, collector: collector, window: window, actor: actor, status: "error",
                                        counts: [:], problems: [error.message])
-            return try keep(bytes, report: report, inbox: bytes.count <= EnvelopeReader.maxBytes ? inbox : nil)
+            return keep(bytes, report: report, inbox: bytes.count <= EnvelopeReader.maxBytes ? inbox : nil)
         }
 
         let reader = EnvelopeReader(context: EnvelopeContext(
@@ -71,17 +74,37 @@ extension Journal {
         var problems: [String] = []
 
         let report = try store.transact { () throws(CadenceError) -> IngestReport in
+            // A key a record writes to. A second record for the same key in one envelope is skipped, so the
+            // envelope settles: the next run of it writes nothing instead of flipping between the two.
+            var seen: [String: Int] = [:]
             for line in lines {
-                for warning in line.warnings {
-                    counts["warnings", default: 0] += 1
-                    problems.append("line \(line.number): warning: \(warning)")
-                }
-                let outcome: IngestOutcome
+                var outcome: IngestOutcome
                 switch line.record {
                 case .failure(let error):
                     outcome = .skipped(error.message)
                 case .success(let record):
-                    outcome = try self.write(record, collector: collector, actor: actor)
+                    if let key = Self.key(record), let first = seen[key] {
+                        outcome = .skipped("repeats what line \(first) already says about \(Self.printableKey(key))")
+                        break
+                    }
+                    if let key = Self.key(record) { seen[key] = line.number }
+                    // Each record in its own savepoint: one the ledger refuses is skipped and leaves nothing behind.
+                    do throws(CadenceError) {
+                        outcome = try self.store.transact { () throws(CadenceError) -> IngestOutcome in
+                            let result = try self.write(record, collector: collector, actor: actor)
+                            if case .skipped(let why) = result { throw .validation(why) }
+                            return result
+                        }
+                    } catch {
+                        switch error {
+                        case .validation, .integrity: outcome = .skipped(error.message)
+                        default: throw error  // a busy or failing store stops the run; it is not the record's fault
+                        }
+                    }
+                    for warning in line.warnings {
+                        counts["warnings", default: 0] += 1
+                        problems.append("line \(line.number): warning: \(warning)")
+                    }
                 }
                 switch outcome {
                 case .created: counts["created", default: 0] += 1
@@ -96,7 +119,7 @@ extension Journal {
             return try self.recordRun(runID: runID, collector: collector, window: window, actor: actor, status: "ok",
                                       counts: counts, problems: problems)
         }
-        return try keep(bytes, report: report, inbox: counts["skipped"] ?? 0 > 0 ? inbox : nil)
+        return keep(bytes, report: report, inbox: counts["skipped"] ?? 0 > 0 ? inbox : nil)
     }
 
     /// Records a run that produced nothing to read: a non-zero exit, a timeout, a refused command.
@@ -129,6 +152,10 @@ extension Journal {
 
     private func writeItem(_ item: ItemRecord, collector: String, actor: Actor) throws(CadenceError) -> IngestOutcome {
         let dayZone = try zone(of: item.day)
+        // The reader placed the time in the profile zone; a day recorded in another zone must agree.
+        if let at = item.occurredAt, config.dayBoundary.day(of: at, in: dayZone) != item.day {
+            return .skipped("item.occurred_at: is not on \(item.day) in that day's zone \(dayZone.identifier)")
+        }
         let occurredAt = item.occurredAt.map { Timestamp.local($0, in: dayZone) }
         guard let row = try rows("SELECT id, source FROM entries WHERE source_ref = ?", [.text(item.sourceRef)]).first,
             let id = row.text("id")
@@ -166,7 +193,7 @@ extension Journal {
 
         // Once you edit a field it is yours: later collector values for it are ignored.
         var owned = Set<String>()
-        for event in try store.events(subject: "entry:\(id)") where event.type == "entry.updated" && event.actor != actor {
+        for event in try store.events(subject: "entry:\(id)") where event.type == "entry.updated" && !Self.isMachine(event.actor) {
             if let keys = event.data.objectValue?["changes"]?.objectValue?.keys { owned.formUnion(keys) }
         }
         for field in owned { after[field] = before[field] }
@@ -210,11 +237,11 @@ extension Journal {
         let end = Date(timeIntervalSince1970: span.end.timeIntervalSince1970.rounded(.down))
         var pieces: [(day: LocalDate, zone: TimeZone, start: Date, end: Date)] = []
         repeat {
-            let day = config.dayBoundary.day(of: cursor, in: zone)
-            let dayZone = try zone(of: day)
+            let (day, dayZone) = try workday(of: cursor)
             let next = day.adding(days: 1)
             let dayEnd = Timestamp.resolve(next, hour: config.dayBoundary.hour, minute: config.dayBoundary.minute, in: dayZone)
             let pieceEnd = min(end, dayEnd)
+            guard pieceEnd > cursor else { return .skipped("presence.span: cannot place the span on a day") }
             for gap in try gaps(day: day, from: cursor, to: pieceEnd) {
                 pieces.append((day, dayZone, gap.0, gap.1))
             }
@@ -280,6 +307,21 @@ extension Journal {
         return .created
     }
 
+    /// The workday an instant falls on and the zone it is read in. The day comes from the same zone as its end,
+    /// so the end always lies after the instant.
+    private func workday(of instant: Date) throws(CadenceError) -> (LocalDate, TimeZone) {
+        let dayZone = try zone(of: config.dayBoundary.day(of: instant, in: zone))
+        return (config.dayBoundary.day(of: instant, in: dayZone), dayZone)
+    }
+
+    /// Collectors and imports never own a field; you do, through the app, the CLI or an agent.
+    static func isMachine(_ actor: Actor) -> Bool {
+        switch actor {
+        case .collector, .importer: true
+        default: false
+        }
+    }
+
     private func isSealed(_ day: LocalDate) throws(CadenceError) -> Bool {
         try rows("SELECT sealed_at FROM days WHERE date = ?", [.text(day.description)]).first?.text("sealed_at") != nil
     }
@@ -297,15 +339,39 @@ extension Journal {
     }
 
     /// Keeps the envelope and the reasons beside it in `inbox`, readable only by you.
-    private func keep(_ bytes: [UInt8], report: IngestReport, inbox: URL?) throws(CadenceError) -> IngestReport {
+    /// The ledger has already committed, so a file that cannot be written leaves `inbox` nil instead of failing the run.
+    private func keep(_ bytes: [UInt8], report: IngestReport, inbox: URL?) -> IngestReport {
         guard let inbox else { return report }
         let base = "\(report.collector)-\(report.runID)"
         let file = inbox.appendingPathComponent("\(base).jsonl")
-        try PrivateFile.save(bytes, to: file)
-        let why = report.problems.joined(separator: "\n") + "\n"
-        try PrivateFile.save(Array(why.utf8), to: inbox.appendingPathComponent("\(base).txt"))
+        let why = report.problems.map { Self.clean($0, limit: Self.maxRunError) }.joined(separator: "\n") + "\n"
+        do {
+            try PrivateFile.save(bytes, to: file)
+            try PrivateFile.save(Array(why.utf8), to: inbox.appendingPathComponent("\(base).txt"))
+        } catch {
+            return report
+        }
         var kept = report
         kept.inbox = file
         return kept
+    }
+
+    /// What a record writes to, for spotting two records in one envelope that would overwrite each other.
+    static func key(_ record: EnvelopeRecord) -> String? {
+        switch record {
+        case .item(let item): "item\u{0}\(item.sourceRef)"
+        case .usage(let usage): "usage\u{0}\(usage.day)\u{0}\(usage.tool)\u{0}\(usage.model)"
+        case .leave(let leave): "leave\u{0}\(leave.day)"
+        case .presence: nil  // gap filling is already idempotent
+        }
+    }
+
+    static func printableKey(_ key: String) -> String {
+        let parts = key.split(separator: "\u{0}").map(String.init)
+        switch parts.first {
+        case "item": return "source_ref \(EnvelopeReader.printable(parts[1]))"
+        case "usage": return "the usage row for \(parts[1]), \(EnvelopeReader.printable(parts[2])), \(EnvelopeReader.printable(parts[3]))"
+        default: return "the day \(parts.last ?? "")"
+        }
     }
 }
