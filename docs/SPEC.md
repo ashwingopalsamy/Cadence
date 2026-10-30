@@ -1264,7 +1264,7 @@ october.cadence-proof.json (shape; arrays shortened)
   "verifier_py": "…the script in 12.3, verbatim…",
   "summary": {
     "sealed_workdays": { "value": 19, "of": 19, "before_ledger": 0, "definition": "Workdays wrapped up by 23:59 the next day, counted from the day the ledger began; …" },
-    "plan_done":       { "value": 61, "of": 78, "definition": "Planned tasks on counted workdays marked done by the end of their day; …" },
+    "plan_done":       { "value": 61, "of": 73, "definition": "Planned tasks on counted workdays marked done by the end of their day; …" },
     "merged_prs":      { "value": 14, "assigned": 11, "self_initiated": 3, "definition": "Merged PRs authored, from the GitHub collector; …" },
     "reviews":         { "value": 47, "definition": "Review entries, one per PR per day" },
     "ai_days":         { "value": 17, "of": 19, "definition": "Counted workdays with an AI coding session or usage record, from the first day any AI source recorded" },
