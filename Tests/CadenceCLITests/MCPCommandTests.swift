@@ -108,6 +108,36 @@ import Testing
         #expect(inbox["entries"]?.arrayValue?.allSatisfy { $0["origin"] == "agent" && $0["attrs"]?["dictated"] == true } == true)
     }
 
+    @Test func resourcesAndPromptsAnswerOverPipes() throws {
+        let home = CLIHome()
+        defer { home.remove() }
+        let today = try home.today()
+        let (replies, run) = try serve(
+            home,
+            [
+                try Self.call(1, "log_entry", ["text": "Fixed flaky ledger test with deterministic clock", "ticket": "ACME-482913"]),
+                try Self.request(2, "resources/list"), try Self.request(3, "resources/templates/list"),
+                try Self.request(4, "resources/read", ["uri": .string("cadence://day/\(today)")]),
+                try Self.request(5, "resources/read", ["uri": "cadence://week/current"]),
+                try Self.request(6, "resources/read", ["uri": "cadence://day/soon"]),
+                try Self.request(7, "prompts/list"),
+                try Self.request(8, "prompts/get", ["name": "import-dictation", "arguments": ["transcript": "- Fixed a bug"]]),
+            ])
+        #expect(run.status == 0)
+        #expect(replies[2]?["result"]?["resources"]?.arrayValue?.map { $0["uri"] } == ["cadence://week/current"])
+        #expect(replies[3]?["result"]?["resourceTemplates"]?.arrayValue?.map { $0["uriTemplate"] } == ["cadence://day/{date}"])
+        let day = replies[4]?["result"]?["contents"]?.arrayValue?.first?["text"]?.stringValue ?? ""
+        #expect(day.contains("Fixed flaky ledger test with deterministic clock") && day.contains("Ring: "))
+        let week = replies[5]?["result"]?["contents"]?.arrayValue?.first?["text"]?.stringValue ?? ""
+        #expect(week.hasPrefix("Week: ") && week.contains("Fixed flaky ledger test with deterministic clock"))
+        #expect(replies[6]?["error"]?["code"] == .int(-32602))
+        #expect(replies[7]?["result"]?["prompts"]?.arrayValue?.map { $0["name"] } == ["import-dictation", "standup", "weekly-recap"])
+        let prompt = replies[8]?["result"]?["messages"]?.arrayValue?.first?["content"]?["text"]?.stringValue ?? ""
+        #expect(prompt.contains("dry_run true") && prompt.hasSuffix("----- transcript ends -----"))
+        // Reading and prompting wrote only the one entry (and the genesis event under it).
+        #expect(try home.journal().store.eventCount() == 2)
+    }
+
     @Test func aStoreThatCannotBeOpenedIsAToolErrorAndTheServerKeepsGoing() throws {
         let home = CLIHome()
         defer { home.remove() }

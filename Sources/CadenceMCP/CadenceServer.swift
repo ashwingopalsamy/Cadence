@@ -14,12 +14,14 @@ extension CadenceMCP {
         presence belong to the user, and no tool does them.
         """
 
-    /// The server `cadence mcp` runs: the nine tools, over a journal made fresh for each call.
+    /// The server `cadence mcp` runs: the nine tools, two resources and three prompts, over a journal made fresh
+    /// for each call.
     public static func server(
         journal: @escaping JournalProvider, clock: any Clock, version: String,
         log: @escaping @Sendable (String) -> Void = { _ in }
     ) throws(CadenceError) -> MCPServer {
         try MCPServer(
-            name: serverName, version: version, instructions: instructions, tools: tools(journal: journal), clock: clock, log: log)
+            name: serverName, version: version, instructions: instructions, tools: tools(journal: journal),
+            resources: resources(journal: journal), prompts: prompts(), clock: clock, log: log)
     }
 }
