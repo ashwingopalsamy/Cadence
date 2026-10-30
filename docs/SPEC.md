@@ -881,7 +881,7 @@ cadence setup claude-code --print        # prints the hooks block below; --apply
 
 ### 9.2 MCP server
 
-`cadence mcp` speaks JSON-RPC 2.0 over stdin and stdout, logs only to stderr, and returns tools in a fixed order. It supports both MCP revisions current in October 2026: **2025-11-25** with the `initialize` handshake, and **2026-07-28** , which is stateless, carries the protocol version in each request's `_meta`, requires `server/discover`, and adds `resultType` to every result. Every result includes `resultType: "complete"`, which older clients ignore.
+`cadence mcp` speaks JSON-RPC 2.0 over stdin and stdout, logs only to stderr, and returns tools in a fixed order. It supports both MCP revisions current in October 2026: **2025-11-25** with the `initialize` handshake, and **2026-07-28**, which is stateless, carries the protocol version in each request's `_meta` (read from `io.modelcontextprotocol/protocolVersion`, with a plain `protocolVersion` accepted too until the key is confirmed against a shipping client), requires `server/discover`, and adds `resultType` to every result. Every result includes `resultType: "complete"`, which older clients ignore.
 
 Tool| Purpose| Lands as
 ---|---|---
