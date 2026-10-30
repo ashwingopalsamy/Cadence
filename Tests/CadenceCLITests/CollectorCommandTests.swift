@@ -133,7 +133,8 @@ import Testing
         defer { home.remove() }
         try writeRunnableCollector(home)
         let today = try home.today()
-        let tomorrow = today.adding(days: 1).description
+        // Two days on, so the answer does not depend on whether the day boundary has passed (the calendar day counts).
+        let tomorrow = today.adding(days: 2).description
         let cases: [([String], String)] = [
             (["--since", "2026-10-05", "--until", "2026-10-01"], "--since 2026-10-05 is after --until 2026-10-01"),
             (["--since", "2026-10-01", "--until", tomorrow], "--until \(tomorrow) is in the future"),

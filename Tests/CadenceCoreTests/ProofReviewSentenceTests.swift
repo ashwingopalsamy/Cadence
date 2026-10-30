@@ -58,6 +58,58 @@ import Testing
         #expect(Int64(unrecorded.count) == summary["ai_assisted_merges"]?["unrecorded"]?.intValue)
     }
 
+    /// A merged PR whose export policy is digest: its title and payload stay out of the file, and so does its marker.
+    static func digestPR(_ id: String, day: String, ai: Bool?) -> EventDraft {
+        GenAIMetricsTests.create(
+            GenAIMetricsTests.entry(id, day: day, kind: .prMerged, origin: .collected, source: "github", ai: ai, export: .digest),
+            actor: .collector("github"))
+    }
+
+    @Test func aDigestPRsMarkerIsUnrecordedInTheProofBecauseTheFileDoesNotCarryIt() throws {
+        let (store, clock) = try T.october()
+        try GenAIMetricsTests.seed(store)
+        try store.append([Self.digestPR("MD1", day: "2026-10-29", ai: true), Self.digestPR("MD2", day: "2026-10-29", ai: false)])
+        let proof = try ProofExporter.export(store, T.request(clock))
+        let summary = Self.summary(proof)
+        // Two more merged PRs are listed, as redacted stubs, and neither marker counts: the file cannot show them.
+        #expect(summary["merged_prs"]?["value"] == 6)
+        let assisted = try #require(summary["ai_assisted_merges"])
+        #expect(assisted["value"] == 2 && assisted["of"] == 3 && assisted["percent"] == 67 && assisted["unrecorded"] == 3)
+        #expect(
+            summary["review_sentence"]?["text"]
+                == "AI on 1 of 2 workdays. 67% of the 3 merged PRs with a recorded marker were AI-assisted. Your agent logged 2 entries you accepted.")
+        // The file carries no marker for a stub, and what it does carry gives the same figures.
+        let root = proof.json.objectValue!
+        let items = root["days"]!.arrayValue!.flatMap { $0.objectValue!["items"]!.arrayValue! }.map { $0.objectValue! }
+        let events = root["chain"]!.objectValue!["events"]!.arrayValue!.map { $0.objectValue! }
+        var byHash: [String: [String: JSONValue]] = [:]
+        for e in events { byHash[e["hash"]!.stringValue!] = e }
+        let merged = items.filter { $0["kind"] == "pr.merged" && $0["origin"] == "collected" }
+        let markers = merged.map { byHash[$0["ev"]!.stringValue!]?["data"]?["attrs"]?["ai_assisted"] }
+        #expect(merged.count == 6)
+        #expect(Int64(markers.filter { $0 == true }.count) == assisted["value"]?.intValue)
+        #expect(Int64(markers.filter { $0 == true || $0 == false }.count) == assisted["of"]?.intValue)
+        for stub in merged where stub["redacted"] == true { #expect(byHash[stub["ev"]!.stringValue!]?["data"] == nil) }
+        #expect(try T.python(try T.write(proof.bytes)).status == 0)
+    }
+
+    @Test func whenEveryListedPRIsAStubNoMarkerFigureIsGiven() throws {
+        let (store, clock) = try T.october()
+        try store.append([Self.digestPR("MD1", day: "2026-10-29", ai: true)])
+        let summary = Self.summary(try ProofExporter.export(store, T.request(clock)))
+        #expect(summary["merged_prs"]?["value"] == 2)  // the October fixture's own PR and the stub
+        for key in ["value", "of", "percent", "unrecorded"] { #expect(summary["ai_assisted_merges"]?[key] == .null, "\(key)") }
+        #expect(summary["review_sentence"]?["text"]?.stringValue?.contains("AI-assisted") != true)
+    }
+
+    @Test func theAgentEntriesDefinitionSaysItCountsListedItemsOnly() throws {
+        let (_, _, proof) = try Self.proof()
+        let definition = try #require(Self.summary(proof)["agent_entries"]?["definition"]?.stringValue)
+        #expect(definition.contains("listed items only"))
+        #expect(definition.contains("cadence summary"))
+        #expect(definition.contains("computed by Cadence"))
+    }
+
     @Test func theVerifierStillPassesAndAnEditedSentenceBreaksTheDigest() throws {
         let (_, _, proof) = try Self.proof()
         let pass = try T.python(try T.write(proof.bytes))

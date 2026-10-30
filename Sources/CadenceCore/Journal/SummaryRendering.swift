@@ -86,7 +86,7 @@ public enum SummaryRendering {
             } ?? "-"],
             ["Cache reuse", s.cacheReuse.flatMap { reuse in
                 reuse.percent.map { percent in
-                    "\(percent)% (\(reuse.cacheRead) cache read of \(reuse.cacheRead + reuse.input) input and cache read tokens) from "
+                    "\(percent)% (\(reuse.cacheRead) cache read of \(reuse.total) input and cache read tokens) from "
                         + sources(reuse.sources)
                 }
             } ?? "-"],

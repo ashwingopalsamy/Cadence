@@ -102,21 +102,24 @@ import Testing
         #expect(slip.stderr.hasPrefix("cadence: "))
         let slipped = try cli.json(["plan", "slip", secondID, "--reason", "reprioritised"])
         #expect(slipped["task"]?["status"]?.stringValue == "slipped")
-        let dropped = try cli.run(["plan", "drop", secondID, "--reason", "not needed"])
-        #expect(dropped.status == 2 && dropped.stderr.contains("task \(secondID) is already slipped"))
+        let dropped = try cli.json(["plan", "drop", secondID, "--reason", "not needed"])
+        #expect(dropped["task"]?["status"]?.stringValue == "dropped")
 
         #expect(try cli.run(["plan", "list"]).stdout.contains("Plan: 1 of 2 done"))
     }
 
-    @Test func aResolvedTaskIsNotResolvedAgain() throws {
+    @Test func aResolvedTaskCanBeCorrectedAgainFromTheCLI() throws {
+        // A manual correction (docs/SPEC.md section 9.5): the user may change their mind. Only an agent over MCP is
+        // refused, since it may not overwrite the user's resolution.
         defer { cli.remove() }
         let task = try id(try cli.json(["plan", "add", "Draft the ADR"]), "task")
-        #expect(try cli.run(["plan", "done", task]).status == 0)
-        for args in [["plan", "done", task], ["plan", "drop", task, "--reason", "cancelled"], ["plan", "slip", task, "--reason", "blocked"]] {
-            let result = try cli.run(args)
-            #expect(result.status == 2, "\(args)")
-            #expect(result.stderr.contains("is already done"), "\(result.stderr)")
-        }
+        #expect(try cli.json(["plan", "done", task])["task"]?["status"]?.stringValue == "done")
+        let slipped = try cli.json(["plan", "slip", task, "--reason", "blocked"])
+        #expect(slipped["task"]?["status"]?.stringValue == "slipped")
+        let dropped = try cli.json(["plan", "drop", task, "--reason", "cancelled"])
+        #expect(dropped["task"]?["status"]?.stringValue == "dropped")
+        let done = try cli.json(["plan", "done", task, "--note", "after all"])
+        #expect(done["task"]?["status"]?.stringValue == "done" && done["task"]?["reason_note"]?.stringValue == "after all")
         let plan = try cli.json(["plan", "list"])
         #expect(plan["tasks"]?.arrayValue?.first?["status"]?.stringValue == "done")
     }
@@ -127,8 +130,7 @@ import Testing
         let taskID = try id(try cli.json(["plan", "add", "Write the RFC"]), "task")
         let done = try cli.json(["plan", "done", taskID, "--link", entryID])
         #expect(done["task"]?["linked_entries"]?.arrayValue?.first?.stringValue == entryID)
-        let other = try id(try cli.json(["plan", "add", "Review the RFC"]), "task")
-        #expect(try cli.run(["plan", "done", other, "--link", "NOPE"]).status == 4)
+        #expect(try cli.run(["plan", "done", taskID, "--link", "NOPE"]).status == 4)
     }
 
     // MARK: day

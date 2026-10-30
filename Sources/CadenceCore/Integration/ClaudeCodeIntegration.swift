@@ -48,18 +48,45 @@ public enum ClaudeCodeIntegration {
 }
 
 /// Where Claude Code and Cadence keep their files, derived from one user home folder so tests can use a temporary one.
+///
+/// Claude Code keeps its files in `~/.claude` and its user configuration in `~/.claude.json`. When `CLAUDE_CONFIG_DIR`
+/// names a folder, it uses that folder in place of `~/.claude` and keeps the configuration in `<folder>/.claude.json`.
+/// Cadence follows the variable only when it is an absolute path; anything else is ignored. The cadence binary and the
+/// hooks stay under the user home.
 public struct ClaudeCodePaths: Sendable, Equatable {
     public let userHome: URL
+    /// The folder `CLAUDE_CONFIG_DIR` names, when it is set to an absolute path.
+    public let configDir: URL?
 
-    public init(userHome: URL) {
+    public init(userHome: URL, configDir: URL? = nil) {
         self.userHome = userHome
+        self.configDir = configDir
     }
 
-    public var claudeFolder: URL { userHome.appendingPathComponent(".claude", isDirectory: true) }
+    /// Follows `CLAUDE_CONFIG_DIR` from `environment`.
+    public init(userHome: URL, environment: [String: String]) {
+        self.init(userHome: userHome, configDir: Self.configDir(from: environment))
+    }
+
+    /// The folder `CLAUDE_CONFIG_DIR` names, when it is an absolute path. Empty, relative and `~` values are not used.
+    public static func configDir(from environment: [String: String]) -> URL? {
+        guard let value = environment["CLAUDE_CONFIG_DIR"], value.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: value, isDirectory: true).standardizedFileURL
+    }
+
+    /// True when `CLAUDE_CONFIG_DIR` is set to something that is not an absolute path, so it is not followed.
+    public static func ignoresConfigDir(in environment: [String: String]) -> Bool {
+        guard let value = environment["CLAUDE_CONFIG_DIR"], !value.isEmpty else { return false }
+        return !value.hasPrefix("/")
+    }
+
+    public var claudeFolder: URL { configDir ?? userHome.appendingPathComponent(".claude", isDirectory: true) }
     public var settings: URL { claudeFolder.appendingPathComponent("settings.json") }
     public var settingsBackup: URL { claudeFolder.appendingPathComponent("settings.json.cadence-backup") }
     /// Where `claude mcp add --scope user` records servers.
-    public var userConfig: URL { userHome.appendingPathComponent(".claude.json") }
+    public var userConfig: URL {
+        configDir?.appendingPathComponent(".claude.json") ?? userHome.appendingPathComponent(".claude.json")
+    }
     public var skillFolder: URL {
         claudeFolder.appendingPathComponent("skills", isDirectory: true).appendingPathComponent("cadence", isDirectory: true)
     }
@@ -170,6 +197,8 @@ enum ClaudeFiles {
         /// The parser's message, which starts with "not valid JSON".
         case notJSON(String)
         case notAnObject
+        /// A symbolic link that leads to no file. `destination` is where it points, nil when it loops.
+        case brokenLink(destination: String?)
 
         /// The phrase that follows the file name: `~/.claude.json is not valid JSON`.
         var phrase: String {
@@ -177,7 +206,35 @@ enum ClaudeFiles {
             case .unreadable: "cannot be read"
             case .notJSON: "is not valid JSON"
             case .notAnObject: "does not hold a JSON object"
+            case .brokenLink(let destination?): "is a symbolic link to \(destination) that does not lead to a file"
+            case .brokenLink(nil): "is a symbolic link that loops"
             }
+        }
+
+        /// What setup says when it will not touch the file.
+        func refusal(_ display: String) -> CadenceError {
+            switch self {
+            case .brokenLink:
+                return .validation("\(display) \(phrase); point it at a real file or remove it, then run this again")
+            case .unreadable(let why): return .io("cannot read \(display): \(why)")
+            case .notJSON(let message): return .validation("\(display) is \(message); fix it by hand, then run this again")
+            case .notAnObject: return .validation("\(display) does not hold a JSON object; fix it by hand, then run this again")
+            }
+        }
+    }
+
+    /// A symbolic link that leads nowhere: the target is missing or the links loop. Nil for anything else, including a
+    /// path that does not exist and a link that works. `FileManager.fileExists` calls such a link missing, and
+    /// replacing it would swap the user's link for a regular file.
+    static func linkProblem(_ url: URL) -> Problem? {
+        var info = stat()
+        guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFLNK else { return nil }
+        if stat(url.path, &info) == 0 { return nil }
+        switch errno {
+        case ELOOP: return .brokenLink(destination: nil)
+        case ENOENT, ENOTDIR:
+            return .brokenLink(destination: try? FileManager.default.destinationOfSymbolicLink(atPath: url.path))
+        default: return .unreadable(String(cString: strerror(errno)))
         }
     }
 
@@ -189,6 +246,7 @@ enum ClaudeFiles {
 
     /// Reads a file that must hold one JSON object.
     static func read(_ url: URL) -> ReadOutcome {
+        if let problem = linkProblem(url) { return .failed(problem) }
         guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
         let bytes: [UInt8]
         do {
@@ -212,9 +270,7 @@ enum ClaudeFiles {
         switch read(url) {
         case .missing: return nil
         case .loaded(let json, let bytes): return (json, bytes)
-        case .failed(.unreadable(let why)): throw .io("cannot read \(display): \(why)")
-        case .failed(.notJSON(let message)): throw .validation("\(display) is \(message); fix it by hand, then run this again")
-        case .failed(.notAnObject): throw .validation("\(display) does not hold a JSON object; fix it by hand, then run this again")
+        case .failed(let problem): throw problem.refusal(display)
         }
     }
 
@@ -246,12 +302,12 @@ enum ClaudeFiles {
         }
     }
 
-    /// Permission bits of a file, nil if it does not exist.
+    /// Permission bits of the file a path leads to, read with `stat` so a symbolic link is followed and its own mode
+    /// (always 0777) is never taken. Nil when the path does not lead to anything.
     static func mode(of url: URL) -> mode_t? {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-            let permissions = attributes[.posixPermissions] as? NSNumber
-        else { return nil }
-        return mode_t(permissions.intValue & 0o7777)
+        var info = stat()
+        guard stat(url.path, &info) == 0 else { return nil }
+        return info.st_mode & 0o7777
     }
 
     static func isExecutableFile(_ path: String) -> Bool {

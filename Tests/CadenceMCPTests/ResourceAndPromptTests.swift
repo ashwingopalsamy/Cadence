@@ -122,6 +122,15 @@ import Testing
         #expect(try h.eventCount() == before)
     }
 
+    @Test func theWeekResourceOnAnEmptyStoreCountsNoWorkdayAsUnsealed() throws {
+        let h = try ToolHarness(empty: true)
+        let text = contents(try read(h, "cadence://week/current"))
+        #expect(text.hasPrefix("Week: 2026-10-26 to 2026-10-29, 4 workdays."))
+        #expect(!text.contains("sealed 0 of"), "\(text)")
+        #expect(text.contains("(4 before the ledger began)"), "\(text)")
+        #expect(try h.eventCount() == 0)
+    }
+
     @Test func aBusyWeekIsCutUnderTheLimitAndSaysWhere() throws {
         let h = try ToolHarness()
         let title = String(repeating: "retry budget ", count: 12)

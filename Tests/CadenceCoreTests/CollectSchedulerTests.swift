@@ -300,6 +300,32 @@ import Testing
         #expect(refused("2026-09-21", "2026-09-21") == nil)
     }
 
+    @Test func anUntilOnTheCalendarDayBeforeTheDayBoundaryIsNotInTheFuture() throws {
+        let f = try Fixture([Self.collector()])
+        // 02:00 on the 22nd in Kolkata: the workday is still the 21st, but the calendar says the 22nd.
+        let zone = TimeZone(identifier: "Asia/Kolkata")!
+        f.clock.set(Timestamp.instant(clockTime: "02:00", on: LocalDate("2026-09-22")!, in: zone)!)
+        #expect(f.scheduler.today() == LocalDate("2026-09-21")!)
+        func refused(_ since: String, _ until: String) -> String? {
+            do {
+                _ = try f.scheduler.runWindow(name: "oncall", since: LocalDate(since)!, until: LocalDate(until)!)
+                return nil
+            } catch { return error.message }
+        }
+        // Up to the calendar today is allowed, a day later is not.
+        #expect(refused("2026-09-20", "2026-09-22") == nil)
+        #expect(f.windows == ["2026-09-20..2026-09-22"])
+        f.fake.requests.removeAll()
+        #expect(refused("2026-09-22", "2026-09-22") == nil)
+        #expect(refused("2026-09-20", "2026-09-23") == "--until 2026-09-23 is in the future; today is 2026-09-22")
+        #expect(f.fake.requests.count == 1)  // only the second window ran
+        // Past the boundary the two days are the same again, and the message is as before.
+        f.clock.set(Timestamp.instant(clockTime: "05:00", on: LocalDate("2026-09-22")!, in: zone)!)
+        #expect(f.scheduler.today() == LocalDate("2026-09-22")!)
+        #expect(refused("2026-09-20", "2026-09-23") == "--until 2026-09-23 is in the future; today is 2026-09-22")
+        #expect(refused("2026-09-20", "2026-09-22") == nil)
+    }
+
     // MARK: - Backfill
 
     @Test func chunksAreSevenDaysOldestFirstAndEndToday() {

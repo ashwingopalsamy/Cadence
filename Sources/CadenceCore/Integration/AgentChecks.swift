@@ -136,6 +136,7 @@ public struct AgentChecks: Sendable {
     func skill() -> Result {
         let name = "skill"
         let file = paths.display(paths.skillFile)
+        if let problem = ClaudeFiles.linkProblem(paths.skillFile) { return unknown(name, paths.skillFile, problem) }
         guard FileManager.default.fileExists(atPath: paths.skillFile.path) else {
             return warn(name, "not installed; \(Self.fix)")
         }
@@ -151,10 +152,21 @@ public struct AgentChecks: Sendable {
     func spool() -> Result {
         let name = "spool"
         let backlog = SpoolBacklog.scan(roots: roots)
+        guard backlog.folderReadable else { return warn(name, "unknown, the spool folder cannot be read") }
         guard backlog.stateReadable || backlog.spoolFiles == 0 else {
             let files = backlog.spoolFiles
             return warn(
                 name, "unknown, state/spool-drain.json cannot be read; \(files) spool \(files == 1 ? "file is" : "files are") present")
+        }
+        if backlog.unreadableFiles > 0 {
+            // Say what is known about the other files, and that these ones are not.
+            let count = backlog.spoolFiles
+            var text = "unknown, \(backlog.unreadableFiles) of \(count) spool \(count == 1 ? "file" : "files") cannot be read"
+            if backlog.lines > 0 {
+                let lines = "\(backlog.lines) hook \(backlog.lines == 1 ? "line" : "lines")"
+                text += "; \(lines) in the others \(backlog.lines == 1 ? "is" : "are") waiting"
+            }
+            return warn(name, text)
         }
         guard backlog.lines > 0 else { return ok(name, "no hook lines are waiting") }
         let lines = "\(backlog.lines) hook \(backlog.lines == 1 ? "line" : "lines")"

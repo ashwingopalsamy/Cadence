@@ -77,9 +77,10 @@ public struct ClaudeCodeSetup: Sendable {
     let environment: [String: String]
     let runner: any ProcessRunner
 
-    /// `environment` supplies PATH for finding `claude`. `userHome` is the only home folder ever used.
+    /// `environment` supplies PATH for finding `claude` and `CLAUDE_CONFIG_DIR` for Claude Code's folder, when it is
+    /// an absolute path. `userHome` is the only home folder ever used.
     public init(userHome: URL, environment: [String: String], runner: any ProcessRunner) {
-        self.paths = ClaudeCodePaths(userHome: userHome)
+        self.paths = ClaudeCodePaths(userHome: userHome, environment: environment)
         self.environment = environment
         self.runner = runner
     }
@@ -92,6 +93,9 @@ public struct ClaudeCodeSetup: Sendable {
             notes.append(
                 "\(paths.display(paths.cadenceBinary)) is not installed yet, so the hooks and the MCP server cannot run until it is; run make install or copy the cadence binary there"
             )
+        }
+        if ClaudeCodePaths.ignoresConfigDir(in: environment) {
+            notes.append("CLAUDE_CONFIG_DIR is not an absolute path, so \(paths.display(paths.claudeFolder)) is used")
         }
         return SetupPlan(
             paths: paths, hooks: try planHooks(), mcp: planMCP(), skill: try planSkill(), notes: notes)
@@ -165,6 +169,8 @@ public struct ClaudeCodeSetup: Sendable {
 
     func planSkill() throws(CadenceError) -> SetupPlan.Skill {
         let wanted = Array(ClaudeCodeIntegration.skillMarkdown.utf8)
+        // A link that leads nowhere is the user's; it is not replaced by a regular file. A working one is followed.
+        if let problem = ClaudeFiles.linkProblem(paths.skillFile) { throw problem.refusal(paths.display(paths.skillFile)) }
         guard FileManager.default.fileExists(atPath: paths.skillFile.path) else {
             return SetupPlan.Skill(action: .create, file: paths.skillFile, backup: nil)
         }
@@ -175,11 +181,17 @@ public struct ClaudeCodeSetup: Sendable {
         return SetupPlan.Skill(action: .replace, file: paths.skillFile, backup: paths.skillBackup)
     }
 
+    /// The absolute entries of PATH, in order. A relative entry depends on the folder the command runs in, so it is
+    /// neither searched for `claude` nor handed on to it.
+    var absolutePathEntries: [String] {
+        (environment["PATH"] ?? "").split(separator: ":", omittingEmptySubsequences: true)
+            .filter { $0.hasPrefix("/") }.map(String.init)
+    }
+
     /// The first executable file called `claude` in an absolute PATH entry.
     func findClaude() -> String? {
-        for entry in (environment["PATH"] ?? "").split(separator: ":", omittingEmptySubsequences: true)
-        where entry.hasPrefix("/") {
-            let candidate = URL(fileURLWithPath: String(entry), isDirectory: true).appendingPathComponent("claude").path
+        for entry in absolutePathEntries {
+            let candidate = URL(fileURLWithPath: entry, isDirectory: true).appendingPathComponent("claude").path
             if ClaudeFiles.isExecutableFile(candidate) { return candidate }
         }
         return nil
@@ -239,13 +251,16 @@ public struct ClaudeCodeSetup: Sendable {
         case .unavailable: return .skipped("claude is not on your PATH")
         case .register:
             guard let claude = mcp.claude else { return .skipped("claude is not on your PATH") }
+            let entries = absolutePathEntries
             var childEnvironment: [String: String] = [
-                "HOME": paths.userHome.path, "PATH": environment["PATH"] ?? "/usr/bin:/bin",
+                "HOME": paths.userHome.path, "PATH": entries.isEmpty ? "/usr/bin:/bin" : entries.joined(separator: ":"),
                 "LANG": environment["LANG"] ?? "en_US.UTF-8",
                 // `claude mcp add` only edits configuration; these ask it to stay offline anyway.
                 "DISABLE_AUTOUPDATER": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
             ]
             if let tmp = environment["TMPDIR"] { childEnvironment["TMPDIR"] = tmp }
+            // Tell claude the folder setup reads, so it records the registration where doctor looks for it.
+            if let folder = paths.configDir { childEnvironment["CLAUDE_CONFIG_DIR"] = folder.path }
             let request = ProcessRequest(
                 executable: claude, arguments: mcp.arguments, environment: childEnvironment,
                 workingDirectory: paths.userHome, timeout: .seconds(30))

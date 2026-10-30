@@ -388,6 +388,21 @@ import Testing
         #expect(try h.call("log_entries", ["transcript": "- Reviewed a doc", "dry_run": false]).isError == false)
     }
 
+    @Test func theSummaryOfAnEmptyStoreCallsPastWorkdaysBeforeTheLedgerNotUnsealed() throws {
+        let h = try ToolHarness(empty: true)
+        for range in ["week", "month", "cycle"] {
+            let reply = try h.call("summary", ["range": .string(range)])
+            #expect(!reply.isError, "\(range)")
+            let sealed = try #require(reply.structured?["sealed_workdays"], "\(range)")
+            #expect(sealed["value"] == .null && sealed["of"] == 0, "\(range): \(sealed)")
+            let workdays = try #require(reply.structured?["range"]?["workdays"]?.intValue)
+            #expect(sealed["before_ledger"]?.intValue == workdays && workdays > 0, "\(range): \(sealed)")
+            #expect(!reply.text.contains("sealed 0 of"), "\(range): \(reply.text)")
+            #expect(reply.text.contains("(\(workdays) before the ledger began)"), "\(range): \(reply.text)")
+        }
+        #expect(try h.eventCount() == 0)
+    }
+
     // MARK: every tool
 
     @Test func readToolsNeverWriteAndNoResultPassesTheLimit() throws {

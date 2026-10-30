@@ -222,17 +222,23 @@ public struct CollectScheduler {
     }
 
     /// Exactly `since` through `until`, in 7-day chunks when longer, stopping at the first chunk that fails. Needs
-    /// 2000-01-01 <= since <= until <= today.
+    /// 2000-01-01 <= since <= until <= the calendar today.
     public func runWindow(name: String, since: LocalDate, until: LocalDate) throws(CadenceError) -> [CollectStep] {
         try validateWindow(since: since, until: until)
         return try run(name: name, windows: Self.chunks(from: since, through: until))
     }
 
-    /// Refuses a window that is backwards, ends after today or starts before 2000-01-01.
+    /// The last day an explicit window may end on: the calendar day in the profile zone. Before the day boundary
+    /// (04:00 by default) that is a day after the workday, and a window that names it is not asking for the future.
+    public func latestWindowDay() -> LocalDate {
+        max(today(), Self.day(of: clock.now(), in: zone))
+    }
+
+    /// Refuses a window that is backwards, ends after the calendar today or starts before 2000-01-01.
     public func validateWindow(since: LocalDate, until: LocalDate) throws(CadenceError) {
-        let today = today()
+        let latest = latestWindowDay()
         guard since <= until else { throw .validation("--since \(since) is after --until \(until)") }
-        guard until <= today else { throw .validation("--until \(until) is in the future; today is \(today)") }
+        guard until <= latest else { throw .validation("--until \(until) is in the future; today is \(latest)") }
         guard since >= Self.earliestDay else { throw .validation("--since \(since) is before \(Self.earliestDay)") }
     }
 

@@ -284,6 +284,76 @@ import Testing
         #expect(json["model_mix"]?["models"] == .null)
     }
 
+    // MARK: counters at the largest size a file can hold
+
+    static let big: Int64 = 9_007_199_254_740_991  // 2^53 - 1
+
+    static func bigRow(_ model: String) -> GenAIModelRow {
+        GenAIModelRow(
+            model: model, requests: nil, tokens: TokenCounts(input: big, output: big, cacheRead: big, cacheWrite: nil),
+            costMicros: nil, estimated: false)
+    }
+
+    @Test func manyDaysOfHugeCountersSaturateInTheMetricsInsteadOfTrapping() throws {
+        // 1,212 rows of the largest counter add up to more than Int64 can hold.
+        let start = LocalDate("2023-01-01")!
+        let sourceDays = (0..<1212).map { i in
+            GenAISourceDay(day: start.adding(days: i), tool: "claude-code", source: "import:x", models: [Self.bigRow("m")])
+        }
+        let picks = GenAIPick.pick(sourceDays, config: Config.defaults(timezone: "Asia/Kolkata"))
+        #expect(picks.count == 1212)
+        let reuse = try #require(GenAIMetrics.cacheReuse(picks))
+        #expect(reuse.cacheRead == Int64.max && reuse.input == Int64.max)
+        #expect(reuse.total == Int64.max)
+        #expect(reuse.percent == 50)  // as many cache read tokens as input tokens, even though both are cut at the limit
+        let mix = try #require(GenAIMetrics.modelMix(picks))
+        #expect(mix.models == [ModelShare(model: "m", outputTokens: Int64.max)])
+        #expect(mix.totalOutputTokens == Int64.max)
+        #expect(mix.percent(of: mix.models[0]) == 100)
+    }
+
+    @Test func manyModelsOfHugeCountersSaturateTheTotalAndKeepTheirShares() throws {
+        let rows = (0..<1212).map { Self.bigRow("model-\($0)") }
+        let day = GenAISourceDay(day: LocalDate("2026-10-29")!, tool: "claude-code", source: "import:x", models: rows)
+        let picks = GenAIPick.pick([day], config: Config.defaults(timezone: "Asia/Kolkata"))
+        let mix = try #require(GenAIMetrics.modelMix(picks))
+        #expect(mix.models.count == 1212 && mix.totalOutputTokens == Int64.max)
+        // Each model is 1 of 1,212 equal parts: a small, non-zero share, not a missing one.
+        #expect(mix.percent(of: mix.models[0]) == 1)
+        let reuse = try #require(GenAIMetrics.cacheReuse(picks))
+        #expect(reuse.cacheRead == Int64.max && reuse.input == Int64.max && reuse.percent == 50)
+    }
+
+    @Test func aSummaryAndItsTextSurviveHugeCounters() throws {
+        let (journal, store, _) = try S.journal()
+        let drafts = (0..<1212).map { i in
+            Self.usage("2026-10-29", "import", model: "model-\(i)", input: Self.big, output: Self.big, cacheRead: Self.big)
+        }
+        try store.append(drafts)
+        let summary = try journal.summary(from: LocalDate("2026-10-27")!, to: LocalDate("2026-10-30")!)
+        #expect(summary.outputTokens == Int.max)
+        #expect(summary.cacheReuse?.cacheRead == Int64.max && summary.cacheReuse?.percent == 50)
+        #expect(summary.modelMix?.totalOutputTokens == Int64.max)
+        let text = SummaryRendering.human(summary)
+        #expect(text.contains("Cache reuse"))
+        #expect(text.contains("50% (9223372036854775807 cache read of 9223372036854775807 input and cache read tokens)"), "\(text)")
+        #expect(text.contains("Model mix"))
+        let json = summary.json.objectValue?["ai"]
+        #expect(json?["cache_reuse"]?["percent"] == 50)
+        #expect(json?["model_mix"]?["total_output_tokens"] == .int(Int64.max))
+    }
+
+    @Test func percentsOfHugeFiguresDoNotTrapAndStayHonest() {
+        #expect(GenAIMetrics.percent(Int64.max, of: Int64.max) == 100)
+        #expect(GenAIMetrics.percent(Int64.max / 2, of: Int64.max) == 50)
+        #expect(GenAIMetrics.percent(1, of: Int64.max) == 1)
+        #expect(GenAIMetrics.percent(Int64.max - 1, of: Int64.max) == 99)
+        #expect(GenAIMetrics.percent(-1, of: 5) == nil && GenAIMetrics.percent(6, of: 5) == nil)
+        #expect(CacheReuse(cacheRead: Int64.max, input: 0, sources: [:]).percent == 100)
+        #expect(CacheReuse(cacheRead: Int64.max, input: 1, sources: [:]).percent == 99)
+        #expect(Share(Int.max, of: Int.max).percent == 100)
+    }
+
     // MARK: the sentence
 
     @Test func theSentenceIsTheSpecsWhenEveryFigureIsKnown() {

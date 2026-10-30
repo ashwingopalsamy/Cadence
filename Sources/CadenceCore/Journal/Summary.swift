@@ -250,7 +250,9 @@ extension Journal {
         for date in LocalDate.range(from, through: to) {
             guard rules.kind(of: date, declared: declared[date]) == .workday else { continue }
             workdays += 1
-            if let start = ledgerStart, date < start {
+            // With no ledger start (a store that has no genesis event yet) nothing has been recorded, so every day is
+            // before the ledger: none is an unsealed workday.
+            if ledgerStart.map({ date < $0 }) ?? true {
                 beforeLedger += 1
                 continue
             }

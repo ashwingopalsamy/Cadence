@@ -179,7 +179,8 @@ struct DoctorCommand: ParsableCommand {
     /// These are advice: they warn and never fail, so a Mac without Claude Code still passes.
     static func integrationChecks(_ context: CLIContext) -> [Check] {
         AgentChecks(
-            paths: ClaudeCodePaths(userHome: context.userHome), roots: context.roots, clock: context.clock,
+            paths: ClaudeCodePaths(userHome: context.userHome, environment: context.environment), roots: context.roots,
+            clock: context.clock,
             environment: context.environment, runner: SystemProcessRunner(), platform: .current, uid: UInt32(geteuid())
         ).run().map { Check(name: $0.name, status: $0.level == .ok ? .ok : .warn, detail: $0.detail) }
     }

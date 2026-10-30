@@ -59,7 +59,11 @@ public struct CacheReuse: Sendable, Equatable {
         self.sources = sources
     }
 
-    public var percent: Int? { GenAIMetrics.percent(cacheRead, of: cacheRead + input) }
+    /// Input plus cache read, stopping at `Int64.max` instead of trapping on counters read from a file.
+    public var total: Int64 { cacheRead.saturatingAdding(input) }
+
+    /// Taken over the exact sum, so counters cut at the limit still give a true share.
+    public var percent: Int? { GenAIMetrics.exactPercent(Int128(cacheRead), of: Int128(cacheRead) + Int128(input)) }
 }
 
 public struct ModelShare: Sendable, Equatable {
@@ -83,16 +87,25 @@ public struct ModelMix: Sendable, Equatable {
         self.sources = sources
     }
 
-    public var totalOutputTokens: Int64 { models.reduce(0) { $0 + $1.outputTokens } }
+    /// The sum of the models' output tokens, stopping at `Int64.max` instead of trapping.
+    public var totalOutputTokens: Int64 { models.reduce(0) { $0.saturatingAdding($1.outputTokens) } }
 
-    public func percent(of model: ModelShare) -> Int? { GenAIMetrics.percent(model.outputTokens, of: totalOutputTokens) }
+    /// Taken over the exact sum, so a total cut at the limit still gives each model its true share.
+    public func percent(of model: ModelShare) -> Int? {
+        GenAIMetrics.exactPercent(Int128(model.outputTokens), of: models.reduce(Int128(0)) { $0 + Int128($1.outputTokens) })
+    }
 }
 
 public enum GenAIMetrics {
     /// `value` out of `total` as a whole percent, rounded half up. A share that is not all or nothing never
     /// reads as 0 or 100, so "100%" always means every one. Nil when the total is 0 or the figures are out of order.
     public static func percent(_ value: Int64, of total: Int64) -> Int? {
-        guard total > 0, value >= 0, value <= total, total <= Int64.max / 200 else { return nil }
+        exactPercent(Int128(value), of: Int128(total))
+    }
+
+    /// The same share over 128-bit figures, which cannot overflow for any sum of Int64 counters.
+    static func exactPercent(_ value: Int128, of total: Int128) -> Int? {
+        guard total > 0, value >= 0, value <= total else { return nil }
         var percent = Int((value * 200 + total) / (total * 2))
         if value < total { percent = min(percent, 99) }
         if value > 0 { percent = max(percent, 1) }
@@ -138,9 +151,11 @@ public enum GenAIMetrics {
         var sourceDays: [String: Set<LocalDate>] = [:]
         for day in days {
             for row in day.models {
-                guard let i = row.tokens.input, let r = row.tokens.cacheRead, i >= 0, r >= 0, i + r > 0 else { continue }
-                input += i
-                read += r
+                guard let i = row.tokens.input, let r = row.tokens.cacheRead, i >= 0, r >= 0, i.saturatingAdding(r) > 0 else {
+                    continue
+                }
+                input = input.saturatingAdding(i)
+                read = read.saturatingAdding(r)
                 sourceDays[day.source, default: []].insert(day.day)
             }
         }
@@ -155,7 +170,7 @@ public enum GenAIMetrics {
         for day in days {
             for row in day.models {
                 guard let output = row.tokens.output, output >= 0 else { continue }
-                tokens[row.model, default: 0] += output
+                tokens[row.model] = (tokens[row.model] ?? 0).saturatingAdding(output)
                 sourceDays[day.source, default: []].insert(day.day)
             }
         }

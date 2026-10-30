@@ -100,9 +100,12 @@ private struct Builder {
         let createdSeq: Int64
         let updatedSeq: Int64
         /// The PR's AI marker as recorded in attrs; nil when none is recorded.
-        let aiAssisted: Bool?
+        let marker: Bool?
 
         var isPublic: Bool { status == .accepted && export == .include }
+        /// The marker as the file shows it. It sits in the entry's payload in the chain, which only a public entry
+        /// carries, so a digest entry's marker is unrecorded here even though the store has it.
+        var aiAssisted: Bool? { isPublic ? marker : nil }
         var isListed: Bool { status == .accepted && (export == .include || export == .digest) }
     }
 
@@ -140,7 +143,7 @@ private struct Builder {
                 status: r.text("status").flatMap(EntryStatus.init(rawValue:)),
                 export: r.text("export").flatMap(ExportPolicy.init(rawValue:)), backfilled: r.int("backfilled") == 1,
                 afterSeal: r.int("after_seal") == 1, createdSeq: r.int("created_seq") ?? 0,
-                updatedSeq: r.int("updated_seq") ?? 0, aiAssisted: GenAIMetrics.marker(inAttrs: r.text("attrs")))
+                updatedSeq: r.int("updated_seq") ?? 0, marker: GenAIMetrics.marker(inAttrs: r.text("attrs")))
         }
         var entryByID: [String: EntryRow] = [:]
         for e in entries { entryByID[e.id] = e }
@@ -322,11 +325,11 @@ private struct Builder {
         summaryFields["ai_assisted_merges"] = GenAIMetrics.assistedJSON(
             assisted,
             definition:
-                "Merged PRs listed in days that recorded an AI marker, out of listed merged PRs with a recorded marker; PRs with no recorded marker are in neither number and are counted as unrecorded. A marker is text in the PR body, so it shows a claim, not proof of AI use. Each marker sits in its entry's payload in the chain where the export policy is include; computed by Cadence, not recomputed by the verifier"
+                "Merged PRs listed in days that recorded an AI marker, out of listed merged PRs with a recorded marker; PRs with no recorded marker are in neither number and are counted as unrecorded. A marker is text in the PR body, so it shows a claim, not proof of AI use. Each marker sits in its entry's payload in the chain where the export policy is include; a PR kept as a digest stub has no payload in the file, so its marker is unrecorded here; computed by Cadence, not recomputed by the verifier"
         )
         summaryFields["agent_entries"] = [
             "value": GenAIMetrics.number(agentEntries),
-            "definition": "Items listed in days with origin agent, which is self-reported like origin self: plausible, not proven; computed by Cadence from the same items, not recomputed by the verifier",
+            "definition": "Items listed in days with origin agent, which is self-reported like origin self: plausible, not proven. It counts listed items only, so it can differ from cadence summary, which counts every accepted entry in range; computed by Cadence from the same items, not recomputed by the verifier",
         ]
         summaryFields["review_sentence"] = [
             "text": ReviewSentence.make(aiDays: aiShare, assisted: assisted, agentEntries: agentEntries).map(JSONValue.string) ?? .null,

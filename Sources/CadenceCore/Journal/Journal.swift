@@ -297,8 +297,9 @@ public final class Journal {
         }
     }
 
-    /// Resolves a task as done, slipped or dropped. The wrap-up deck lets the user change their mind (section 4.5), so
-    /// by default a resolved task can be resolved again; the CLI and the MCP tools pass `replacing: false` and refuse.
+    /// Resolves a task as done, slipped or dropped. The user may change their mind, in the wrap-up deck (section 4.5)
+    /// or with a manual correction from the CLI (section 9.5), so by default a resolved task can be resolved again.
+    /// The MCP tools pass `replacing: false` and refuse: an agent may not overwrite the user's resolution.
     public func planResolve(
         taskID: String, status: TaskStatus, reason: String?, note: String?, links: [String], actor: Actor,
         replacing: Bool = true

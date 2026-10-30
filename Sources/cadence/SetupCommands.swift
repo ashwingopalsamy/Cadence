@@ -20,7 +20,8 @@ struct ClaudeCodeSetupCommand: ParsableCommand {
             Choose one of --print and --apply. --apply saves ~/.claude/settings.json as \
             ~/.claude/settings.json.cadence-backup (mode 0600) before it changes it, keeps your other settings and \
             hooks, and does nothing a second time. The MCP registration runs claude mcp add and is skipped, with a \
-            message, when claude is not on your PATH.
+            message, when claude is not on your PATH. When CLAUDE_CONFIG_DIR is set to an absolute path, that folder \
+            is used in place of ~/.claude, and the registration is read from its .claude.json.
             """)
 
     @Flag(name: .customLong("print"), help: "Show what --apply would change and change nothing.") var printOnly = false

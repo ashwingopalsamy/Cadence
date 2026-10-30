@@ -15,7 +15,7 @@ import Testing
         let script = """
             #!/bin/sh
             printf '%s\\n' "$*" >> "$HOME/claude-calls.log"
-            printf '{"mcpServers":{"cadence":{"type":"stdio","command":"%s","args":["mcp"]}}}' "$9" > "$HOME/.claude.json"
+            printf '{"mcpServers":{"cadence":{"type":"stdio","command":"%s","args":["mcp"]}}}' "$9" > "${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
 
             """
         let file = bin.appendingPathComponent("claude")
@@ -199,6 +199,76 @@ import Testing
         #expect(result.stderr.hasPrefix("cadence: ~/.claude/settings.json is not valid JSON"))
         #expect(try String(contentsOf: settings, encoding: .utf8) == "{ not json")
         #expect(!FileManager.default.fileExists(atPath: cli.userHome.appendingPathComponent(".claude/settings.json.cadence-backup").path))
+    }
+
+    // MARK: CLAUDE_CONFIG_DIR
+
+    @Test func claudeConfigDirMovesSetupAndDoctorToThatFolder() throws {
+        let cli = CLIHome()
+        defer { cli.remove() }
+        let claude = try Self.fakeClaude()
+        let config = CLIHome.root.appendingPathComponent("claude-config-\(UUID().uuidString)", isDirectory: true)
+        var environment = Self.environment(claude: claude)
+        environment["CLAUDE_CONFIG_DIR"] = config.path
+        try Self.write("#!/bin/sh\n", to: cli.userHome.appendingPathComponent(".local/bin/cadence"), mode: 0o755)
+
+        let printed = try cli.run(["setup", "claude-code", "--print"], environment: environment)
+        #expect(printed.status == 0)
+        #expect(printed.stdout.contains("hooks: add SessionStart, SessionEnd, Stop and TaskCompleted to \(config.path)/settings.json"))
+        #expect(printed.stdout.contains("skill: copy the cadence skill to \(config.path)/skills/cadence/SKILL.md"))
+        #expect(!FileManager.default.fileExists(atPath: config.path))
+
+        let applied = try cli.run(["setup", "claude-code", "--apply"], environment: environment)
+        #expect(applied.status == 0, "\(applied.stderr)")
+        #expect(FileManager.default.fileExists(atPath: config.appendingPathComponent("settings.json").path))
+        #expect(
+            try String(contentsOf: config.appendingPathComponent("skills/cadence/SKILL.md"), encoding: .utf8)
+                == ClaudeCodeIntegration.skillMarkdown)
+        // claude was told the folder, so the registration is where setup and doctor read it.
+        #expect(FileManager.default.fileExists(atPath: config.appendingPathComponent(".claude.json").path))
+        #expect(!FileManager.default.fileExists(atPath: cli.userHome.appendingPathComponent(".claude").path))
+        #expect(!FileManager.default.fileExists(atPath: cli.userHome.appendingPathComponent(".claude.json").path))
+
+        let doctor = try cli.run(["doctor"], environment: environment)
+        #expect(doctor.status == 0)
+        #expect(doctor.stdout.contains("ok    mcp server: registered for your user in \(config.path)/.claude.json and runs ~/.local/bin/cadence mcp"))
+        #expect(doctor.stdout.contains("ok    hooks: all four events run cadence in \(config.path)/settings.json"))
+        #expect(doctor.stdout.contains("ok    skill: installed at \(config.path)/skills/cadence/SKILL.md"))
+
+        // Without the variable the default folder is read again, and nothing is there.
+        let plain = try cli.run(["doctor"], environment: Self.environment(claude: claude))
+        #expect(plain.stdout.contains("warn  hooks: ~/.claude/settings.json does not exist"))
+        #expect(plain.stdout.contains("warn  mcp server: not registered"))
+    }
+
+    @Test func aRelativeClaudeConfigDirIsIgnoredAndSaid() throws {
+        let cli = CLIHome()
+        defer { cli.remove() }
+        var environment = Self.environment(claude: nil)
+        environment["CLAUDE_CONFIG_DIR"] = "relative/claude"
+        let printed = try cli.run(["setup", "claude-code", "--print"], environment: environment)
+        #expect(printed.status == 0)
+        #expect(printed.stdout.contains("hooks: add SessionStart, SessionEnd, Stop and TaskCompleted to ~/.claude/settings.json"))
+        #expect(printed.stdout.contains("note: CLAUDE_CONFIG_DIR is not an absolute path, so ~/.claude is used"))
+    }
+
+    // MARK: links that lead nowhere
+
+    @Test func setupRefusesASettingsLinkThatLeadsNowhereAndWritesNothing() throws {
+        let cli = CLIHome()
+        defer { cli.remove() }
+        let settings = cli.userHome.appendingPathComponent(Self.settingsPath)
+        let missing = cli.userHome.appendingPathComponent("dotfiles/settings.json")
+        try FileManager.default.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: settings.path, withDestinationPath: missing.path)
+        let before = Self.snapshot(cli.userHome)
+        for mode in ["--print", "--apply"] {
+            let result = try cli.run(["setup", "claude-code", mode], environment: Self.environment(claude: nil))
+            #expect(result.status == 2, "\(mode): \(result.stderr)")
+            #expect(result.stderr.hasPrefix("cadence: ~/.claude/settings.json is a symbolic link to \(missing.path) that does not lead to a file"))
+        }
+        #expect(Self.snapshot(cli.userHome) == before)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: settings.path)) == missing.path)
     }
 
     // MARK: doctor

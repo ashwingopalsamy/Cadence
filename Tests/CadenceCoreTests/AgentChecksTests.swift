@@ -296,6 +296,93 @@ import Testing
         }
     }
 
+    @Test func anUnreadableSpoolFolderOrFileIsUnknownNotOk() throws {
+        // A file where the folder should be cannot be listed. Running as root rules out permission bits in tests,
+        // so a directory stands in for a spool file that cannot be read.
+        let f = Fixture()
+        f.claude.write("not a folder\n", to: f.roots.spool)
+        var result = try f.check("spool")
+        #expect(result.level == .warn)
+        #expect(result.detail == "unknown, the spool folder cannot be read")
+
+        let g = Fixture()
+        g.spool("hooks-2026-09-21.ndjson", [Self.line("2026-09-21T10:00:00.000Z")])
+        try FileManager.default.createDirectory(
+            at: g.roots.spool.appendingPathComponent("hooks-2026-09-20.ndjson"), withIntermediateDirectories: true)
+        result = try g.check("spool")
+        #expect(result.level == .warn)
+        #expect(result.detail == "unknown, 1 of 2 spool files cannot be read; 1 hook line in the others is waiting")
+
+        // Only the one that cannot be read: nothing is claimed about the rest.
+        let h = Fixture()
+        try FileManager.default.createDirectory(
+            at: h.roots.spool.appendingPathComponent("hooks-2026-09-20.ndjson"), withIntermediateDirectories: true)
+        result = try h.check("spool")
+        #expect(result.level == .warn)
+        #expect(result.detail == "unknown, 1 of 1 spool file cannot be read")
+        // A missing folder is just an empty spool.
+        #expect(try Fixture().check("spool").level == .ok)
+    }
+
+    // MARK: links and CLAUDE_CONFIG_DIR
+
+    @Test func aLinkThatLeadsNowhereIsUnknownNotMissing() throws {
+        let f = Fixture()
+        let missing = TestStore.tempDirectory("dotfiles").appendingPathComponent("gone.json")
+        try ClaudeCodeSetupTests.link(f.claude.paths.settings, to: missing.path)
+        try ClaudeCodeSetupTests.link(f.claude.paths.skillFile, to: missing.path)
+        for name in ["hooks", "transcript retention"] {
+            let result = try f.check(name)
+            #expect(result.level == .warn, "\(name)")
+            #expect(
+                result.detail.hasPrefix("unknown, ~/.claude/settings.json is a symbolic link to \(missing.path) that does not lead to a file"),
+                "\(result.detail)")
+        }
+        let skill = try f.check("skill")
+        #expect(skill.level == .warn)
+        #expect(
+            skill.detail
+                == "unknown, ~/.claude/skills/cadence/SKILL.md is a symbolic link to \(missing.path) that does not lead to a file")
+        // A loop is named as one.
+        let g = Fixture()
+        try ClaudeCodeSetupTests.link(g.claude.paths.settings, to: g.claude.paths.settings.path)
+        #expect(try g.check("hooks").detail == "unknown, ~/.claude/settings.json is a symbolic link that loops")
+    }
+
+    @Test func claudeConfigDirIsWhereDoctorLooks() throws {
+        let claude = ClaudeHome()
+        let config = TestStore.tempDirectory("claude-config")
+        let roots = FileRoots(home: TestStore.tempDirectory("cadence-home"))
+        let environment = ["CLAUDE_CONFIG_DIR": config.path]
+        let paths = ClaudeCodePaths(userHome: claude.home, environment: environment)
+        func run(_ name: String) throws -> AgentChecks.Result {
+            let results = AgentChecks(
+                paths: paths, roots: roots, clock: ManualClock(Self.now), environment: environment, runner: RecordingRunner(),
+                platform: .other, uid: 501
+            ).run()
+            return try #require(results.first { $0.name == name })
+        }
+        // Files in ~/.claude do not count when the variable names another folder.
+        claude.writeSettings(#"{"cleanupPeriodDays": 400}"#)
+        claude.write(ClaudeCodeIntegration.skillMarkdown, to: claude.paths.skillFile)
+        claude.writeUserConfig()
+        #expect(try run("transcript retention").detail.hasPrefix("cleanupPeriodDays is not set"))
+        #expect(try run("skill").detail == "not installed; run cadence setup claude-code --apply")
+        #expect(try run("mcp server").detail == "not registered; run cadence setup claude-code --apply")
+        #expect(try run("hooks").detail == "\(config.path)/settings.json does not exist; run cadence setup claude-code --apply")
+
+        // The same files in the named folder are found, and the registration is read from its .claude.json.
+        claude.write(#"{"cleanupPeriodDays": 500}"#, to: config.appendingPathComponent("settings.json"))
+        claude.write(ClaudeCodeIntegration.skillMarkdown, to: config.appendingPathComponent("skills/cadence/SKILL.md"))
+        claude.write(
+            #"{"mcpServers": {"cadence": {"type": "stdio", "command": "\#(paths.cadenceBinary.path)", "args": ["mcp"]}}}"#,
+            to: config.appendingPathComponent(".claude.json"))
+        #expect(try run("transcript retention").detail == "cleanupPeriodDays is 500 in \(config.path)/settings.json")
+        #expect(try run("skill").detail == "installed at \(config.path)/skills/cadence/SKILL.md")
+        let server = try run("mcp server")
+        #expect(server.detail.hasPrefix("registered, but ~/.local/bin/cadence is missing or not executable"))
+    }
+
     // MARK: collector agent
 
     @Test func offMacOSTheAgentIsNotApplicable() throws {

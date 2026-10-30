@@ -84,6 +84,10 @@ extension Config {
             guard let date = LocalDate(try string(b, "profile.backfillFrom")) else {
                 throw fail("profile.backfillFrom", "must be a date like 2026-10-01")
             }
+            // The same floor as a backfill job and --since: no collector reads from before it.
+            guard date >= CollectScheduler.earliestDay else {
+                throw fail("profile.backfillFrom", "must not be before \(CollectScheduler.earliestDay)")
+            }
             backfill = date
         }
         var config = Config.defaults(timezone: zone)

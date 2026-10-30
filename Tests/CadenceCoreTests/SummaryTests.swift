@@ -182,4 +182,45 @@ import Testing
         #expect(week.zone == Self.zone)
         #expect(week.streak.current == 2)
     }
+
+    // MARK: a ledger with no start
+
+    /// A journal made only for reading over an empty store: no genesis event, so the ledger has no start.
+    static func readingJournal() throws -> (Journal, SQLiteStore) {
+        let clock = ManualClock(Timestamp.parse("2026-10-30T03:00:00Z")!)  // Fri 30 Oct 08:30 in Kolkata
+        let store = try TestStore.make(clock: clock, projector: LedgerProjector())
+        let journal = try Journal(
+            store: store, config: Config.defaults(timezone: zone), clock: clock, ids: CountingIDs(), actor: .mcp, writesGenesis: false)
+        return (journal, store)
+    }
+
+    @Test func withNoLedgerStartEveryWorkdayIsBeforeTheLedgerNotUnsealed() throws {
+        let (journal, store) = try Self.readingJournal()
+        #expect(try store.eventCount() == 0)
+        // Past workdays must not read as "sealed 0 of 3 counted workdays".
+        for (from, to, workdays) in [("2026-10-26", "2026-10-30", 5), ("2026-10-05", "2026-10-09", 5), ("2026-09-01", "2026-09-30", 22)] {
+            let summary = try journal.summary(from: LocalDate(from)!, to: LocalDate(to)!)
+            #expect(summary.workdays == workdays, "\(from)")
+            #expect(summary.beforeLedger == workdays, "\(from)")
+            #expect(summary.countedWorkdays == 0 && summary.sealedWorkdays == nil, "\(from)")
+            #expect(summary.planDone == nil && summary.aiDays == nil, "\(from)")
+            let json = summary.json.objectValue!
+            #expect(json["sealed_workdays"]?["value"] == .null && json["sealed_workdays"]?["of"] == 0, "\(from)")
+            #expect(json["sealed_workdays"]?["before_ledger"] == .int(Int64(workdays)), "\(from)")
+            let text = SummaryRendering.human(summary)
+            #expect(!text.contains("sealed 0 of"), "\(text)")
+            #expect(text.contains("(\(workdays) before the ledger began)"), "\(text)")
+            #expect(text.contains("No counted data in this range yet."), "\(text)")
+        }
+        let week = try journal.summary(.week)
+        #expect(week.beforeLedger == week.workdays && week.countedWorkdays == 0)
+        #expect(try store.eventCount() == 0)
+    }
+
+    @Test func aLedgerThatHasAStartStillCountsItsOwnWorkdays() throws {
+        // The fix is for an empty ledger only: with a genesis event the October fixture counts as before.
+        let (journal, _, _) = try Self.journal()
+        let summary = try journal.summary(from: LocalDate("2026-10-27")!, to: LocalDate("2026-10-30")!)
+        #expect(summary.countedWorkdays == 3 && summary.sealedWorkdays == 2)
+    }
 }

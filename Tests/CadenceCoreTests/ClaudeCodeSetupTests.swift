@@ -347,6 +347,228 @@ import Testing
         #expect(try home.setup(path: nil).plan().skill.action == .none)
     }
 
+    // MARK: links that lead nowhere
+
+    static func link(_ at: URL, to destination: String) throws {
+        try FileManager.default.createDirectory(at: at.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: at.path, withDestinationPath: destination)
+    }
+
+    static func refusal(_ body: () throws(CadenceError) -> Void) -> CadenceError? {
+        do {
+            try body()
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    /// Both `--print` (plan) and `--apply` refuse, with exit 2, and the home is exactly as it was.
+    static func expectRefusal(_ home: ClaudeHome, path: URL?, contains phrase: String, file: String) {
+        let before = home.snapshot()
+        let setup = home.setup(path: path)
+        let attempts: [String: () throws(CadenceError) -> Void] = [
+            "plan": { () throws(CadenceError) in _ = try setup.plan() },
+            "apply": { () throws(CadenceError) in _ = try setup.apply() },
+        ]
+        for (name, attempt) in attempts {
+            guard let error = refusal(attempt) else {
+                Issue.record("\(name) should refuse \(file)")
+                continue
+            }
+            #expect(error.exitCode == 2, "\(name): \(error.message)")
+            #expect(error.message.hasPrefix(file + " is a symbolic link"), "\(name): \(error.message)")
+            #expect(error.message.contains(phrase), "\(name): \(error.message)")
+            #expect(error.message.hasSuffix("then run this again"), "\(name): \(error.message)")
+        }
+        #expect(home.snapshot() == before)
+        #expect(home.runner.requests.isEmpty)
+    }
+
+    @Test func aDanglingSettingsLinkIsRefusedAndNothingIsWritten() throws {
+        let home = ClaudeHome()
+        let bin = home.installFakeClaude()
+        let missing = TestStore.tempDirectory("dotfiles").appendingPathComponent("settings.json")
+        try Self.link(home.paths.settings, to: missing.path)
+        Self.expectRefusal(home, path: bin, contains: "to \(missing.path) that does not lead to a file", file: "~/.claude/settings.json")
+        // The link is still a link to the same place, not a regular file with the link's own mode.
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: home.paths.settings.path)) == missing.path)
+        #expect(!FileManager.default.fileExists(atPath: missing.path))
+        #expect(!FileManager.default.fileExists(atPath: home.paths.settingsBackup.path))
+        #expect(!FileManager.default.fileExists(atPath: home.paths.skillFile.path))
+    }
+
+    @Test func aLoopingSettingsLinkIsRefusedAndNothingIsWritten() throws {
+        let home = ClaudeHome()
+        try Self.link(home.paths.settings, to: home.paths.settings.path)
+        Self.expectRefusal(home, path: nil, contains: "that loops", file: "~/.claude/settings.json")
+        // Two links that point at each other loop too.
+        let home2 = ClaudeHome()
+        let other = home2.paths.claudeFolder.appendingPathComponent("other.json")
+        try Self.link(home2.paths.settings, to: other.path)
+        try Self.link(other, to: home2.paths.settings.path)
+        Self.expectRefusal(home2, path: nil, contains: "that loops", file: "~/.claude/settings.json")
+    }
+
+    @Test func aDanglingSkillLinkIsRefusedBeforeAnythingElseIsWritten() throws {
+        let home = ClaudeHome()
+        let bin = home.installFakeClaude()
+        let missing = TestStore.tempDirectory("dotfiles").appendingPathComponent("SKILL.md")
+        try Self.link(home.paths.skillFile, to: missing.path)
+        Self.expectRefusal(home, path: bin, contains: "to \(missing.path) that does not lead to a file", file: "~/.claude/skills/cadence/SKILL.md")
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: home.paths.skillFile.path)) == missing.path)
+        // The hooks were not written either: a refusal writes nothing at all.
+        #expect(!FileManager.default.fileExists(atPath: home.paths.settings.path))
+        #expect(!FileManager.default.fileExists(atPath: missing.path))
+    }
+
+    @Test func aLoopingSkillLinkIsRefused() throws {
+        let home = ClaudeHome()
+        try Self.link(home.paths.skillFile, to: home.paths.skillFile.path)
+        Self.expectRefusal(home, path: nil, contains: "that loops", file: "~/.claude/skills/cadence/SKILL.md")
+    }
+
+    @Test func aWorkingSkillLinkIsFollowedAndStaysALink() throws {
+        let home = ClaudeHome()
+        let dotfiles = TestStore.tempDirectory("dotfiles")
+        let target = home.write("my own notes\n", to: dotfiles.appendingPathComponent("SKILL.md"), mode: 0o644)
+        try Self.link(home.paths.skillFile, to: target.path)
+        let plan = try home.setup(path: nil).plan()
+        #expect(plan.skill.action == .replace)
+        _ = try home.setup(path: nil).apply()
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: home.paths.skillFile.path)) == target.path)
+        #expect(home.read(target) == ClaudeCodeIntegration.skillMarkdown)
+        #expect(home.read(home.paths.skillBackup) == "my own notes\n")
+        // Now identical through the link: nothing to do.
+        #expect(try home.setup(path: nil).plan().skill.action == .none)
+    }
+
+    @Test func aWorkingSettingsLinkKeepsTheTargetsModeNotTheLinks() throws {
+        let home = ClaudeHome()
+        let dotfiles = TestStore.tempDirectory("dotfiles")
+        let target = home.write("{}", to: dotfiles.appendingPathComponent("settings.json"), mode: 0o640)
+        try Self.link(home.paths.settings, to: target.path)
+        _ = try home.setup(path: nil).apply()
+        #expect(home.mode(target) == 0o640)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: home.paths.settings.path)) == target.path)
+    }
+
+    @Test func aModeIsReadFromTheFileALinkPointsAtAndNeverFromTheLink() throws {
+        let folder = TestStore.tempDirectory("modes")
+        let file = folder.appendingPathComponent("real.json")
+        _ = FileManager.default.createFile(atPath: file.path, contents: Data("{}".utf8), attributes: [.posixPermissions: 0o640])
+        let working = folder.appendingPathComponent("working.json")
+        let dangling = folder.appendingPathComponent("dangling.json")
+        let loop = folder.appendingPathComponent("loop.json")
+        try FileManager.default.createSymbolicLink(atPath: working.path, withDestinationPath: file.path)
+        try FileManager.default.createSymbolicLink(atPath: dangling.path, withDestinationPath: folder.appendingPathComponent("gone.json").path)
+        try FileManager.default.createSymbolicLink(atPath: loop.path, withDestinationPath: loop.path)
+        #expect(ClaudeFiles.mode(of: file) == 0o640)
+        #expect(ClaudeFiles.mode(of: working) == 0o640)
+        // A link's own mode is 0777; it is never taken.
+        #expect(ClaudeFiles.mode(of: dangling) == nil)
+        #expect(ClaudeFiles.mode(of: loop) == nil)
+        #expect(ClaudeFiles.mode(of: folder.appendingPathComponent("missing.json")) == nil)
+    }
+
+    // MARK: the environment claude is given
+
+    @Test func onlyAbsolutePathEntriesAreGivenToClaude() throws {
+        let home = ClaudeHome()
+        let bin = home.installFakeClaude()
+        let setup = ClaudeCodeSetup(
+            userHome: home.home, environment: ["PATH": "relative/bin:.::\(bin.path):../up:bin"], runner: home.runner)
+        _ = try setup.apply()
+        let request = try #require(home.runner.requests.first)
+        #expect(request.environment["PATH"] == bin.path)
+    }
+
+    // MARK: CLAUDE_CONFIG_DIR
+
+    static func registration(_ paths: ClaudeCodePaths) -> @Sendable (ProcessRequest) -> Void {
+        { _ in
+            try? Data(#"{"mcpServers":{"cadence":{"type":"stdio","command":"\#(paths.cadenceBinary.path)","args":["mcp"]}}}"#.utf8)
+                .write(to: paths.userConfig)
+        }
+    }
+
+    @Test func claudeConfigDirReplacesTheClaudeFolderAndTheUserConfig() throws {
+        let home = ClaudeHome()
+        let bin = home.installFakeClaude()
+        let config = TestStore.tempDirectory("claude-config")
+        let environment = home.environment(path: bin, extra: ["CLAUDE_CONFIG_DIR": config.path])
+        let setup = ClaudeCodeSetup(userHome: home.home, environment: environment, runner: home.runner)
+        #expect(setup.paths.claudeFolder.path == config.path)
+        #expect(setup.paths.settings.path == config.path + "/settings.json")
+        #expect(setup.paths.skillFile.path == config.path + "/skills/cadence/SKILL.md")
+        #expect(setup.paths.userConfig.path == config.path + "/.claude.json")
+        // The binary and the hooks still live under the user home.
+        #expect(setup.paths.cadenceBinary == home.paths.cadenceBinary)
+        home.runner.onRun(Self.registration(setup.paths))
+
+        let plan = try setup.plan()
+        #expect(plan.human.contains("hooks: add SessionStart, SessionEnd, Stop and TaskCompleted to \(config.path)/settings.json"))
+        #expect(!FileManager.default.fileExists(atPath: home.paths.claudeFolder.path))
+
+        let result = try setup.apply()
+        #expect(result.mcp == .registered)
+        #expect(try Self.parse(home.read(setup.paths.settings)) == (try Self.parse(ClaudeCodeIntegration.hooksJSON)))
+        #expect(home.read(setup.paths.skillFile) == ClaudeCodeIntegration.skillMarkdown)
+        // Nothing goes to ~/.claude or ~/.claude.json.
+        #expect(!FileManager.default.fileExists(atPath: home.paths.claudeFolder.path))
+        #expect(!FileManager.default.fileExists(atPath: home.paths.userConfig.path))
+        // claude is told where its configuration lives, so it writes the registration where setup reads it.
+        let request = try #require(home.runner.requests.first)
+        #expect(request.environment["CLAUDE_CONFIG_DIR"] == config.path)
+        // The registration is read back from there: a second run changes nothing and does not run claude again.
+        let before = home.snapshot()
+        let configBefore = FileManager.default.fileExists(atPath: setup.paths.userConfig.path)
+        #expect(configBefore)
+        let second = try setup.apply()
+        #expect(second.mcp == .unchanged)
+        #expect(!(try setup.plan().changesAnything))
+        #expect(home.runner.requests.count == 1)
+        #expect(home.snapshot() == before)
+    }
+
+    @Test func claudeConfigDirInsideTheHomeIsShownWithATilde() throws {
+        let home = ClaudeHome()
+        let config = home.home.appendingPathComponent(".config/claude", isDirectory: true)
+        let setup = ClaudeCodeSetup(
+            userHome: home.home, environment: home.environment(extra: ["CLAUDE_CONFIG_DIR": config.path + "/"]),
+            runner: home.runner)
+        #expect(try setup.plan().human.contains("to ~/.config/claude/settings.json"))
+        _ = try setup.apply()
+        #expect(FileManager.default.fileExists(atPath: config.appendingPathComponent("settings.json").path))
+        #expect(!FileManager.default.fileExists(atPath: home.paths.claudeFolder.path))
+    }
+
+    @Test func aClaudeConfigDirThatIsNotAnAbsolutePathIsIgnoredAndSaid() throws {
+        for value in ["relative/claude", "~/claude", ".", "claude"] {
+            let home = ClaudeHome()
+            let setup = ClaudeCodeSetup(
+                userHome: home.home, environment: home.environment(extra: ["CLAUDE_CONFIG_DIR": value]), runner: home.runner)
+            #expect(setup.paths == home.paths, "\(value)")
+            let plan = try setup.plan()
+            #expect(plan.notes.contains { $0.contains("CLAUDE_CONFIG_DIR") && $0.contains("not an absolute path") }, "\(value)")
+            _ = try setup.apply()
+            #expect(FileManager.default.fileExists(atPath: home.paths.settings.path), "\(value)")
+        }
+        // Empty is the same as unset, with no note.
+        let home = ClaudeHome()
+        let setup = ClaudeCodeSetup(
+            userHome: home.home, environment: home.environment(extra: ["CLAUDE_CONFIG_DIR": ""]), runner: home.runner)
+        #expect(setup.paths == home.paths)
+        #expect(!(try setup.plan().notes.contains { $0.contains("CLAUDE_CONFIG_DIR") }))
+    }
+
+    @Test func withoutClaudeConfigDirTheDefaultsStand() {
+        let home = ClaudeHome()
+        let setup = ClaudeCodeSetup(userHome: home.home, environment: home.environment(), runner: home.runner)
+        #expect(setup.paths == home.paths)
+        #expect(setup.paths.userConfig == home.home.appendingPathComponent(".claude.json"))
+    }
+
     // MARK: json
 
     @Test func theJSONReportCarriesTheSameFacts() throws {

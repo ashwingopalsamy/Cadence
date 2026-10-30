@@ -61,6 +61,7 @@ struct CLIHome {
         // Every run acts on a throwaway user home, so doctor and setup never read or write the real one.
         environment["HOME"] = userHome.path
         environment["CADENCE_AGENT_LABEL"] = nil
+        environment["CLAUDE_CONFIG_DIR"] = nil
         for (key, value) in extra { environment[key] = value }
         process.environment = environment
         let out = Pipe()

@@ -107,6 +107,15 @@ import Testing
         #expect(try Config.parse(CanonicalJSON.string(config.json)) == config)
     }
 
+    @Test func theBackfillStartHasTheSameFloorAsJobsAndSince() throws {
+        // 2000-01-01 is the earliest day a job or --since may start, and it is the floor here too.
+        let floor = #"{"cadence":"config/1","profile":{"timezone":"UTC","backfillFrom":"2000-01-01"}}"#
+        #expect(try Config.parse(floor).profile.backfillFrom == CollectScheduler.earliestDay)
+        let config = try Config.parse(Self.example())
+        #expect(try config.setting("profile.backfillFrom", to: #""2000-01-01""#).profile.backfillFrom == LocalDate("2000-01-01"))
+        #expect(throws: CadenceError.self) { try config.setting("profile.backfillFrom", to: #""1999-12-31""#) }
+    }
+
     @Test func theStandupAILineIsOffUntilSwitchedOn() throws {
         let defaults = Config.defaults(timezone: "UTC")
         #expect(defaults.genai.standupLine == false)
@@ -135,6 +144,7 @@ import Testing
         Bad(text: with(#""colour":"blue""#), expected: "colour: unknown key"),
         Bad(text: #"{"cadence":"config/1","profile":{"timezone":"Mars/Base"}}"#, expected: "profile.timezone: not a time zone: Mars/Base"),
         Bad(text: #"{"cadence":"config/1","profile":{"timezone":"UTC","backfillFrom":"2026-13-01"}}"#, expected: "profile.backfillFrom: must be a date like 2026-10-01"),
+        Bad(text: #"{"cadence":"config/1","profile":{"timezone":"UTC","backfillFrom":"1999-12-31"}}"#, expected: "profile.backfillFrom: must not be before 2000-01-01"),
         Bad(text: with(#""workdays":[]"#), expected: "workdays: must not be empty"),
         Bad(text: with(#""workdays":["mon","tue","mon"]"#), expected: "workdays[2]: duplicate \"mon\""),
         Bad(text: with(#""workdays":["mon","funday"]"#), expected: "workdays[1]: must be one of mon, tue, wed, thu, fri, sat, sun"),

@@ -14,12 +14,21 @@ public struct SpoolBacklog: Sendable, Equatable {
     public var spoolFiles = 0
     /// False when the drain state exists but cannot be read, so waiting lines cannot be told from drained ones.
     public var stateReadable = true
+    /// False when the spool folder is there but cannot be listed. A folder that is not there is an empty spool.
+    public var folderReadable = true
+    /// Spool files that are there but cannot be read. Nothing is known about their lines.
+    public var unreadableFiles = 0
 
     public static func scan(roots: FileRoots) -> SpoolBacklog {
         var backlog = SpoolBacklog()
         let manager = FileManager.default
-        let names = ((try? manager.contentsOfDirectory(atPath: roots.spool.path)) ?? [])
-            .filter { SpoolDrain.isSpoolFile($0) }.sorted()
+        var names: [String] = []
+        do {
+            names = try manager.contentsOfDirectory(atPath: roots.spool.path).filter { SpoolDrain.isSpoolFile($0) }.sorted()
+        } catch {
+            // Unknown is not empty: a folder that exists and cannot be listed may hold waiting lines.
+            if (try? manager.attributesOfItem(atPath: roots.spool.path)) != nil { backlog.folderReadable = false }
+        }
         backlog.spoolFiles = names.count
         var offsets: [String: Int] = [:]
         switch SpoolDrain.offsetState(in: roots) {
@@ -29,7 +38,10 @@ public struct SpoolBacklog: Sendable, Equatable {
         }
         for name in names {
             let url = roots.spool.appendingPathComponent(name)
-            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let data = try? Data(contentsOf: url) else {
+                backlog.unreadableFiles += 1
+                continue
+            }
             let bytes = [UInt8](data)
             var offset = offsets[name] ?? 0
             if offset > bytes.count { offset = 0 }  // the file was replaced by a shorter one, as the drain assumes
