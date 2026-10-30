@@ -1,0 +1,11 @@
+Cadence
+Copyright 2026 Ashwin Gopalsamy
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It depends on the following Apple-maintained packages, each under the
+Apache License, Version 2.0:
+  - swift-argument-parser  https://github.com/apple/swift-argument-parser
+  - swift-crypto           https://github.com/apple/swift-crypto (Linux builds only)
+
+All example data in this repository is synthetic (ACME, example.com).
