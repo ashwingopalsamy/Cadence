@@ -33,3 +33,13 @@ Other settled choices: Apache-2.0 licence (section 16); GitHub CI deferred, `mak
 - Each record is written in its own savepoint, so a record the ledger refuses is skipped and the rest of the run stands.
 - A second record in one envelope for the same item `source_ref`, usage row or leave day is skipped with a reason, so a rerun of the same envelope writes nothing.
 - Links that carry credentials (`user:pass@`) are dropped like any other refused link.
+
+## Planner decisions for the collector runner and maps, T2.7 and T2.10 (2026-10-30)
+
+- The approval digest covers the collector name, the full argv and the env keys and values, not the keys only, so any change asks again. The prompt shows every element quoted. Control, NUL and bidi characters are refused in commands, `gh` and env values. The digest is pinned by a test and agrees with Python.
+- Commands run in their own process group. The timeout's SIGTERM and SIGKILL reach everything they started, and anything left when the command exits is killed, so no grandchild can hold a run or its lock open.
+- Only the fixed reason (exit status, signal, timeout, cut output) goes into `ingest.run`; stderr stays in `logs/`, because the ledger is permanent and stderr can hold tokens or host names.
+- Runs are serial across processes through `locks/runs.lock`, beside the per-collector lock.
+- Approvals are read without following symlinks and checked on the open file.
+- An envelope with an unreadable header is still kept in `inbox/` (section 10.1 wins over the "writes nothing" of 10.2, which is about the ledger).
+- JSON read through a map, and gh output, keep non-integer numbers as text instead of failing or zeroing them.

@@ -27,4 +27,24 @@ public enum PrivateFile {
             throw .io("cannot write \(url.lastPathComponent)")
         }
     }
+
+    /// The bytes of a regular file that you own and nobody else can read or write, opened without following a
+    /// symlink and checked on the open descriptor, so the file read is the file checked. Nil otherwise.
+    public static func readOwned(_ url: URL, limit: Int = 1024 * 1024) -> [UInt8]? {
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == getuid(), info.st_mode & 0o077 == 0,
+            Int(info.st_size) <= limit
+        else { return nil }
+        var bytes = [UInt8](repeating: 0, count: Int(info.st_size))
+        var offset = 0
+        while offset < bytes.count {
+            let n = bytes[offset...].withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
+            guard n > 0 else { return nil }
+            offset += n
+        }
+        return bytes
+    }
 }

@@ -127,13 +127,66 @@ import Testing
         let plan = try CollectorRunner.plan(for: Self.oncall, selfExecutable: "/x")
         #expect(plan.approvalText == """
             Collector oncall will run:
-              /bin/sh
-              /opt/collectors/oncall.sh
-              {since}
-              {until}
+              "/bin/sh"
+              "/opt/collectors/oncall.sh"
+              "{since}"
+              "{until}"
             with this environment:
-              ROTA=primary
+              ROTA="primary"
             """)
+    }
+
+    @Test func theDigestIsPinned() throws {
+        // A change to this value would silently void, or merge, every approval on disk. Python agrees:
+        // sha256(json.dumps({"name","argv","env"}, sort_keys=True, separators=(",", ":"), ensure_ascii=False)).
+        let plan = try CollectorRunner.plan(for: Self.oncall, selfExecutable: "/x")
+        #expect(plan.digest == "e1de715f1ea6f1723d999a816b8e5c4085a41d52c74815ac1a24271c4892d436")
+    }
+
+    @Test func controlAndBidiCharactersCannotHideInAPlan() throws {
+        let hostile = [
+            Config.Collector(name: "nl", command: ["/usr/bin/env", "true\n  --dry-run"]),
+            Config.Collector(name: "nul", command: ["/usr/bin/env", "a\u{0}b"]),
+            Config.Collector(name: "bidi", command: ["/usr/bin/env", "safe\u{202E}txt.sh"]),
+            Config.Collector(name: "envvalue", command: ["/bin/true"], env: ["KEY": "x\ry"]),
+            Config.Collector(name: "envkey", command: ["/bin/true"], env: ["É": "1"]),
+            Config.Collector(name: "lower", command: ["/bin/true"], env: ["key": "1"]),
+        ]
+        for collector in hostile {
+            #expect(throws: CadenceError.self, "\(collector.name)") { try CollectorRunner.plan(for: collector, selfExecutable: "/x") }
+        }
+        let json = #"{"profile":{"timezone":"Asia/Kolkata"},"collectors":{"x":{"command":["/usr/bin/env","a\nb"]}}}"#
+        #expect(throws: CadenceError.self) { try Config.parse(json) }
+    }
+
+    @Test func aSymlinkedApprovalsFileIsNotTrusted() throws {
+        let f = try Fixture(collectors: [Self.oncall])
+        let runner = f.runner(FakeRunner(Self.output(Self.envelope())))
+        try f.approveAll(runner)
+        let real = f.roots.state.appendingPathComponent("elsewhere.json")
+        try FileManager.default.moveItem(at: runner.approvalsFile, to: real)
+        try FileManager.default.createSymbolicLink(at: runner.approvalsFile, withDestinationURL: real)
+        #expect(try runner.run(name: "oncall", window: Self.window) == .refused(.notApproved))
+    }
+
+    @Test func runsAreSerialAcrossCollectors() throws {
+        let f = try Fixture(collectors: [Self.oncall])
+        let runner = f.runner(FakeRunner(Self.output(Self.envelope())))
+        try f.approveAll(runner)
+        let held = try #require(try RunLock(f.roots.state.appendingPathComponent("locks/runs.lock")))
+        #expect(try runner.run(name: "oncall", window: Self.window) == .refused(.anotherRunning))
+        held.release()
+        #expect(try f.report(try runner.run(name: "oncall", window: Self.window)).status == "ok")
+    }
+
+    @Test func aLogThatCannotBeWrittenDoesNotHideTheRun() throws {
+        let f = try Fixture(collectors: [Self.oncall])
+        try Data("not a folder".utf8).write(to: f.roots.logs)
+        let runner = f.runner(FakeRunner(Self.output("", status: 1, stderr: "boom\n")))
+        try f.approveAll(runner)
+        let report = try f.report(try runner.run(name: "oncall", window: Self.window))
+        #expect(report.status == "error")
+        #expect(try f.runs().count == 1)
     }
 
     // MARK: - Config safety and state
@@ -143,7 +196,7 @@ import Testing
         let fake = FakeRunner(Self.output(Self.envelope()))
         let runner = open.runner(fake)
         try open.approveAll(runner)
-        #expect(try runner.run(name: "oncall", window: Self.window) == .refused(.unsafeConfig("config.json has mode 644; it must be 600")))
+        #expect(try runner.run(name: "oncall", window: Self.window) == .refused(.unsafeConfig("config.json has mode 644; only you may read or write it (600)")))
         #expect(fake.requests.isEmpty)
 
         let missing = try Fixture(collectors: [Self.oncall], configMode: nil)
@@ -228,7 +281,7 @@ import Testing
 
     @Test func failuresWriteOnlyAFailedIngestRun() throws {
         let cases: [(ProcessResult, String)] = [
-            (Self.output(Self.envelope(), status: 2, stderr: "warming up\ngh: not logged in\n"), "exit status 2: gh: not logged in"),
+            (Self.output(Self.envelope(), status: 2, stderr: "warming up\ngh: not logged in\n"), "exit status 2; see logs/collector-oncall.log"),
             (Self.output(Self.envelope(), timedOut: true), "timed out after 60 s"),
             (Self.output(Self.envelope(), truncated: true), "output was larger than 10 MB and was cut"),
             (ProcessResult(termination: .signalled(9), timedOut: false, stdout: Data(), stdoutTruncated: false, stderrTail: Data()), "stopped by signal 9"),
@@ -317,5 +370,11 @@ import Testing
         fake.result = Self.output(Self.envelope())
         _ = try runner.run(name: "oncall", window: Self.window)
         #expect(try runner.health(name: "oncall").failuresInARow == 0)
+        // error, ok, error, error: two in a row, not failing. An unreadable header counts as a failure too.
+        fake.result = Self.output("not an envelope")
+        _ = try runner.run(name: "oncall", window: Self.window)
+        _ = try runner.run(name: "oncall", window: Self.window)
+        let two = try runner.health(name: "oncall")
+        #expect(two.failuresInARow == 2 && !two.isFailing)
     }
 }

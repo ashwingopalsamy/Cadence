@@ -44,4 +44,52 @@ import Testing
             try SystemProcessRunner().run(ProcessRequest(executable: "cat", workingDirectory: directory))
         }
     }
+
+    func timed(_ script: String, timeout: Duration = .seconds(1)) throws -> (ProcessResult, Double) {
+        let start = Date()
+        let result = try SystemProcessRunner().run(
+            ProcessRequest(executable: "/bin/sh", arguments: ["-c", script], workingDirectory: directory, timeout: timeout,
+                           killGrace: .milliseconds(300)))
+        return (result, Date().timeIntervalSince(start))
+    }
+
+    @Test func theTimeoutReachesEverythingTheCommandStarted() throws {
+        let (result, elapsed) = try timed("sleep 8; echo late")
+        #expect(result.timedOut && elapsed < 4, "took \(elapsed) s")
+        #expect(result.stdout.isEmpty)
+    }
+
+    @Test func aCommandThatIgnoresSIGTERMIsKilled() throws {
+        let (result, elapsed) = try timed("trap '' TERM; sleep 8")
+        #expect(result.timedOut && elapsed < 4, "took \(elapsed) s")
+    }
+
+    @Test func aBackgroundChildCannotHoldTheRunOpen() throws {
+        let (result, elapsed) = try timed("sleep 8 & echo hi", timeout: .seconds(30))
+        #expect(!result.timedOut && result.termination == .exited(0) && elapsed < 4, "took \(elapsed) s")
+        #expect(String(decoding: result.stdout, as: UTF8.self) == "hi\n")
+    }
+
+    @Test func theEnvironmentAndFolderAreExactlyAsGiven() throws {
+        let result = try SystemProcessRunner().run(
+            ProcessRequest(executable: "/bin/sh", arguments: ["-c", "env | sort; pwd -P"], environment: ["A_KEY": "one two", "PATH": "/usr/bin:/bin"],
+                           workingDirectory: URL(fileURLWithPath: "/")))
+        let lines = String(decoding: result.stdout, as: UTF8.self).split(separator: "\n").map(String.init)
+        #expect(lines.contains("A_KEY=one two") && lines.contains("PATH=/usr/bin:/bin") && lines.last == "/")
+        #expect(!lines.contains { $0.hasPrefix("HOME=") })
+    }
+
+    @Test func theStderrTailKeepsTheLastBytes() throws {
+        let result = try SystemProcessRunner().run(
+            ProcessRequest(executable: "/bin/sh", arguments: ["-c", "head -c 100000 /dev/zero | tr '\\0' e >&2; printf END >&2"],
+                           workingDirectory: directory, stderrTailLimit: 64 * 1024))
+        #expect(result.stderrTail.count == 64 * 1024)
+        #expect(String(decoding: result.stderrTail.suffix(3), as: UTF8.self) == "END")
+    }
+
+    @Test func aMissingExecutableIsAReadableError() {
+        #expect(throws: CadenceError.self) {
+            try SystemProcessRunner().run(ProcessRequest(executable: "/nonexistent/collector", workingDirectory: directory))
+        }
+    }
 }

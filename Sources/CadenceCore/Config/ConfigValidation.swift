@@ -262,11 +262,15 @@ extension Config {
             let argv = try strings(commandValue, "\(path).command")
             guard let first = argv.first else { throw fail("\(path).command", "must not be empty") }
             guard first.hasPrefix("/") else { throw fail("\(path).command[0]", "must be an absolute path") }
+            for (i, element) in argv.enumerated() where !CollectorPlan.isPlain(element) {
+                throw fail("\(path).command[\(i)]", "must not hold control or bidi characters")
+            }
             c.command = argv
         }
         if let gh = try optionalString(m, "gh", path) {
             guard c.builtin == "github" else { throw fail("\(path).gh", "only allowed on the github builtin") }
             guard gh.hasPrefix("/") else { throw fail("\(path).gh", "must be an absolute path") }
+            guard CollectorPlan.isPlain(gh) else { throw fail("\(path).gh", "must not hold control or bidi characters") }
             c.gh = gh
         }
         c.map = try optionalString(m, "map", path)
@@ -292,7 +296,9 @@ extension Config {
                 guard !reservedEnv.contains(key) else {
                     throw fail(p, "reserved; Cadence sets PATH, HOME, LANG and TZ itself")
                 }
-                c.env[key] = try string(env[key] ?? .null, p)
+                let value = try string(env[key] ?? .null, p)
+                guard CollectorPlan.isPlain(value) else { throw fail(p, "must not hold control or bidi characters") }
+                c.env[key] = value
             }
         }
         return c

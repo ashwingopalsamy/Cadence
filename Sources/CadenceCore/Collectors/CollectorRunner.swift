@@ -2,33 +2,73 @@ import Foundation
 
 /// Exactly what a collector run executes, before `{since}` and `{until}` are filled in. Its digest is what you approve.
 public struct CollectorPlan: Sendable, Equatable {
-    public var name: String
-    public var executable: String
+    public let name: String
+    public let executable: String
     /// Every argument after the executable, placeholders still in place.
-    public var arguments: [String]
+    public let arguments: [String]
     /// The collector's own environment, on top of the fixed PATH, HOME, LANG and TZ.
-    public var env: [String: String]
+    public let env: [String: String]
+    /// sha256 of the canonical name, argv and environment. Any change to them asks for approval again.
+    public let digest: String
 
-    /// sha256 of the canonical argv and environment. Any change to either asks for approval again.
-    public var digest: String {
-        let argv = ([executable] + arguments).map { JSONValue.string($0) }
+    /// Checks every piece, so what the prompt shows is exactly what runs: an absolute executable, env keys as
+    /// `^[A-Z_][A-Z0-9_]*$` and not reserved, and no control, NUL or bidi characters anywhere.
+    init(name: String, executable: String, arguments: [String], env: [String: String]) throws(CadenceError) {
+        guard Actor.isValidName(name) else { throw .validation("collectors: '\(name)' is not a valid name") }
+        guard executable.hasPrefix("/") else { throw .validation("collectors.\(name).command[0]: must be an absolute path") }
+        for (index, text) in ([executable] + arguments).enumerated() where !Self.isPlain(text) {
+            throw .validation("collectors.\(name).command[\(index)]: must not hold control or bidi characters")
+        }
+        for key in env.keys.sorted() {
+            guard Self.isEnvKey(key) else { throw .validation("collectors.\(name).env.\(key): key must match ^[A-Z_][A-Z0-9_]*$") }
+            guard !Config.reservedEnv.contains(key) else { throw .validation("collectors.\(name).env.\(key): is fixed by Cadence") }
+            guard Self.isPlain(env[key]!) else { throw .validation("collectors.\(name).env.\(key): must not hold control or bidi characters") }
+        }
+        self.name = name
+        self.executable = executable
+        self.arguments = arguments
+        self.env = env
         var environment: [String: JSONValue] = [:]
         for (key, value) in env { environment[key] = .string(value) }
-        let canonical = (try? CanonicalJSON.bytes(["name": .string(name), "argv": .array(argv), "env": .object(environment)])) ?? []
-        return SHA256Hasher().sha256Hex(canonical)
+        let argv = ([executable] + arguments).map { JSONValue.string($0) }
+        do {
+            digest = SHA256Hasher().sha256Hex(
+                try CanonicalJSON.bytes(["name": .string(name), "argv": .array(argv), "env": .object(environment)]))
+        } catch {
+            throw .validation("collectors.\(name): cannot be written canonically")
+        }
     }
 
-    /// The text an approval prompt shows: every argument on its own line, then the environment.
+    /// The text an approval prompt shows: every argument quoted on its own line, then the environment.
     public var approvalText: String {
-        var lines = ["Collector \(name) will run:", "  \(executable)"]
-        lines += arguments.map { "  \($0)" }
+        var lines = ["Collector \(name) will run:", "  \(Self.quoted(executable))"]
+        lines += arguments.map { "  \(Self.quoted($0))" }
         if env.isEmpty {
             lines.append("with no extra environment.")
         } else {
             lines.append("with this environment:")
-            lines += env.keys.sorted().map { "  \($0)=\(env[$0] ?? "")" }
+            lines += env.keys.sorted().map { "  \($0)=\(Self.quoted(env[$0] ?? ""))" }
         }
         return lines.joined(separator: "\n")
+    }
+
+    static func quoted(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+
+    /// No C0 or C1 controls (NUL included), no DEL and no bidi format characters.
+    public static func isPlain(_ text: String) -> Bool {
+        !text.unicodeScalars.contains { scalar in
+            scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .format && (
+                (0x202A...0x202E).contains(scalar.value) || (0x2066...0x2069).contains(scalar.value)
+                    || scalar.value == 0x200E || scalar.value == 0x200F || scalar.value == 0x061C)
+        }
+    }
+
+    static func isEnvKey(_ key: String) -> Bool {
+        let b = Array(key.utf8)
+        let upper: (UInt8) -> Bool = { $0 >= 0x41 && $0 <= 0x5A }
+        return !b.isEmpty && (upper(b[0]) || b[0] == 0x5F) && b.allSatisfy { upper($0) || ($0 >= 0x30 && $0 <= 0x39) || $0 == 0x5F }
     }
 }
 
@@ -39,6 +79,7 @@ public enum CollectorRefusal: Sendable, Equatable {
     case unsafeConfig(String)
     case notApproved
     case alreadyRunning
+    case anotherRunning
 
     public var message: String {
         switch self {
@@ -47,6 +88,7 @@ public enum CollectorRefusal: Sendable, Equatable {
         case .unsafeConfig(let why): "collectors are off: \(why)"
         case .notApproved: "the command is new or has changed since you approved it"
         case .alreadyRunning: "a run of this collector is already in progress"
+        case .anotherRunning: "another collector is running; runs are one at a time"
         }
     }
 }
@@ -137,30 +179,21 @@ public struct CollectorRunner {
 
     /// What a collector runs. Built-ins run this binary's `collector` subcommand.
     public static func plan(for collector: Config.Collector, selfExecutable: String) throws(CadenceError) -> CollectorPlan {
-        guard Actor.isValidName(collector.name) else { throw .validation("collectors: '\(collector.name)' is not a valid name") }
-        for key in collector.env.keys where Config.reservedEnv.contains(key) {
-            throw .validation("collectors.\(collector.name).env.\(key): is fixed by Cadence")
-        }
         let since = ["--since", "{since}", "--until", "{until}", "--name", collector.name]
         switch (collector.builtin, collector.command) {
         case ("github"?, nil):
             var args = ["collector", "github"] + since
             if let gh = collector.gh { args += ["--gh", gh] }
-            return try checked(CollectorPlan(name: collector.name, executable: selfExecutable, arguments: args, env: collector.env))
+            return try CollectorPlan(name: collector.name, executable: selfExecutable, arguments: args, env: collector.env)
         case ("claude-code-transcripts"?, nil):
-            return try checked(CollectorPlan(
+            return try CollectorPlan(
                 name: collector.name, executable: selfExecutable, arguments: ["collector", "claude-code-transcripts"] + since,
-                env: collector.env))
+                env: collector.env)
         case (nil, let argv?) where !argv.isEmpty:
-            return try checked(CollectorPlan(name: collector.name, executable: argv[0], arguments: Array(argv.dropFirst()), env: collector.env))
+            return try CollectorPlan(name: collector.name, executable: argv[0], arguments: Array(argv.dropFirst()), env: collector.env)
         default:
             throw .validation("collectors.\(collector.name): needs a known builtin or a command")
         }
-    }
-
-    private static func checked(_ plan: CollectorPlan) throws(CadenceError) -> CollectorPlan {
-        guard plan.executable.hasPrefix("/") else { throw .validation("collectors.\(plan.name).command[0]: must be an absolute path") }
-        return plan
     }
 
     /// Records your approval of exactly this plan.
@@ -186,8 +219,8 @@ public struct CollectorRunner {
 
     /// Approvals from a file only you can read and write. Anything else counts as no approvals at all.
     private func approvals() -> [String: String] {
-        guard Self.unsafeReason(approvalsFile) == nil, let data = FileManager.default.contents(atPath: approvalsFile.path),
-            let root = try? JSONParser.parse(bytes: Array(data)), let object = root.objectValue?["approved"]?.objectValue
+        guard let data = PrivateFile.readOwned(approvalsFile),
+            let root = try? JSONParser.parse(bytes: data), let object = root.objectValue?["approved"]?.objectValue
         else { return [:] }
         var out: [String: String] = [:]
         for (name, value) in object { if let digest = value.stringValue { out[name] = digest } }
@@ -203,7 +236,7 @@ public struct CollectorRunner {
         guard (info.st_mode & S_IFMT) == S_IFREG else { return "\(url.lastPathComponent) is not a regular file" }
         guard info.st_uid == getuid() else { return "\(url.lastPathComponent) is not owned by you" }
         guard info.st_mode & 0o077 == 0 else {
-            return "\(url.lastPathComponent) has mode \(String(info.st_mode & 0o777, radix: 8)); it must be 600"
+            return "\(url.lastPathComponent) has mode \(String(info.st_mode & 0o777, radix: 8)); only you may read or write it (600)"
         }
         return nil
     }
@@ -222,6 +255,9 @@ public struct CollectorRunner {
         guard isApproved(plan) else { return .refused(.notApproved) }
         guard let lock = try RunLock(roots.state.appendingPathComponent("locks/\(name).lock")) else { return .refused(.alreadyRunning) }
         defer { lock.release() }
+        // Runs are serial in v1: one collector at a time across every process.
+        guard let serial = try RunLock(roots.state.appendingPathComponent("locks/runs.lock")) else { return .refused(.anotherRunning) }
+        defer { serial.release() }
 
         let request = ProcessRequest(
             executable: plan.executable,
@@ -233,11 +269,13 @@ public struct CollectorRunner {
         do {
             result = try runner.run(request)
         } catch {
-            return .ran(try journal.recordIngestFailure(collector: name, window: window, error: "could not start the command"))
+            return .ran(try journal.recordIngestFailure(
+                collector: name, window: window, error: "could not start the command: \(Journal.clean(error.localizedDescription, limit: 120))"))
         }
-        try log(name: name, result: result)
+        // Logging is best effort: a log that cannot be written must not hide the run from the ledger.
+        try? log(name: name, result: result)
 
-        if let failure = Self.failure(result) {
+        if let failure = Self.failure(result, name: name) {
             return .ran(try journal.recordIngestFailure(collector: name, window: window, error: failure))
         }
         var output = Array(result.stdout)
@@ -271,8 +309,9 @@ public struct CollectorRunner {
         return env
     }
 
-    /// Why a finished command counts as failed, or nil when its output should be read.
-    static func failure(_ result: ProcessResult) -> String? {
+    /// Why a finished command counts as failed, or nil when its output should be read. Only the fixed reason goes
+    /// to the ledger, which is permanent: stderr can hold a token or a host name, so it stays in `logs/`.
+    static func failure(_ result: ProcessResult, name: String) -> String? {
         var why: String?
         if result.timedOut {
             why = "timed out after 60 s"
@@ -283,13 +322,8 @@ public struct CollectorRunner {
         } else if result.stdoutTruncated {
             why = "output was larger than 10 MB and was cut"
         }
-        guard var message = why else { return nil }
-        let lastLine = String(decoding: result.stderrTail, as: UTF8.self).split(whereSeparator: \.isNewline).last.map(String.init)
-        if let lastLine {
-            let cleaned = Journal.clean(lastLine, limit: 200)
-            if !cleaned.isEmpty { message += ": " + cleaned }
-        }
-        return message
+        guard let message = why else { return nil }
+        return result.stderrTail.isEmpty ? message : "\(message); see logs/collector-\(name).log"
     }
 
     /// Appends the stderr tail to `logs/collector-<name>.log`, rotating the file at 1 MB.
@@ -346,7 +380,7 @@ final class RunLock {
         } catch {
             throw .io("cannot create \(url.deletingLastPathComponent().lastPathComponent)")
         }
-        fd = open(url.path, O_RDWR | O_CREAT, 0o600)
+        fd = open(url.path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw .io("cannot open \(url.lastPathComponent)") }
         if flock(fd, LOCK_EX | LOCK_NB) != 0 {
             close(fd)
