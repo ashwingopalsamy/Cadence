@@ -94,23 +94,23 @@ Every task has a tier. The tier is a floor, not a ceiling: on any doubt, move a 
 
 | ID | Task | Tier | Spec | Done when |
 |---|---|---|---|---|
-| [ ] T1.1 ★ | Canonical JSON writer (cadence-c14n/1) and `Tests/Vectors/c14n.json`: escapes, Unicode, key order, integers, nesting; rejects floats, non-ASCII keys and integers beyond 2^53 | planner | §7.3, §12.1 | Swift and Python produce identical bytes for every vector |
-| [ ] T1.2 ★ | SHA-256 behind `Hasher` (CryptoKit or swift-crypto); `data_digest` and event hash; chain vectors | planner | §7.3 | Chain vectors match the Python verifier |
-| [ ] T1.3 | SQLite wrapper: statements, transactions, WAL, `busy_timeout`, `user_version`, typed rows | builder | §7.3 | Tests on Linux and macOS |
-| [ ] T1.4 ★ | Schema v1 from the DDL, migration runner, append-only triggers, refusal to write a newer schema | planner | §7.3 | UPDATE and DELETE on events abort; tests cover the version gate |
-| [ ] T1.5 ★ | Ledger append: `BEGIN IMMEDIATE`, gapless `seq`, `prev`, `hash`, actor; multi-process stress test through the CLI binary | planner | §7.3, §8.2 | 4 processes × 500 appends give a valid chain with no gaps |
-| [ ] T1.6 | Domain types and enums (kinds, families, origin, status, day kinds); ULID from an injected clock and RNG | builder | §7.1 | Codable round-trip tests |
-| [ ] T1.7 | Event payload codecs for every type in §7.3 | builder | §7.3 | Golden payload tests |
-| [ ] T1.8 ★ | Projections: apply each event; `cadence rebuild` gives a byte-identical dump | planner | §7.3 | A property test over random operation sequences passes |
-| [ ] T1.9 | Time: profile zone, 04:00 boundary, the day of an instant, each day keeping its own zone | builder | §3, §7.1 | Boundary and travel tests |
-| [ ] T1.10 | Ticket classifier: named groups `key` and `num`, `titleWindow`, `selfInitiated`, generic default | builder | §4.3, §10.3 | Table tests, including all-zero numbers |
-| [ ] T1.11 | Capture parser: every token rule and the lexicon order, `work.done` included | builder | §4.3 | Table tests mirror every demo example |
-| [ ] T1.12 | `config/1`: load, validate, defaults, `cadence config get\|set\|path`, 0600 owner check | builder | §7.4 | Bad configs are rejected with clear errors |
-| [ ] T1.13 | CLI scaffold: `--json` everywhere, exit codes 0 to 4, `CADENCE_HOME` | builder | §9.5 | Exit-code tests |
+| [x] T1.1 ★ | Canonical JSON writer (cadence-c14n/1) and `Tests/Vectors/c14n.json`: escapes, Unicode, key order, integers, nesting; rejects floats, non-ASCII keys and integers beyond 2^53 | planner | §7.3, §12.1 | Swift and Python produce identical bytes for every vector |
+| [x] T1.2 ★ | SHA-256 behind `Hasher` (CryptoKit or swift-crypto); `data_digest` and event hash; chain vectors | planner | §7.3 | Chain vectors match the Python verifier |
+| [x] T1.3 | SQLite wrapper: statements, transactions, WAL, `busy_timeout`, `user_version`, typed rows | builder | §7.3 | Tests on Linux and macOS |
+| [x] T1.4 ★ | Schema v1 from the DDL, migration runner, append-only triggers, refusal to write a newer schema | planner | §7.3 | UPDATE and DELETE on events abort; tests cover the version gate |
+| [x] T1.5 ★ | Ledger append: `BEGIN IMMEDIATE`, gapless `seq`, `prev`, `hash`, actor; multi-process stress test through the CLI binary | planner | §7.3, §8.2 | 4 processes × 500 appends give a valid chain with no gaps |
+| [x] T1.6 | Domain types and enums (kinds, families, origin, status, day kinds); ULID from an injected clock and RNG | builder | §7.1 | Codable round-trip tests |
+| [x] T1.7 | Event payload codecs for every type in §7.3 | builder | §7.3 | Golden payload tests |
+| [x] T1.8 ★ | Projections: apply each event; `cadence rebuild` gives a byte-identical dump | planner | §7.3 | A property test over random operation sequences passes |
+| [x] T1.9 | Time: profile zone, 04:00 boundary, the day of an instant, each day keeping its own zone | builder | §3, §7.1 | Boundary and travel tests |
+| [x] T1.10 | Ticket classifier: named groups `key` and `num`, `titleWindow`, `selfInitiated`, generic default | builder | §4.3, §10.3 | Table tests, including all-zero numbers |
+| [x] T1.11 | Capture parser: every token rule and the lexicon order, `work.done` included | builder | §4.3 | Table tests mirror every demo example |
+| [x] T1.12 | `config/1`: load, validate, defaults, `cadence config get\|set\|path`, 0600 owner check | builder | §7.4 | Bad configs are rejected with clear errors |
+| [x] T1.13 | CLI scaffold: `--json` everywhere, exit codes 0 to 4, `CADENCE_HOME` | builder | §9.5 | Exit-code tests |
 | [ ] T1.14 | Commands: `log`, `plan`, `day`, `today`, `inbox`, `query`, `summary`, `standup`, `rebuild`, `doctor` | builder | §9.5 | Each command has an integration test against a temp home |
-| [ ] T1.15 | Day mechanics: seal, grace window, after-seal marking, open tasks moving, streaks paused by leave and holidays | builder | §3, §4.5 | Scenario tests, October example included |
-| [ ] T1.16 ★ | Witness checkpoint event; the code is the first 16 hex characters of the head hash | planner | §4.5, §12.1 | The code appears in stand-up output and verifies |
-| [ ] T1.17 ★ | `cadence export proof`: chain from genesis, hash-only outside the range, export policies, summary with definitions, witnesses, `export_digest`, embedded verifier and `how_to_verify` | planner | §12 | The Python verifier passes the export; editing one byte fails it |
+| [x] T1.15 | Day mechanics: seal, grace window, after-seal marking, open tasks moving, streaks paused by leave and holidays | builder | §3, §4.5 | Scenario tests, October example included |
+| [x] T1.16 ★ | Witness checkpoint event; the code is the first 16 hex characters of the head hash | planner | §4.5, §12.1 | The code appears in stand-up output and verifies |
+| [x] T1.17 ★ | `cadence export proof`: chain from genesis, hash-only outside the range, export policies, summary with definitions, witnesses, `export_digest`, embedded verifier and `how_to_verify` | planner | §12 | The Python verifier passes the export; editing one byte fails it |
 | [ ] T1.18 | `cadence verify FILE [--recompute]` in Swift, matching Python on every vector | builder | §12.3 | Parity tests |
 | [ ] T1.19 | Backups: daily `VACUUM INTO`, keeping 14 daily and 8 weekly | builder | §7.4 | Retention tests with an injected clock |
 | [ ] T1.20 | Deterministic ACME demo seed matching the spec's October example data | mechanic | §5 | Seeded totals equal the numbers in the spec |
