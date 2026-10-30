@@ -1064,6 +1064,7 @@ Approval| The first time a command runs, or after it changes, the app shows the 
 Config safety| `config.json` must be owned by you and mode 0600. Otherwise collectors are disabled and `cadence doctor` says why
 Failure| A non-zero exit, a timeout or an unreadable header writes nothing except an `ingest.run` with the error. The dot shows the error state only after three failures in a row for the same collector
 Concurrency| One run per collector at a time, guarded by a lock file. Runs are serial in v1
+Jobs| The app writes a file ending `.json`, owned by you with mode 0600, into `jobs/`: `{"job":"run","name":"github"}` or `{"job":"backfill","name":"github","from":"2026-10-01"}` (`from` is optional). The agent handles files oldest first and deletes each one once it ran or was refused; a file that is anything else is rejected and deleted, and a job that met a busy lock stays for the next run. Windows are whole days (YYYY-MM-DD) in the profile zone, and a collector with neither `every` nor `at` runs only when asked by name
 
 ### 10.3 GitHub (built in)
 

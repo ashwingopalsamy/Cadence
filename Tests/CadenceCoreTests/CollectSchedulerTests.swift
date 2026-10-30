@@ -1,0 +1,302 @@
+import Foundation
+import Testing
+
+@testable import CadenceCore
+
+/// docs/SPEC.md section 10.2, scheduling. The clock reads Monday 2026-09-21 19:43 in Kolkata (14:13 UTC).
+@Suite struct CollectSchedulerTests {
+    /// Answers every command with a valid envelope for the collector named by `--name`, unless told to fail.
+    final class Fake: ProcessRunner, @unchecked Sendable {
+        var requests: [ProcessRequest] = []
+        var failing = false
+
+        func run(_ request: ProcessRequest) throws -> ProcessResult {
+            requests.append(request)
+            if failing { return CollectorRunnerTests.output("", status: 1) }
+            let name = request.arguments[request.arguments.firstIndex(of: "--name")! + 1]
+            return CollectorRunnerTests.output(CollectorRunnerTests.envelope(name))
+        }
+    }
+
+    struct Fixture {
+        let roots = FileRoots(home: TestStore.tempDirectory())
+        let clock = ManualClock(TestStore.start)
+        let store: SQLiteStore
+        let journal: Journal
+        let fake: Fake
+        let runner: CollectorRunner
+        let scheduler: CollectScheduler
+
+        init(_ collectors: [Config.Collector], backfillFrom: String? = nil, failing: Bool = false) throws {
+            var config = Config.defaults(timezone: "Asia/Kolkata")
+            config.collectors = collectors
+            config.profile.backfillFrom = backfillFrom.flatMap { LocalDate($0) }
+            store = try TestStore.make(path: roots.database.path, clock: clock, projector: LedgerProjector())
+            journal = try Journal(store: store, config: config, clock: clock, ids: CountingIDs())
+            try Data("{}".utf8).write(to: roots.config)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: roots.config.path)
+            fake = Fake()
+            fake.failing = failing
+            runner = CollectorRunner(
+                roots: roots, journal: journal, runner: fake, selfExecutable: "/opt/cadence/bin/cadence", environment: ["HOME": "/home/sample"])
+            scheduler = CollectScheduler(runner: runner, journal: journal, roots: roots, clock: clock)
+            for collector in collectors {
+                try runner.approve(try CollectorRunner.plan(for: collector, selfExecutable: "/opt/cadence/bin/cadence"))
+            }
+        }
+
+        /// The windows of the commands run so far, as "since..until".
+        var windows: [String] {
+            fake.requests.map { request in
+                let args = request.arguments
+                return "\(args[args.firstIndex(of: "--since")! + 1])..\(args[args.firstIndex(of: "--until")! + 1])"
+            }
+        }
+
+        func job(_ name: String, _ text: String, age: TimeInterval, mode: Int = 0o600) throws {
+            try FileManager.default.createDirectory(at: roots.jobs, withIntermediateDirectories: true)
+            let url = roots.jobs.appendingPathComponent(name)
+            try Data(text.utf8).write(to: url)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: mode, .modificationDate: Date().addingTimeInterval(-age)], ofItemAtPath: url.path)
+        }
+
+        func remaining() -> [String] {
+            ((try? FileManager.default.contentsOfDirectory(atPath: roots.jobs.path)) ?? []).sorted()
+        }
+    }
+
+    static func collector(_ name: String = "oncall", every: String? = nil, at: [String] = [], enabled: Bool = true) -> Config.Collector {
+        Config.Collector(
+            name: name, enabled: enabled, command: ["/bin/sh", "/opt/collectors/\(name).sh", "--since", "{since}", "--until", "{until}", "--name", name],
+            every: every, at: at)
+    }
+
+    // MARK: - Due
+
+    @Test func everyIsDueWhenNeverRunOrOldEnough() throws {
+        let c = Self.collector(every: "15m")
+        let f = try Fixture([c])
+        #expect(try f.scheduler.dueCollectors().map(\.name) == ["oncall"])
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(try f.scheduler.dueCollectors().isEmpty)
+        f.clock.advance(by: 14 * 60)
+        #expect(try f.scheduler.dueCollectors().isEmpty)
+        f.clock.advance(by: 60)
+        #expect(try f.scheduler.dueCollectors().map(\.name) == ["oncall"])
+    }
+
+    @Test func aFailedRunCountsAsARunForTheSchedule() throws {
+        let f = try Fixture([Self.collector(every: "30m")], failing: true)
+        let step = try f.scheduler.runIncremental(name: "oncall")
+        #expect(step.failed)
+        f.clock.advance(by: 20 * 60)
+        #expect(try f.scheduler.dueCollectors().isEmpty)
+        f.clock.advance(by: 10 * 60)
+        #expect(try f.scheduler.dueCollectors().count == 1)
+    }
+
+    @Test func atTimesAreDueOncePerDayAfterEachTime() throws {
+        let f = try Fixture([Self.collector(at: ["09:00", "18:00"])])
+        // 19:43 and never run: due.
+        #expect(try f.scheduler.dueCollectors().count == 1)
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(try f.scheduler.dueCollectors().isEmpty)
+        // 23:00 the same day: still nothing new.
+        f.clock.advance(by: 3 * 3600 + 17 * 60)
+        #expect(try f.scheduler.dueCollectors().isEmpty)
+        // Next day 08:59: today's first time has not come yet.
+        f.clock.advance(by: 9 * 3600 + 59 * 60)
+        #expect(try f.scheduler.dueCollectors().isEmpty)
+        f.clock.advance(by: 60)
+        #expect(try f.scheduler.dueCollectors().count == 1)
+    }
+
+    @Test func anAtTimeNotReachedYetIsNotDue() throws {
+        let f = try Fixture([Self.collector(at: ["21:00"])])
+        #expect(try f.scheduler.dueCollectors().isEmpty)
+        f.clock.advance(by: 77 * 60)  // 21:00
+        #expect(try f.scheduler.dueCollectors().count == 1)
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        f.clock.advance(by: 3600)
+        #expect(try f.scheduler.dueCollectors().isEmpty)
+    }
+
+    @Test func aRunBeforeTheLatestAtTimeLeavesItDue() throws {
+        let f = try Fixture([Self.collector(at: ["09:00", "21:00"])])
+        _ = try f.scheduler.runIncremental(name: "oncall")  // 19:43, after 09:00
+        f.clock.advance(by: 2 * 3600)  // 21:43
+        #expect(try f.scheduler.dueCollectors().count == 1)
+    }
+
+    @Test func noScheduleAndDisabledNeverRunOnTheirOwn() throws {
+        let f = try Fixture([Self.collector("manual"), Self.collector("off", every: "15m", enabled: false)])
+        #expect(try f.scheduler.dueCollectors().isEmpty)
+        #expect(try f.scheduler.runDue().isEmpty)
+        #expect(f.fake.requests.isEmpty)
+        // Asked by name, the manual one runs.
+        let step = try f.scheduler.runIncremental(name: "manual")
+        #expect(!step.failed)
+    }
+
+    @Test func runDueRunsEachDueCollectorOnceInConfigOrder() throws {
+        let f = try Fixture([Self.collector("a", every: "15m"), Self.collector("b", every: "15m"), Self.collector("c")])
+        let steps = try f.scheduler.runDue()
+        #expect(steps.map(\.collector) == ["a", "b"])
+        #expect(try f.scheduler.runDue().isEmpty)
+    }
+
+    // MARK: - Windows
+
+    @Test func theFirstRunStartsThreeDaysBackWithoutABackfillDate() throws {
+        let f = try Fixture([Self.collector(every: "15m")])
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(f.windows == ["2026-09-18..2026-09-21"])
+    }
+
+    @Test func theFirstRunStartsAtBackfillFromWhenSet() throws {
+        let f = try Fixture([Self.collector(every: "15m")], backfillFrom: "2026-09-01")
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(f.windows == ["2026-09-01..2026-09-21"])
+    }
+
+    @Test func laterRunsStartThreeDaysBeforeTheLastSuccessfulUntil() throws {
+        let f = try Fixture([Self.collector(every: "15m")], backfillFrom: "2026-09-01")
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        f.clock.advance(by: 2 * 86_400)
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(f.windows == ["2026-09-01..2026-09-21", "2026-09-18..2026-09-23"])
+    }
+
+    @Test func aFailedRunDoesNotMoveTheWindow() throws {
+        let f = try Fixture([Self.collector(every: "15m")])
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        f.clock.advance(by: 86_400)
+        f.fake.failing = true
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        f.clock.advance(by: 86_400)
+        f.fake.failing = false
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(f.windows == ["2026-09-18..2026-09-21", "2026-09-18..2026-09-22", "2026-09-18..2026-09-23"])
+    }
+
+    @Test func theDayComesFromTheProfileZoneNotUTC() throws {
+        let f = try Fixture([Self.collector(every: "15m")])
+        f.clock.set(Date(timeIntervalSince1970: 1_790_000_000 + 5 * 3600))  // 00:43 on the 22nd in Kolkata, 19:13 UTC on the 21st
+        #expect(f.scheduler.today().description == "2026-09-22")
+    }
+
+    // MARK: - Backfill
+
+    @Test func chunksAreSevenDaysOldestFirstAndEndToday() {
+        let chunks = CollectScheduler.chunks(from: LocalDate("2026-09-01")!, through: LocalDate("2026-09-21")!)
+        #expect(chunks.map { "\($0.since)..\($0.until)" } == ["2026-09-01..2026-09-07", "2026-09-08..2026-09-14", "2026-09-15..2026-09-21"])
+        let odd = CollectScheduler.chunks(from: LocalDate("2026-09-15")!, through: LocalDate("2026-09-21")!)
+        #expect(odd.count == 1)
+        let ragged = CollectScheduler.chunks(from: LocalDate("2026-09-13")!, through: LocalDate("2026-09-21")!)
+        #expect(ragged.map { "\($0.since)..\($0.until)" } == ["2026-09-13..2026-09-19", "2026-09-20..2026-09-21"])
+        #expect(CollectScheduler.chunks(from: LocalDate("2026-09-22")!, through: LocalDate("2026-09-21")!).isEmpty)
+    }
+
+    @Test func backfillRunsEachChunkAsItsOwnRun() throws {
+        let f = try Fixture([Self.collector()], backfillFrom: "2026-09-01")
+        let steps = try f.scheduler.backfill(name: "oncall", from: nil)
+        #expect(steps.count == 3 && steps.allSatisfy { !$0.failed })
+        #expect(f.windows == ["2026-09-01..2026-09-07", "2026-09-08..2026-09-14", "2026-09-15..2026-09-21"])
+        #expect(try f.store.events(after: 0, limit: 1000).filter { $0.type == "ingest.run" }.count == 3)
+    }
+
+    @Test func backfillFromARequestedDateWinsOverTheProfile() throws {
+        let f = try Fixture([Self.collector()], backfillFrom: "2026-09-01")
+        _ = try f.scheduler.backfill(name: "oncall", from: LocalDate("2026-09-15"))
+        #expect(f.windows == ["2026-09-15..2026-09-21"])
+    }
+
+    @Test func backfillStopsAtTheFirstFailedChunk() throws {
+        let f = try Fixture([Self.collector()], backfillFrom: "2026-09-01", failing: true)
+        let steps = try f.scheduler.backfill(name: "oncall", from: nil)
+        #expect(steps.count == 1 && steps[0].failed)
+        #expect(f.fake.requests.count == 1)
+    }
+
+    @Test func backfillStopsWhenTheCommandIsNotApproved() throws {
+        let f = try Fixture([Self.collector()], backfillFrom: "2026-09-01")
+        // A runner that never approved this plan.
+        let fresh = FileRoots(home: TestStore.tempDirectory())
+        let runner = CollectorRunner(roots: fresh, journal: f.journal, runner: f.fake, selfExecutable: "/x", environment: [:])
+        let scheduler = CollectScheduler(runner: runner, journal: f.journal, roots: fresh, clock: f.clock)
+        let steps = try scheduler.backfill(name: "oncall", from: nil)
+        #expect(steps.count == 1 && steps[0].failed)
+        #expect(f.fake.requests.isEmpty)
+    }
+
+    // MARK: - Jobs
+
+    @Test func jobsRunOldestFirstAndAreDeletedAfterwards() throws {
+        let f = try Fixture([Self.collector("a"), Self.collector("b")], backfillFrom: "2026-09-15")
+        try f.job("2-new.json", #"{"job":"run","name":"b"}"#, age: 10)
+        try f.job("1-old.json", #"{"job":"backfill","name":"a","from":"2026-09-10"}"#, age: 100)
+        try f.job("notes.txt", "keep me", age: 50)
+        let outcomes = try f.scheduler.processJobs()
+        #expect(outcomes.map(\.file) == ["1-old.json", "2-new.json"])
+        #expect(outcomes.allSatisfy { $0.removed })
+        #expect(f.windows == ["2026-09-10..2026-09-16", "2026-09-17..2026-09-21", "2026-09-15..2026-09-21"])
+        #expect(f.remaining() == ["notes.txt"])
+    }
+
+    @Test func aRefusedJobIsStillHandledAndRemoved() throws {
+        let f = try Fixture([Self.collector("a", enabled: false)])
+        try f.job("x.json", #"{"job":"run","name":"a"}"#, age: 1)
+        try f.job("y.json", #"{"job":"run","name":"nobody"}"#, age: 0)
+        let outcomes = try f.scheduler.processJobs()
+        #expect(outcomes[0].steps.first?.result == .refused(.disabled))
+        #expect(outcomes[1].steps.first?.result == .refused(.unknown("nobody")))
+        #expect(outcomes.allSatisfy { $0.removed } && f.remaining().isEmpty)
+        #expect(f.fake.requests.isEmpty)
+    }
+
+    @Test func invalidJobsAreRejectedWithoutRunningAnything() throws {
+        let f = try Fixture([Self.collector("a")])
+        let bad = [
+            "garbage", #"{"job":"shell","name":"a"}"#, #"{"job":"run"}"#, #"{"job":"run","name":"a","extra":1}"#,
+            #"{"job":"run","name":"../etc"}"#, #"{"job":"backfill","name":"a","from":"yesterday"}"#,
+            #"{"job":"backfill","name":"a","from":5}"#, #"[1]"#,
+        ]
+        for (index, text) in bad.enumerated() { try f.job("bad\(index).json", text, age: Double(100 - index)) }
+        try f.job("open.json", #"{"job":"run","name":"a"}"#, age: 1, mode: 0o644)
+        let outcomes = try f.scheduler.processJobs()
+        #expect(outcomes.count == bad.count + 1)
+        #expect(outcomes.allSatisfy { $0.job == nil && $0.removed })
+        #expect(f.fake.requests.isEmpty && f.remaining().isEmpty)
+    }
+
+    @Test func aJobThatMeetsABusyLockIsKept() throws {
+        let f = try Fixture([Self.collector("a")])
+        try f.job("x.json", #"{"job":"run","name":"a"}"#, age: 1)
+        let lock = try #require(try RunLock(f.roots.state.appendingPathComponent("locks/a.lock")))
+        defer { lock.release() }
+        let outcomes = try f.scheduler.processJobs()
+        #expect(outcomes.count == 1 && !outcomes[0].removed)
+        #expect(f.remaining() == ["x.json"])
+    }
+
+    @Test func noJobsFolderIsFine() throws {
+        let f = try Fixture([Self.collector("a")])
+        #expect(try f.scheduler.processJobs().isEmpty)
+    }
+
+    // MARK: - launchd template
+
+    @Test func theLaunchAgentTemplateIsAPlistWithTheSpecKeys() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let url = root.appendingPathComponent("scripts/launchd/in.ashwingopalsamy.cadence.agent.plist.template")
+        let data = try Data(contentsOf: url)
+        let plist = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        #expect(plist["Label"] as? String == "in.ashwingopalsamy.cadence.agent")
+        #expect(plist["BundleProgram"] as? String == "Contents/Helpers/cadence")
+        #expect((plist["ProgramArguments"] as? [String])?.suffix(3) == ["collect", "run", "--due"])
+        #expect(plist["StartInterval"] as? Int == 900)
+        #expect(plist["RunAtLoad"] as? Bool == true)
+        #expect(plist["WatchPaths"] as? [String] == ["@JOBS_PATH@"])
+    }
+}
