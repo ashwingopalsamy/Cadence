@@ -15,6 +15,8 @@ import json
 import os
 import sys
 
+sys.dont_write_bytecode = True
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VECTORS = os.path.join(ROOT, "Tests", "Vectors")
 OUT = os.path.join(VECTORS, "proofs")
