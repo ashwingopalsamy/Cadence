@@ -1,0 +1,4 @@
+{"data":{"search":{"pageInfo":{"hasNextPage":true,"endCursor":"SRCH1"},"nodes":[
+{"id":"PR_acme001","number":412,"title":"ACME-482913 Ship retry budget for capture path","url":"https://git.example.com/acme/ledger-core/pull/412","mergedAt":"2026-10-29T10:32:11Z","additions":184,"deletions":37,"bodyText":"Adds a retry budget.\n\nGenerated with Claude Code","repository":{"nameWithOwner":"acme/ledger-core"}},
+{},
+{"id":"PR_acme004","number":400,"title":"ACME-481000 Older merge outside the window","url":"https://git.example.com/acme/ledger-core/pull/400","mergedAt":"2026-10-20T10:00:00Z","additions":1,"deletions":1,"bodyText":"","repository":{"nameWithOwner":"acme/ledger-core"}}]}}}

@@ -1,0 +1,8 @@
+{"data":{"viewer":{"login":"acme-dev","contributionsCollection":{
+"pullRequestContributions":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
+{"pullRequest":{"id":"PR_acme003","number":420,"title":"Add pager to the activity list","url":"https://git.example.com/acme/web-app/pull/420","isDraft":false,"createdAt":"2026-10-29T04:00:00Z","additions":90,"deletions":10,"bodyText":"co-authored-by: claude <noreply@example.com>","repository":{"nameWithOwner":"acme/web-app"}}}]},
+"pullRequestReviewContributions":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
+{"pullRequestReview":{"id":"PRR_acme104","state":"APPROVED","submittedAt":"2026-10-28T22:00:00Z","comments":{"totalCount":0}},"pullRequest":{"id":"PR_acme090","number":90,"title":"ACME-482200 Reconcile payouts","url":"https://git.example.com/acme/refunds/pull/90","author":{"login":"example-colleague"},"repository":{"nameWithOwner":"acme/refunds"}}},
+{"pullRequestReview":{"id":"PRR_acme105","state":"CHANGES_REQUESTED","submittedAt":"2026-10-28T23:00:00Z","comments":{"totalCount":3}},"pullRequest":{"id":"PR_acme090","number":90,"title":"ACME-482200 Reconcile payouts","url":"https://git.example.com/acme/refunds/pull/90","author":{"login":"example-colleague"},"repository":{"nameWithOwner":"acme/refunds"}}},
+{"pullRequestReview":{"id":"PRR_acme106","state":"COMMENTED","submittedAt":"2026-10-28T11:00:00Z","comments":{"totalCount":1}},"pullRequest":{"id":"PR_acme091","number":91,"title":"Ghost authored change","url":"https://git.example.com/acme/refunds/pull/91","author":null,"repository":{"nameWithOwner":"acme/refunds"}}}]}
+}}}}

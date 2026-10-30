@@ -5,7 +5,7 @@ import Foundation
 struct CollectorCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "collector", abstract: "Built-in collectors. Each prints one envelope/1 on stdout.",
-        subcommands: [ClaudeCodeTranscriptsCommand.self])
+        subcommands: [GitHubCollectorCommand.self, ClaudeCodeTranscriptsCommand.self])
 }
 
 struct ClaudeCodeTranscriptsCommand: ParsableCommand {
@@ -38,6 +38,42 @@ struct ClaudeCodeTranscriptsCommand: ParsableCommand {
             let run = ULIDGenerator(clock: context.clock, random: SystemRandomSource()).next()
             let output = try collector.run(name: name, runID: run, now: context.clock.now(), since: from, until: to)
             FileHandle.standardOutput.write(Data(output.envelope))
+        } catch let error as CadenceError {
+            throw fail(error)
+        }
+    }
+}
+
+struct GitHubCollectorCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "github",
+        abstract: "Print an envelope of pull requests and reviews, read through gh api graphql.",
+        discussion: """
+            since and until are days (YYYY-MM-DD, in your profile zone) or RFC 3339 times. gh keeps the login; Cadence never \
+            sees a token. On any failure nothing is printed on stdout and the exit status is not zero.
+            """)
+
+    @Option(help: "Start of the window: YYYY-MM-DD or an RFC 3339 time.") var since: String
+    @Option(help: "End of the window: YYYY-MM-DD (that whole day) or an RFC 3339 time.") var until: String
+    @Option(help: "Absolute path to gh. Defaults to the collector's gh in config.json.") var gh: String?
+    @Option(help: "Collector name for the envelope header.") var name = "github"
+
+    func run() throws {
+        let context = CLIContext.current()
+        do {
+            let config = try context.loadConfig().config
+            let configured = config.collectors.first { $0.name == name } ?? config.collectors.first { $0.builtin == "github" }
+            guard let path = gh ?? configured?.gh else {
+                throw CadenceError.validation("no gh path: pass --gh /absolute/path/to/gh or set collectors.<name>.gh in config.json")
+            }
+            var isFolder: ObjCBool = false
+            let home = FileManager.default.fileExists(atPath: context.roots.home.path, isDirectory: &isFolder) && isFolder.boolValue
+            let collector = GitHubCollector(
+                name: name, gh: path, runner: SystemProcessRunner(), environment: context.environment,
+                workingDirectory: home ? context.roots.home : FileManager.default.temporaryDirectory,
+                config: config, clock: context.clock)
+            let bytes = try collector.envelope(since: since, until: until)
+            FileHandle.standardOutput.write(Data(bytes))
         } catch let error as CadenceError {
             throw fail(error)
         }
