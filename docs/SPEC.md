@@ -1122,7 +1122,8 @@ Reads `~/.claude/projects/*/*.jsonl` incrementally, remembering each file's size
 
   * Streaming can write several lines for one message. Lines are deduped by `message.id`, keeping the one with the most output tokens (verify) (spike S9).
   * Totals are computed per local day and model, with sessions (distinct session ids) and requests (distinct message ids), and emitted with `source_ref` `claude-code:DAY:MODEL`. A re-read updates the same rows.
-  * Cost is not computed here unless you keep a price table in `config.genai.prices`, in which case it is labelled estimated. Your endpoint's cost always wins.
+  * Cost is not computed here unless you keep a price table in `config.genai.prices`, in which case it is labelled estimated. The table maps a model name to `{"in", "out", "cache_read", "cache_write"}`, each a whole number of micro-dollars per million tokens (a key left out counts as 0); a model with no entry gets no cost, and the cost is computed with integer arithmetic only. Your endpoint's cost always wins.
+  * Run it as `cadence collector claude-code-transcripts --since DAY --until DAY [--name NAME] [--projects-dir DIR]`. Per-message figures from every file are cached in `state/`, so unchanged files are not read again but each day's totals stay complete, and totals survive Claude Code deleting old transcripts.
 
 
 **Do this today.** Claude Code deletes transcripts older than `cleanupPeriodDays`, 30 by default, so your 1 October sessions disappear around 31 October. Add `"cleanupPeriodDays": 400` to `~/.claude/settings.json` now. Once Cadence has collected a day, its totals live in the ledger and later deletion no longer matters.
