@@ -133,7 +133,7 @@ import Testing
         #expect(replies[6]?["error"]?["code"] == .int(-32602))
         #expect(replies[7]?["result"]?["prompts"]?.arrayValue?.map { $0["name"] } == ["import-dictation", "standup", "weekly-recap"])
         let prompt = replies[8]?["result"]?["messages"]?.arrayValue?.first?["content"]?["text"]?.stringValue ?? ""
-        #expect(prompt.contains("dry_run true") && prompt.hasSuffix("----- transcript ends -----"))
+        #expect(prompt.contains("dry_run true") && prompt.hasSuffix("\n\"- Fixed a bug\""))
         // Reading and prompting wrote only the one entry (and the genesis event under it).
         #expect(try home.journal().store.eventCount() == 2)
     }
@@ -165,6 +165,40 @@ import Testing
         defer { home.remove() }
         #expect(try home.run(["help", "mcp"]).status == 0)
         #expect(try home.run(["--help"]).stdout.contains("mcp"))
+    }
+
+    @Test func readsAndDryRunsOnAFreshHomeCreateNoLedger() throws {
+        let home = CLIHome()
+        defer { home.remove() }
+        let (replies, run) = try serve(
+            home,
+            [
+                try Self.call(1, "get_day"), try Self.call(2, "query"), try Self.call(3, "summary"), try Self.call(4, "standup"),
+                try Self.call(5, "log_entries", ["transcript": "- Fixed a bug"]),
+                try Self.request(6, "resources/read", ["uri": "cadence://day/2026-10-28"]),
+                try Self.request(7, "resources/read", ["uri": "cadence://week/current"]),
+            ])
+        #expect(run.status == 0)
+        for id in 1...7 { #expect(replies[Int64(id)]?["result"]?["isError"] != true && replies[Int64(id)]?["error"] == nil, "reply \(id)") }
+        #expect(replies[5]?["result"]?["structuredContent"]?["status"] == "preview")
+        // Nothing was written, not even the genesis event: there is no database yet.
+        #expect(!FileManager.default.fileExists(atPath: home.database))
+        // The first real write creates the ledger and its genesis event, both under the agent's name.
+        let (_, writeRun) = try serve(home, [try Self.call(1, "log_entry", ["text": "Fixed a bug"])])
+        #expect(writeRun.status == 0 && FileManager.default.fileExists(atPath: home.database))
+        let events = try home.journal().store.events(after: 0, limit: 10)
+        #expect(events.map(\.type) == ["ledger.genesis", "entry.created"])
+        // A database with no events yet is left empty by reads too.
+        let other = CLIHome()
+        defer { other.remove() }
+        try FileManager.default.createDirectory(at: other.home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let clock = WallClock()
+        let store = try SQLiteStore(
+            path: other.database, clock: clock, ids: ULIDGenerator(clock: clock, random: SystemRandomSource()), projector: LedgerProjector())
+        #expect(try store.eventCount() == 0)
+        let (_, readRun) = try serve(other, [try Self.call(1, "get_day"), try Self.call(2, "log_entries", ["transcript": "- Fixed a bug"])])
+        #expect(readRun.status == 0)
+        #expect(try store.eventCount() == 0)
     }
 
     @Test func theServerOpensTheStoreUnderCadenceHomeOnly() throws {

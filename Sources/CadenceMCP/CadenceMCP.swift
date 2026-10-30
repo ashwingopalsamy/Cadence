@@ -388,19 +388,21 @@ public final class MCPServer: @unchecked Sendable {
         return true
     }
 
+    /// The result as a client receives it, with the text and structured copy `result` holds unless told otherwise.
+    static func encodedResult(_ result: MCPToolResult, text: String? = nil, keepStructured: Bool = true) -> [String: JSONValue] {
+        var out: [String: JSONValue] = ["content": [["type": "text", "text": .string(text ?? result.text)]]]
+        if keepStructured, let structured = result.structured { out["structuredContent"] = structured }
+        if result.isError { out["isError"] = true }
+        return out
+    }
+
     static func toolResult(_ result: MCPToolResult) -> [String: JSONValue] {
-        func build(_ text: String, _ structured: JSONValue?) -> [String: JSONValue] {
-            var out: [String: JSONValue] = ["content": [["type": "text", "text": .string(text)]]]
-            if let structured { out["structuredContent"] = structured }
-            if result.isError { out["isError"] = true }
-            return out
-        }
-        let whole = build(result.text, result.structured)
+        let whole = encodedResult(result)
         if size(whole) <= maxResultCharacters { return whole }
         // Too long: the structured copy goes first, then the text is cut.
-        guard result.structured != nil else { return fit(result.text) { build($0, nil) } }
+        guard result.structured != nil else { return fit(result.text) { encodedResult(result, text: $0, keepStructured: false) } }
         let said = result.text + "\n… the structured copy was left out at \(maxResultCharacters) characters; ask for a narrower range."
-        return fit(said) { build($0, nil) }
+        return fit(said) { encodedResult(result, text: $0, keepStructured: false) }
     }
 
     /// The error text a client may see. Validation and lookups explain themselves; file and integrity failures
@@ -413,8 +415,12 @@ public final class MCPServer: @unchecked Sendable {
     }
 
     /// The encoded size of a result, in code points, which is what the 20,000 limit counts.
+    /// `handle` adds `resultType` to every result after this, so it is counted here too: a result that passes is
+    /// within the limit as sent.
     static func size(_ result: [String: JSONValue]) -> Int {
-        guard let bytes = encode(.object(result)) else { return .max }
+        var counted = result
+        counted["resultType"] = "complete"
+        guard let bytes = encode(.object(counted)) else { return .max }
         return String(decoding: bytes, as: UTF8.self).unicodeScalars.count
     }
 
@@ -456,7 +462,15 @@ public final class MCPServer: @unchecked Sendable {
                 return .failure(Failure(code: RPCError.invalidParams, message: Self.shown(error)))
             }
         }
-        return .failure(Failure(code: RPCError.invalidParams, message: "unknown resource: \(EnvelopeText.printable(uri))", data: ["uri": .string(uri)]))
+        return .failure(Failure(code: RPCError.invalidParams, message: "unknown resource: \(EnvelopeText.printable(uri))", data: ["uri": .string(EnvelopeText.printable(uri))]))
+    }
+
+    /// A prompt as `prompts/get` returns it.
+    static func promptMessage(description: String, text: String) -> [String: JSONValue] {
+        [
+            "description": .string(description),
+            "messages": [["role": "user", "content": ["type": "text", "text": .string(text)]]],
+        ]
     }
 
     private func getPrompt(_ params: [String: JSONValue]) -> Result<[String: JSONValue], Failure> {
@@ -473,12 +487,7 @@ public final class MCPServer: @unchecked Sendable {
         }
         do throws(CadenceError) {
             let text = try prompt.render(arguments)
-            return .success(Self.fit(text) {
-                [
-                    "description": .string(prompt.description),
-                    "messages": [["role": "user", "content": ["type": "text", "text": .string($0)]]],
-                ]
-            })
+            return .success(Self.fit(text) { Self.promptMessage(description: prompt.description, text: $0) })
         } catch {
             log("mcp: prompt \(name) failed: \(error.message)")
             return .failure(Failure(code: RPCError.invalidParams, message: Self.shown(error)))

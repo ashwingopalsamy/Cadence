@@ -162,6 +162,23 @@ import Testing
         #expect(try h.eventCount() == before)
     }
 
+    @Test func aResolvedTaskCannotBeResolvedAgain() throws {
+        let h = try ToolHarness()
+        let id = try planned(h, ["Draft the ADR"])[0]
+        #expect(!(try h.call("plan_update", ["task_id": .string(id), "status": "done"])).isError)
+        let before = try h.eventCount()
+        for arguments: JSONValue in [
+            ["task_id": .string(id), "status": "done"], ["task_id": .string(id), "status": "dropped", "reason": "cancelled"],
+            ["task_id": .string(id), "status": "slipped", "reason": "blocked"],
+        ] {
+            let reply = try h.call("plan_update", arguments)
+            #expect(reply.isError && reply.rpcError == nil)
+            #expect(reply.text == "Not done: task \(id) is already done; a resolved task is not resolved again", "\(reply.text)")
+        }
+        #expect(try h.eventCount() == before)
+        #expect(try h.journal().task(id).status == .done)
+    }
+
     @Test func aMovedTaskCannotBeResolvedOnItsOldDay() throws {
         let h = try ToolHarness()
         let id = try planned(h, ["Carry me"])[0]
@@ -204,6 +221,35 @@ import Testing
             #expect(reply.text == expected, "\(arguments) gave \(reply.text)")
         }
         #expect(try h.eventCount() == before)
+    }
+
+    @Test func anAgentNeverReplacesADeclarationSomeoneElseMade() throws {
+        let h = try ToolHarness()
+        let journal = try h.journal()
+        try journal.declare(LocalDate("2026-10-23")!, kind: .leavePlanned, label: "Family trip", actor: .cli)
+        try journal.declare(LocalDate("2026-10-22")!, kind: .holiday, label: nil, actor: .app)
+        try journal.declare(LocalDate("2026-10-21")!, kind: .leaveUnplanned, label: nil, actor: .collector("hr"))
+        let before = try h.eventCount()
+        for (date, who) in [("2026-10-23", "the user"), ("2026-10-22", "the user"), ("2026-10-21", "collector:hr")] {
+            let reply = try h.call("declare_day", ["date": .string(date), "kind": "holiday", "label": "Overwritten"])
+            #expect(reply.isError && reply.rpcError == nil, "\(date)")
+            #expect(reply.text.hasPrefix("Not done: \(date) is already marked as "), "\(reply.text)")
+            #expect(reply.text.hasSuffix(" by \(who); only the user can change it"), "\(reply.text)")
+        }
+        #expect(try h.eventCount() == before)
+        let day = try journal.dayView(LocalDate("2026-10-23")!).day
+        #expect(day.kind == .leavePlanned && day.label == "Family trip")
+
+        // Its own declaration, and a day nobody declared, are still the agent's to set.
+        let fresh = try h.call("declare_day", ["date": "2026-10-30", "kind": "holiday"])
+        #expect(!fresh.isError)
+        let again = try h.call("declare_day", ["date": "2026-10-30", "kind": "leave_planned", "label": "Corrected"])
+        #expect(!again.isError && again.text == "Marked Fri 30 Oct as planned leave: Corrected.")
+        // Once the user has changed it, the agent may not.
+        try journal.declare(LocalDate("2026-10-30")!, kind: .holiday, label: "Founders day", actor: .cli)
+        let late = try h.call("declare_day", ["date": "2026-10-30", "kind": "leave_unplanned"])
+        #expect(late.isError && late.text.contains("already marked as holiday by the user"))
+        #expect(try journal.dayView(LocalDate("2026-10-30")!).day.kind == .holiday)
     }
 
     // MARK: nothing else is written

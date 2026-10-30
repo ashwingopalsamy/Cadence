@@ -32,6 +32,9 @@ struct ToolReply {
     var size: Int {
         text.count + ((try? structured.map { try CanonicalJSON.string($0) })?.count ?? 0)
     }
+
+    /// What the server's own limit counts: the whole encoded result, in code points.
+    var encodedSize: Int { result?.objectValue.map { MCPServer.size($0) } ?? .max }
 }
 
 /// A server over a real SQLite store in a temp folder, on a clock that stands still: Thursday 2026-10-29,
@@ -50,7 +53,8 @@ final class ToolHarness: @unchecked Sendable {
     private let lock = NSLock()
     private var counter = 100
 
-    init(failWith failure: CadenceError? = nil) throws {
+    /// `empty` leaves the ledger without its genesis event, as a fresh install is before anything has been written.
+    init(failWith failure: CadenceError? = nil, empty: Bool = false) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "cadence-mcp-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -58,19 +62,24 @@ final class ToolHarness: @unchecked Sendable {
         let clock = ManualClock(Timestamp.instant(clockTime: "18:00", on: Self.today, in: zone)!)
         let ids = self.ids
         let path = directory.appendingPathComponent("cadence.db").path
-        let provider: JournalProvider = { () throws(CadenceError) -> Journal in
-            if let failure { throw failure }
-            let store = try SQLiteStore(path: path, clock: clock, ids: ids, projector: LedgerProjector())
-            return try Journal(
-                store: store, config: Config.defaults(timezone: ToolHarness.zoneID), clock: clock, ids: ids, actor: .mcp)
+        func makeProvider(writesGenesis: Bool) -> JournalProvider {
+            { () throws(CadenceError) -> Journal in
+                if let failure { throw failure }
+                let store = try SQLiteStore(path: path, clock: clock, ids: ids, projector: LedgerProjector())
+                return try Journal(
+                    store: store, config: Config.defaults(timezone: ToolHarness.zoneID), clock: clock, ids: ids, actor: .mcp,
+                    writesGenesis: writesGenesis)
+            }
         }
+        let provider = makeProvider(writesGenesis: true)
         self.directory = directory
         self.clock = clock
         self.path = path
         self.provider = provider
-        self.server = try CadenceMCP.server(journal: provider, clock: clock, version: "test")
+        self.server = try CadenceMCP.server(
+            journal: provider, readJournal: makeProvider(writesGenesis: false), clock: clock, version: "test")
         // The first journal writes the genesis event; do it now so tests count only what they cause.
-        if failure == nil { _ = try provider() }
+        if failure == nil, !empty { _ = try provider() }
     }
 
     deinit { try? FileManager.default.removeItem(at: directory) }

@@ -88,10 +88,10 @@ enum ToolText {
     /// Room for the text and the structured copy together, under the server's 20,000 characters.
     static let budget = 18_000
 
-    /// The size a client sees: the text plus the structured JSON.
+    /// The size the server will count for `result`: its whole encoded form in code points, escapes included, with
+    /// both the text and the structured copy. The same function decides whether the server has to cut it.
     static func size(of result: MCPToolResult) -> Int {
-        let structured = result.structured.flatMap { try? CanonicalJSON.string($0) }
-        return result.text.count + (structured?.count ?? 0)
+        MCPServer.size(MCPServer.encodedResult(result))
     }
 
     /// The largest `n` (at least 1, at most `count`) for which `render(n)` fits the budget.

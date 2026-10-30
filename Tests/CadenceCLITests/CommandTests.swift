@@ -57,6 +57,23 @@ import Testing
         #expect(entry["attrs"]?["note"]?.stringValue == "pairing session")
     }
 
+    @Test func logRefusesLinksWithCredentialsControlOrBidiCharactersAndWritesNothing() throws {
+        defer { cli.remove() }
+        let bad = [
+            "https://user:secret@git.example.com/a", "http://git.example.com/a", "https://git.example.com/\u{202E}x",
+            "https://git.example.com/a\u{7}b", "https://git.example.com/" + String(repeating: "a", count: 2048), "https:///x",
+        ]
+        for url in bad {
+            let result = try cli.run(["log", "Fixed it", "--link", url])
+            #expect(result.status == 2, "\(url.prefix(40))")
+            #expect(result.stderr.contains("link:"), "\(result.stderr)")
+        }
+        let today = try cli.json(["today"])
+        #expect(today["entries"]?.arrayValue?.isEmpty == true)
+        // A link that passes the rule still goes in.
+        #expect(try cli.run(["log", "Fixed it", "--link", "https://git.example.com/acme/x/pull/9"]).status == 0)
+    }
+
     // MARK: plan
 
     @Test func planAddListDone() throws {
@@ -85,10 +102,23 @@ import Testing
         #expect(slip.stderr.hasPrefix("cadence: "))
         let slipped = try cli.json(["plan", "slip", secondID, "--reason", "reprioritised"])
         #expect(slipped["task"]?["status"]?.stringValue == "slipped")
-        let dropped = try cli.json(["plan", "drop", secondID, "--reason", "not needed"])
-        #expect(dropped["task"]?["status"]?.stringValue == "dropped")
+        let dropped = try cli.run(["plan", "drop", secondID, "--reason", "not needed"])
+        #expect(dropped.status == 2 && dropped.stderr.contains("task \(secondID) is already slipped"))
 
         #expect(try cli.run(["plan", "list"]).stdout.contains("Plan: 1 of 2 done"))
+    }
+
+    @Test func aResolvedTaskIsNotResolvedAgain() throws {
+        defer { cli.remove() }
+        let task = try id(try cli.json(["plan", "add", "Draft the ADR"]), "task")
+        #expect(try cli.run(["plan", "done", task]).status == 0)
+        for args in [["plan", "done", task], ["plan", "drop", task, "--reason", "cancelled"], ["plan", "slip", task, "--reason", "blocked"]] {
+            let result = try cli.run(args)
+            #expect(result.status == 2, "\(args)")
+            #expect(result.stderr.contains("is already done"), "\(result.stderr)")
+        }
+        let plan = try cli.json(["plan", "list"])
+        #expect(plan["tasks"]?.arrayValue?.first?["status"]?.stringValue == "done")
     }
 
     @Test func planDoneLinksAnEntry() throws {
@@ -97,7 +127,8 @@ import Testing
         let taskID = try id(try cli.json(["plan", "add", "Write the RFC"]), "task")
         let done = try cli.json(["plan", "done", taskID, "--link", entryID])
         #expect(done["task"]?["linked_entries"]?.arrayValue?.first?.stringValue == entryID)
-        #expect(try cli.run(["plan", "done", taskID, "--link", "NOPE"]).status == 4)
+        let other = try id(try cli.json(["plan", "add", "Review the RFC"]), "task")
+        #expect(try cli.run(["plan", "done", other, "--link", "NOPE"]).status == 4)
     }
 
     // MARK: day

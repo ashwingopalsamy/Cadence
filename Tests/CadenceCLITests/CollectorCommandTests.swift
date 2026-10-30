@@ -52,6 +52,122 @@ import Testing
         #expect(none.status == 1)
     }
 
+    /// A collector that really runs: a script that prints an envelope for the window it was asked for.
+    private func writeRunnableCollector(_ home: CLIHome, name: String = "oncall") throws {
+        try FileManager.default.createDirectory(at: home.home, withIntermediateDirectories: true)
+        let script = home.home.appendingPathComponent("\(name).sh")
+        let line = #"{"cadence":"envelope/1","collector":"\#(name)","run":"r1","generated_at":"2026-10-01T10:00:00+00:00","window":{"since":"'"$1"'","until":"'"$2"'"}}"#
+        try Data("#!/bin/sh\nprintf '%s\\n' '\(line)'\n".utf8).write(to: script)
+        let command = #"["/bin/sh","\#(script.path)","{since}","{until}"]"#
+        try writeConfig(home, collectors: #""\#(name)":{"command":\#(command)}"#)
+        #expect(try home.run(["collect", "approve", "--name", name, "--yes"]).status == 0)
+    }
+
+    private func sessionEvents(_ home: CLIHome) throws -> [Event] {
+        try home.journal().store.events(after: 0, limit: 10_000).filter { $0.type == "genai.session" }
+    }
+
+    private func leaveSession(_ home: CLIHome, _ id: String) throws {
+        _ = try home.run(["hook", "session-start"], stdin: #"{"session_id":"\#(id)","cwd":"/x/acme","model":"model-a"}"#)
+        _ = try home.run(["hook", "session-end"], stdin: #"{"session_id":"\#(id)","reason":"clear"}"#)
+    }
+
+    @Test func collectRunDrainsTheSpoolFirstForDueAndForAName() throws {
+        let home = CLIHome()
+        defer { home.remove() }
+        try writeRunnableCollector(home)
+        try leaveSession(home, "s-due")
+        #expect(try sessionEvents(home).isEmpty)
+        let due = try home.json(["collect", "run", "--due"])
+        #expect(due["spool"]?["events_written"]?.intValue == 1)
+        let first = try sessionEvents(home)
+        #expect(first.count == 1 && first[0].actor == .hook)
+        // The collector has no schedule, so nothing else was due.
+        #expect(due["runs"]?.arrayValue?.isEmpty == true)
+
+        try leaveSession(home, "s-name")
+        let named = try home.run(["collect", "run", "--name", "oncall"])
+        #expect(named.status == 0 && named.stdout.contains("oncall: ran for"))
+        #expect(try sessionEvents(home).count == 2)
+        // A run with nothing waiting drains nothing and says so in the JSON.
+        let again = try home.json(["collect", "run", "--name", "oncall"])
+        #expect(again["spool"]?["events_written"]?.intValue == 0)
+        #expect(again["runs"]?.arrayValue?.first?["outcome"] == "ok")
+    }
+
+    @Test func aSpoolDrainThatFailsIsLoggedAndCollectionStillRuns() throws {
+        let home = CLIHome()
+        defer { home.remove() }
+        try writeRunnableCollector(home)
+        try leaveSession(home, "s-1")
+        // The drain cannot save its progress: its state file is in the way.
+        try FileManager.default.createDirectory(
+            at: home.home.appendingPathComponent("state/spool-drain.json"), withIntermediateDirectories: true)
+        let named = try home.run(["collect", "run", "--name", "oncall"])
+        #expect(named.status == 0)
+        #expect(named.stderr.contains("spool drain failed"), "\(named.stderr)")
+        #expect(named.stdout.contains("oncall: ran for"))
+        let json = try home.json(["collect", "run", "--name", "oncall"])
+        #expect(json["spool"]?["error"]?.stringValue?.isEmpty == false)
+        #expect(json["runs"]?.arrayValue?.first?["outcome"] == "ok")
+        let due = try home.run(["collect", "run", "--due"])
+        #expect(due.status == 0 && due.stderr.contains("spool drain failed"))
+    }
+
+    @Test func sinceAndUntilRunThatExactWindowInSevenDayChunks() throws {
+        let home = CLIHome()
+        defer { home.remove() }
+        try writeRunnableCollector(home)
+        let one = try home.json(["collect", "run", "--name", "oncall", "--since", "2026-10-01", "--until", "2026-10-03"])
+        let runs = try #require(one["runs"]?.arrayValue)
+        #expect(runs.count == 1 && runs[0]["window"]?["since"] == "2026-10-01" && runs[0]["window"]?["until"] == "2026-10-03")
+        let long = try home.json(["collect", "run", "--name", "oncall", "--since", "2026-10-01", "--until", "2026-10-15"])
+        let windows = (long["runs"]?.arrayValue ?? []).map { "\($0["window"]?["since"]?.stringValue ?? "")..\($0["window"]?["until"]?.stringValue ?? "")" }
+        #expect(windows == ["2026-10-01..2026-10-07", "2026-10-08..2026-10-14", "2026-10-15..2026-10-15"])
+        let human = try home.run(["collect", "run", "--name", "oncall", "--since", "2026-10-01", "--until", "2026-10-03"])
+        #expect(human.stdout.contains("oncall: ran for 2026-10-01 to 2026-10-03"))
+    }
+
+    @Test func sinceAndUntilAreCheckedBeforeAnythingRuns() throws {
+        let home = CLIHome()
+        defer { home.remove() }
+        try writeRunnableCollector(home)
+        let today = try home.today()
+        let tomorrow = today.adding(days: 1).description
+        let cases: [([String], String)] = [
+            (["--since", "2026-10-05", "--until", "2026-10-01"], "--since 2026-10-05 is after --until 2026-10-01"),
+            (["--since", "2026-10-01", "--until", tomorrow], "--until \(tomorrow) is in the future"),
+            (["--since", "1999-12-31", "--until", "2026-10-01"], "--since 1999-12-31 is before 2000-01-01"),
+            (["--since", "yesterday", "--until", "2026-10-01"], "--since"),
+            (["--since", "2026-10-01"], "--since and --until go together"),
+            (["--until", "2026-10-01"], "--since and --until go together"),
+            (["--since", "2026-10-01", "--until", "2026-10-02", "--backfill-from", "2026-10-01"], "cannot be combined"),
+        ]
+        for (arguments, message) in cases {
+            let result = try home.run(["collect", "run", "--name", "oncall"] + arguments)
+            #expect(result.status != 0, "\(arguments)")
+            #expect(result.stderr.contains(message), "\(arguments): \(result.stderr)")
+        }
+        let due = try home.run(["collect", "run", "--due", "--since", "2026-10-01", "--until", "2026-10-02"])
+        #expect(due.status == 1 && due.stderr.contains("--due cannot be combined"))
+        let noName = try home.run(["collect", "run", "--since", "2026-10-01", "--until", "2026-10-02"])
+        #expect(noName.status == 1)
+        // Nothing ran for any of them: the collector has no run on record.
+        let status = try home.json(["collect", "status"])
+        #expect(status["collectors"]?.arrayValue?.first?["last_run"] == .null)
+    }
+
+    @Test func aBackfillStartIsCheckedToo() throws {
+        let home = CLIHome()
+        defer { home.remove() }
+        try writeRunnableCollector(home)
+        let tomorrow = try home.today().adding(days: 1).description
+        for (start, message) in [("1999-12-31", "is before 2000-01-01"), (tomorrow, "is in the future")] {
+            let result = try home.run(["collect", "run", "--name", "oncall", "--backfill-from", start])
+            #expect(result.status == 2 && result.stderr.contains(message), "\(start): \(result.stderr)")
+        }
+    }
+
     @Test func approveNeedsAYesWithoutATerminalThenStatusShowsIt() throws {
         let home = CLIHome()
         defer { home.remove() }

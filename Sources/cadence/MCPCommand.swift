@@ -15,7 +15,8 @@ struct MCPCommand: ParsableCommand {
         let server: MCPServer
         do {
             server = try CadenceMCP.server(
-                journal: { () throws(CadenceError) -> Journal in try context.openJournal(actor: .mcp) }, clock: context.clock,
+                journal: { () throws(CadenceError) -> Journal in try context.openJournal(actor: .mcp) },
+                readJournal: { () throws(CadenceError) -> Journal in try context.openReadJournal(actor: .mcp) }, clock: context.clock,
                 version: CadenceVersion.app,
                 log: { writeLine("cadence mcp: \($0)", to: FileHandle.standardError) })
         } catch {

@@ -82,10 +82,12 @@ public enum GenAIPick {
     /// Relative difference, in percent of the chosen value, above which two sources disagree.
     public static let mismatchPercent: Int64 = 15
 
-    /// Sum of the known values; nil when none is known.
+    /// Sum of the known values; nil when none is known. A sum past the range of Int64 stops at the limit instead of
+    /// trapping, since counters read from a file can be as large as 2^53 - 1 and a day can hold many rows.
     static func sum(_ values: [Int64?]) -> Int64? {
         let known = values.compactMap { $0 }
-        return known.isEmpty ? nil : known.reduce(0, +)
+        guard !known.isEmpty else { return nil }
+        return known.reduce(0) { $0.saturatingAdding($1) }
     }
 
     /// "import" for `import:*`; "transcripts" for a configured collector whose builtin is
@@ -112,14 +114,23 @@ public enum GenAIPick {
     /// value unknown is not a mismatch (unknown is not zero).
     public static func isMismatch(chosen: Int64?, other: Int64?) -> Bool {
         guard let chosen, let other else { return false }
-        let diff = abs(other - chosen)
-        return chosen == 0 ? diff > 0 : diff * 100 > mismatchPercent * chosen
+        // 128-bit arithmetic: two Int64 values are at most 2^64 apart, and 100 times that still fits.
+        let diff = distance(chosen, other)
+        return chosen == 0 ? diff > 0 : diff * 100 > Int128(mismatchPercent) * Int128(chosen)
     }
 
-    /// Distance in tenths of a percent of the chosen value, rounded half up; nil when it cannot be told.
+    /// Distance in tenths of a percent of the chosen value, rounded half up; nil when it cannot be told. A distance
+    /// too large for Int64 stops at `Int64.max`.
     public static func apartTenthsPercent(chosen: Int64?, other: Int64?) -> Int64? {
         guard let chosen, let other, chosen > 0 else { return nil }
-        return (abs(other - chosen) * 1000 * 2 + chosen) / (chosen * 2)
+        let scaled = (distance(chosen, other) * 2000 + Int128(chosen)) / (Int128(chosen) * 2)
+        return scaled > Int128(Int64.max) ? Int64.max : Int64(scaled)
+    }
+
+    /// `|a - b|` without overflow, for any two Int64 values.
+    private static func distance(_ a: Int64, _ b: Int64) -> Int128 {
+        let (x, y) = (Int128(a), Int128(b))
+        return x > y ? x - y : y - x
     }
 
     /// Chooses one source per day and tool. Ties in rank go to the source name that sorts first. Input order
@@ -180,5 +191,13 @@ extension Journal {
     /// The daily pick for the range: one source per day and tool by `config.genai.priority`, never summed.
     public func genaiDays(from: LocalDate, to: LocalDate) throws(CadenceError) -> [GenAIDay] {
         GenAIPick.pick(try genaiSourceDays(from: from, to: to), config: config)
+    }
+}
+
+extension Int64 {
+    /// `self + other`, stopping at `Int64.max` or `Int64.min` instead of trapping.
+    func saturatingAdding(_ other: Int64) -> Int64 {
+        let (sum, overflow) = addingReportingOverflow(other)
+        return overflow ? (other > 0 ? .max : .min) : sum
     }
 }

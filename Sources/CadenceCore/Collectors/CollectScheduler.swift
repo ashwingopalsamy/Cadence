@@ -33,7 +33,7 @@ public enum CollectJob: Sendable, Equatable {
         case "backfill":
             guard Set(object.keys).isSubset(of: ["job", "name", "from"]) else { return nil }
             guard let from = object["from"] else { return .backfill(name: name, from: nil) }
-            guard let text = from.stringValue, let day = LocalDate(text) else { return nil }
+            guard let text = from.stringValue, let day = LocalDate(text), day >= CollectScheduler.earliestDay else { return nil }
             return .backfill(name: name, from: day)
         default:
             return nil
@@ -59,6 +59,8 @@ public struct CollectJobOutcome: Sendable, Equatable {
 public struct CollectScheduler {
     public static let overlapDays = 3
     public static let chunkDays = 7
+    /// No backfill or explicit window may start before this day.
+    public static let earliestDay = LocalDate("2000-01-01")!
     static let maxJobBytes = 4096
 
     let runner: CollectorRunner
@@ -75,7 +77,9 @@ public struct CollectScheduler {
 
     var zone: TimeZone { TimeZone(identifier: journal.config.profile.timezone) ?? TimeZone(identifier: "UTC") ?? .current }
 
-    public func today() -> LocalDate { Self.day(of: clock.now(), in: zone) }
+    /// The workday now, by the configured day boundary (04:00 by default), as everywhere else. A window that ends
+    /// "today" therefore still names the previous day until the boundary has passed.
+    public func today() -> LocalDate { journal.config.dayBoundary.day(of: clock.now(), in: zone) }
 
     /// The calendar day of an instant in a zone.
     static func day(of instant: Date, in zone: TimeZone) -> LocalDate {
@@ -92,27 +96,32 @@ public struct CollectScheduler {
     }
 
     public func history(name: String) throws(CadenceError) -> History {
-        let rows: [SQLRow]
-        do {
-            rows = try journal.store.db.query(
-                "SELECT at, data FROM events WHERE type = 'ingest.run' AND actor = ? ORDER BY seq DESC LIMIT 500",
-                [.text(Actor.collector(name).rawValue)])
-        } catch {
-            throw error.cadenceError
-        }
+        let actor = SQLValue.text(Actor.collector(name).rawValue)
         var history = History()
-        for row in rows {
-            guard let at = row.text("at").flatMap(Timestamp.parse), let text = row.text("data"),
-                let run = try? IngestRun(json: try JSONParser.parse(text))
-            else { continue }
-            if history.lastRun == nil {
-                history.lastRun = at
-                history.lastStatus = run.status
+        do {
+            // The latest run of any status, and then every distinct `until` of the successful ones. Neither query has
+            // a limit, so a long streak of failures cannot push the last good run out of view.
+            if let row = try journal.store.db.first(
+                """
+                SELECT at, json_extract(data, '$.status') AS status FROM events
+                WHERE type = 'ingest.run' AND actor = ? ORDER BY seq DESC LIMIT 1
+                """, [actor])
+            {
+                history.lastRun = row.text("at").flatMap(Timestamp.parse)
+                history.lastStatus = row.text("status")
             }
-            if run.status == "ok", let until = Self.day(ofEdge: run.until, in: zone) {
+            let edges = try journal.store.db.query(
+                """
+                SELECT DISTINCT json_extract(data, '$.window.until') AS until FROM events
+                WHERE type = 'ingest.run' AND actor = ? AND json_extract(data, '$.status') = 'ok'
+                """, [actor])
+            for edge in edges {
+                guard let text = edge.text("until"), let until = Self.day(ofEdge: text, in: zone) else { continue }
                 if let known = history.lastOkUntil, known >= until { continue }
                 history.lastOkUntil = until
             }
+        } catch {
+            throw error.cadenceError
         }
         return history
     }
@@ -153,16 +162,28 @@ public struct CollectScheduler {
     // MARK: - Windows
 
     /// The next incremental window: the last successful `until` minus 3 days through today. The first run ever starts
-    /// at `profile.backfillFrom`, or 3 days back without one.
+    /// at `profile.backfillFrom`, or 3 days back without one. A window longer than 7 days is run in chunks (`windows`).
     public func window(for name: String) throws(CadenceError) -> IngestWindow {
         let today = today()
+        let start = try incrementalStart(name: name, today: today)
+        return IngestWindow(since: start.description, until: today.description)
+    }
+
+    /// The incremental window as 7-day chunks, oldest first, so a laptop that was off for weeks catches up the way a
+    /// backfill does.
+    public func windows(for name: String) throws(CadenceError) -> [IngestWindow] {
+        let today = today()
+        return Self.chunks(from: try incrementalStart(name: name, today: today), through: today)
+    }
+
+    private func incrementalStart(name: String, today: LocalDate) throws(CadenceError) -> LocalDate {
         let start: LocalDate
         if let last = try history(name: name).lastOkUntil {
             start = last.adding(days: -Self.overlapDays)
         } else {
             start = journal.config.profile.backfillFrom ?? today.adding(days: -Self.overlapDays)
         }
-        return IngestWindow(since: min(start, today).description, until: today.description)
+        return min(start, today)
     }
 
     /// `from` through today in 7-day chunks, oldest first.
@@ -179,24 +200,55 @@ public struct CollectScheduler {
 
     // MARK: - Running
 
-    public func runIncremental(name: String) throws(CadenceError) -> CollectStep {
-        let window = try window(for: name)
-        return CollectStep(collector: name, window: window, result: try runner.run(name: name, window: window))
+    /// The usual window, in 7-day chunks when it is longer, stopping at the first chunk that fails or is refused.
+    public func runIncremental(name: String) throws(CadenceError) -> [CollectStep] {
+        try run(name: name, windows: try windows(for: name))
     }
 
     /// Each due collector once, serially. A collector that fails or is refused does not stop the others.
     public func runDue() throws(CadenceError) -> [CollectStep] {
         var steps: [CollectStep] = []
-        for collector in try dueCollectors() { steps.append(try runIncremental(name: collector.name)) }
+        for collector in try dueCollectors() { steps += try runIncremental(name: collector.name) }
         return steps
     }
 
     /// Chunk by chunk from `from` (default `profile.backfillFrom`, then 3 days back), stopping at the first that fails.
+    /// A start before 2000-01-01 or after today is refused.
     public func backfill(name: String, from: LocalDate?) throws(CadenceError) -> [CollectStep] {
         let today = today()
         let start = from ?? journal.config.profile.backfillFrom ?? today.adding(days: -Self.overlapDays)
+        if from != nil { try Self.checkBackfillStart(start, today: today) }
+        return try run(name: name, windows: Self.chunks(from: min(start, today), through: today))
+    }
+
+    /// Exactly `since` through `until`, in 7-day chunks when longer, stopping at the first chunk that fails. Needs
+    /// 2000-01-01 <= since <= until <= today.
+    public func runWindow(name: String, since: LocalDate, until: LocalDate) throws(CadenceError) -> [CollectStep] {
+        try validateWindow(since: since, until: until)
+        return try run(name: name, windows: Self.chunks(from: since, through: until))
+    }
+
+    /// Refuses a window that is backwards, ends after today or starts before 2000-01-01.
+    public func validateWindow(since: LocalDate, until: LocalDate) throws(CadenceError) {
+        let today = today()
+        guard since <= until else { throw .validation("--since \(since) is after --until \(until)") }
+        guard until <= today else { throw .validation("--until \(until) is in the future; today is \(today)") }
+        guard since >= Self.earliestDay else { throw .validation("--since \(since) is before \(Self.earliestDay)") }
+    }
+
+    /// Refuses a backfill start before 2000-01-01 or after today.
+    public func validateBackfillStart(_ start: LocalDate) throws(CadenceError) {
+        try Self.checkBackfillStart(start, today: today())
+    }
+
+    static func checkBackfillStart(_ start: LocalDate, today: LocalDate) throws(CadenceError) {
+        guard start >= earliestDay else { throw .validation("backfill: \(start) is before \(earliestDay)") }
+        guard start <= today else { throw .validation("backfill: \(start) is in the future; today is \(today)") }
+    }
+
+    private func run(name: String, windows: [IngestWindow]) throws(CadenceError) -> [CollectStep] {
         var steps: [CollectStep] = []
-        for window in Self.chunks(from: min(start, today), through: today) {
+        for window in windows {
             let step = CollectStep(collector: name, window: window, result: try runner.run(name: name, window: window))
             steps.append(step)
             if step.failed { break }
@@ -226,9 +278,13 @@ public struct CollectScheduler {
                 outcomes.append(CollectJobOutcome(file: file.name, job: nil, steps: [], removed: unlink(url.path) == 0))
                 continue
             }
+            if case .backfill(_, let from?) = job, from > today() {
+                outcomes.append(CollectJobOutcome(file: file.name, job: nil, steps: [], removed: unlink(url.path) == 0))
+                continue
+            }
             let steps: [CollectStep]
             switch job {
-            case .run(let name): steps = [try runIncremental(name: name)]
+            case .run(let name): steps = try runIncremental(name: name)
             case .backfill(let name, let from): steps = try backfill(name: name, from: from)
             }
             let keep = steps.contains { $0.wasBusy }

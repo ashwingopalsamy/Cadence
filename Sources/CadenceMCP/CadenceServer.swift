@@ -15,13 +15,15 @@ extension CadenceMCP {
         """
 
     /// The server `cadence mcp` runs: the nine tools, two resources and three prompts, over a journal made fresh
-    /// for each call.
+    /// for each call. `readJournal` serves the reads and dry runs; it must not start the ledger. Without one, `journal`
+    /// serves every call.
     public static func server(
-        journal: @escaping JournalProvider, clock: any Clock, version: String,
+        journal: @escaping JournalProvider, readJournal: JournalProvider? = nil, clock: any Clock, version: String,
         log: @escaping @Sendable (String) -> Void = { _ in }
     ) throws(CadenceError) -> MCPServer {
-        try MCPServer(
-            name: serverName, version: version, instructions: instructions, tools: tools(journal: journal),
-            resources: resources(journal: journal), prompts: prompts(), clock: clock, log: log)
+        let reading = readJournal ?? journal
+        return try MCPServer(
+            name: serverName, version: version, instructions: instructions, tools: tools(journal: journal, readJournal: reading),
+            resources: resources(journal: reading), prompts: prompts(), clock: clock, log: log)
     }
 }

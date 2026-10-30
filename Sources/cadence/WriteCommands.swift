@@ -104,7 +104,7 @@ struct PlanResolveOptions: ParsableArguments {
         try output.run { context in
             let journal = try context.openJournal()
             let task = try journal.planResolve(
-                taskID: taskID, status: status, reason: reason, note: note, links: link, actor: .cli)
+                taskID: taskID, status: status, reason: reason, note: note, links: link, actor: .cli, replacing: false)
             return Rendered(human: "Task \(verb): \(task.title)", json: ["task": task.json])
         }
     }

@@ -38,6 +38,24 @@ import Testing
         #expect(try f.store.eventCount() == 1)
     }
 
+    @Test func aJournalForReadingLeavesAnEmptyLedgerEmpty() throws {
+        let clock = ManualClock(TestStore.start)
+        let store = try TestStore.make(clock: clock, projector: LedgerProjector())
+        let config = Config.defaults(timezone: Self.zoneID)
+        let reading = try Journal(store: store, config: config, clock: clock, ids: CountingIDs(), actor: .mcp, writesGenesis: false)
+        #expect(try store.eventCount() == 0)
+        let day = reading.today()
+        #expect(try reading.dayView(day).entries.isEmpty)
+        _ = try reading.summary(SummaryRange.week)
+        _ = try reading.standupText(nil)
+        #expect(try reading.query(EntryQuery(from: day, to: day)).entries.isEmpty)
+        #expect(try store.eventCount() == 0)
+        // Opened the usual way, the same ledger gets its genesis event, written by the actor that opened it.
+        _ = try Journal(store: store, config: config, clock: clock, ids: CountingIDs(), actor: .mcp)
+        let events = try store.events(after: 0, limit: 10)
+        #expect(events.map(\.type) == ["ledger.genesis"] && events[0].actor == .mcp)
+    }
+
     @Test func logParsesTheLine() throws {
         let f = try Fixture()
         let entry = try f.journal.log(
@@ -125,6 +143,75 @@ import Testing
         fails { $0.date = LocalDate("2026-09-22") }
         fails { $0.links = [Link(kind: .other, url: "http://insecure.example.com")] }
         #expect(try f.store.eventCount() == 1)
+    }
+
+    // One link rule for the CLI, MCP and envelope paths: https (or http on a configured host), at most 2,048
+    // characters, a host, no credentials, no spaces, control or bidi characters.
+    @Test func aLinkMustPassTheSameRuleAsAnEnvelopeLink() throws {
+        let f = try Fixture()
+        let tooLong = "https://example.com/" + String(repeating: "a", count: 2048)
+        let refused: [String] = [
+            "https://user:secret@git.example.com/a", "https://user@git.example.com/a", "https://example.com/a\u{0007}b",
+            "https://example.com/\u{202E}evil", "https://example.com/\u{2066}x", "https://example.com/\u{200F}", "https://exa mple.com/a",
+            "https://example.com/a\nb", "https://example.com/\u{85}", tooLong, "https:///path", "https://", "javascript:alert(1)",
+            "ftp://example.com/f", "HTTP://example.com/x", "file:///etc/passwd",
+        ]
+        for url in refused {
+            var request = Self.request("Did a thing")
+            request.links = [Link(kind: .other, url: url)]
+            #expect(throws: CadenceError.self, "\(url.prefix(40))") {
+                try f.journal.log(request, actor: .cli, origin: .selfReported)
+            }
+            #expect(throws: CadenceError.self, "\(url.prefix(40))") { try f.journal.preview(request, origin: .agent) }
+        }
+        #expect(try f.store.eventCount() == 1)
+
+        // Exactly 2,048 characters is the longest link kept.
+        let longest = "https://example.com/" + String(repeating: "a", count: 2048 - "https://example.com/".count)
+        #expect(longest.count == 2048)
+        for url in [longest, "https://git.example.com/acme/x/pull/9", "HTTPS://Git.Example.com/acme/x/pull/10", "https://docs.example.com/caf\u{E9}?q=a%20b#top"] {
+            var request = Self.request("Did a thing")
+            request.links = [Link(kind: .other, url: url)]
+            let entry = try f.journal.log(request, actor: .cli, origin: .selfReported)
+            #expect(entry.links.map(\.url) == [url])
+        }
+    }
+
+    @Test func aLinkMessageSaysWhatIsWrong() throws {
+        let f = try Fixture()
+        func message(_ url: String) -> String? {
+            var request = Self.request("Did a thing")
+            request.links = [Link(kind: .other, url: url)]
+            do {
+                _ = try f.journal.log(request, actor: .cli, origin: .selfReported)
+                return nil
+            } catch { return error.message }
+        }
+        #expect(message("http://example.com/x") == "link: only https links are accepted")
+        #expect(message("https://u:p@example.com/x") == "link: must not carry a user name or password")
+        #expect(message("https://example.com/a b") == "link: must not hold spaces, control or bidirectional characters")
+        #expect(message("https://example.com/\u{202E}") == "link: must not hold spaces, control or bidirectional characters")
+        #expect(message("https://example.com/" + String(repeating: "a", count: 2048)) == "link: at most 2048 characters")
+        #expect(message("https:///x") == "link: needs a host")
+    }
+
+    @Test func httpIsKeptOnlyOnAHostInConfigHosts() throws {
+        var config = Config.defaults(timezone: Self.zoneID)
+        config.hosts = ["Git.Example.com"]
+        let f = try Fixture(config: config)
+        var request = Self.request("Did a thing")
+        request.links = [Link(kind: .pr, url: "http://git.example.com/acme/x/pull/9")]
+        #expect(try f.journal.log(request, actor: .cli, origin: .selfReported).links.count == 1)
+        request.links = [Link(kind: .pr, url: "http://other.example.com/acme/x/pull/9")]
+        #expect(throws: CadenceError.self) { try f.journal.log(request, actor: .cli, origin: .selfReported) }
+    }
+
+    @Test func aLinkTypedInTheTextIsKeptOnlyWhenItPassesTheRule() throws {
+        let f = try Fixture()
+        let entry = try f.journal.log(
+            Self.request("Reviewed https://git.example.com/acme/x/pull/9 and https://bob:pw@git.example.com/acme/x/pull/10"),
+            actor: .cli, origin: .selfReported)
+        #expect(entry.links.map(\.url) == ["https://git.example.com/acme/x/pull/9"])
     }
 
     @Test func agentWritingAPastDayIsProposedAndBackfilled() throws {

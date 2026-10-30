@@ -88,7 +88,7 @@ import Testing
 
     @Test func aFailedRunCountsAsARunForTheSchedule() throws {
         let f = try Fixture([Self.collector(every: "30m")], failing: true)
-        let step = try f.scheduler.runIncremental(name: "oncall")
+        let step = try #require(try f.scheduler.runIncremental(name: "oncall").first)
         #expect(step.failed)
         f.clock.advance(by: 20 * 60)
         #expect(try f.scheduler.dueCollectors().isEmpty)
@@ -135,7 +135,7 @@ import Testing
         #expect(try f.scheduler.runDue().isEmpty)
         #expect(f.fake.requests.isEmpty)
         // Asked by name, the manual one runs.
-        let step = try f.scheduler.runIncremental(name: "manual")
+        let step = try #require(try f.scheduler.runIncremental(name: "manual").first)
         #expect(!step.failed)
     }
 
@@ -157,7 +157,8 @@ import Testing
     @Test func theFirstRunStartsAtBackfillFromWhenSet() throws {
         let f = try Fixture([Self.collector(every: "15m")], backfillFrom: "2026-09-01")
         _ = try f.scheduler.runIncremental(name: "oncall")
-        #expect(f.windows == ["2026-09-01..2026-09-21"])
+        // Longer than seven days, so the first catch-up runs in chunks.
+        #expect(f.windows == ["2026-09-01..2026-09-07", "2026-09-08..2026-09-14", "2026-09-15..2026-09-21"])
     }
 
     @Test func laterRunsStartThreeDaysBeforeTheLastSuccessfulUntil() throws {
@@ -165,7 +166,10 @@ import Testing
         _ = try f.scheduler.runIncremental(name: "oncall")
         f.clock.advance(by: 2 * 86_400)
         _ = try f.scheduler.runIncremental(name: "oncall")
-        #expect(f.windows == ["2026-09-01..2026-09-21", "2026-09-18..2026-09-23"])
+        #expect(
+            f.windows == [
+                "2026-09-01..2026-09-07", "2026-09-08..2026-09-14", "2026-09-15..2026-09-21", "2026-09-18..2026-09-23",
+            ])
     }
 
     @Test func aFailedRunDoesNotMoveTheWindow() throws {
@@ -182,8 +186,118 @@ import Testing
 
     @Test func theDayComesFromTheProfileZoneNotUTC() throws {
         let f = try Fixture([Self.collector(every: "15m")])
-        f.clock.set(Date(timeIntervalSince1970: 1_790_000_000 + 5 * 3600))  // 00:43 on the 22nd in Kolkata, 19:13 UTC on the 21st
+        // 04:43 on the 22nd in Kolkata is 23:13 UTC on the 21st: the zone, not UTC, decides.
+        f.clock.set(Date(timeIntervalSince1970: 1_790_000_000 + 9 * 3600))
         #expect(f.scheduler.today().description == "2026-09-22")
+    }
+
+    @Test func todayFollowsTheDayBoundaryNotCalendarMidnight() throws {
+        let f = try Fixture([Self.collector(every: "15m")])
+        // 00:43 on the 22nd in Kolkata is still the 21st: the day ends at 04:00 by default.
+        f.clock.set(Date(timeIntervalSince1970: 1_790_000_000 + 5 * 3600))
+        #expect(f.scheduler.today().description == "2026-09-21")
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(f.windows == ["2026-09-18..2026-09-21"])
+        // After 04:00 it is the 22nd.
+        f.clock.advance(by: 3 * 3600 + 17 * 60)
+        #expect(f.scheduler.today().description == "2026-09-22")
+    }
+
+    @Test func aLongStreakOfFailuresDoesNotLoseTheLastGoodRun() throws {
+        let f = try Fixture([Self.collector(every: "15m")], backfillFrom: "2026-09-01")
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        f.fake.requests.removeAll()
+        f.fake.failing = true
+        for _ in 0..<501 {
+            f.clock.advance(by: 1)
+            _ = try f.scheduler.runIncremental(name: "oncall")
+        }
+        #expect(f.fake.requests.count == 501)
+        f.fake.requests.removeAll()
+        f.fake.failing = false
+        f.clock.advance(by: 1)
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        // The last good run read through the 21st, so the window starts on the 18th, not at backfillFrom.
+        #expect(f.windows == ["2026-09-18..2026-09-21"])
+        let history = try f.scheduler.history(name: "oncall")
+        #expect(history.lastOkUntil?.description == "2026-09-21" && history.lastStatus == "ok")
+    }
+
+    @Test func theLastGoodDayIsTheFurthestOneNotTheLatestRun() throws {
+        let f = try Fixture([Self.collector(every: "15m")])
+        _ = try f.scheduler.runIncremental(name: "oncall")  // reads through the 21st
+        f.clock.advance(by: 60)
+        // A run over an older window finishes last but does not move the window back.
+        _ = try f.scheduler.runWindow(name: "oncall", since: LocalDate("2026-09-01")!, until: LocalDate("2026-09-02")!)
+        #expect(try f.scheduler.history(name: "oncall").lastOkUntil?.description == "2026-09-21")
+        f.fake.requests.removeAll()
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(f.windows == ["2026-09-18..2026-09-21"])
+    }
+
+    @Test func aLongGapIsReadInSevenDayChunks() throws {
+        let f = try Fixture([Self.collector(every: "15m")])
+        _ = try f.scheduler.runIncremental(name: "oncall")  // through 2026-09-21
+        f.fake.requests.removeAll()
+        f.clock.advance(by: 21 * 86_400)  // the laptop was off for three weeks: today is 2026-10-12
+        let steps = try f.scheduler.runIncremental(name: "oncall")
+        #expect(
+            f.windows == ["2026-09-18..2026-09-24", "2026-09-25..2026-10-01", "2026-10-02..2026-10-08", "2026-10-09..2026-10-12"])
+        #expect(steps.count == 4 && steps.allSatisfy { !$0.failed })
+        // The run that follows picks up three days before the last chunk's end.
+        f.fake.requests.removeAll()
+        f.clock.advance(by: 3600)
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(f.windows == ["2026-10-09..2026-10-12"])
+    }
+
+    @Test func aFailedChunkStopsTheCatchUpAndTheNextRunResumesThere() throws {
+        let f = try Fixture([Self.collector(every: "15m")])
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        f.fake.requests.removeAll()
+        f.clock.advance(by: 21 * 86_400)
+        f.fake.failing = true
+        let steps = try f.scheduler.runIncremental(name: "oncall")
+        #expect(steps.count == 1 && steps[0].failed)
+        #expect(f.windows == ["2026-09-18..2026-09-24"])
+        f.fake.requests.removeAll()
+        f.fake.failing = false
+        _ = try f.scheduler.runIncremental(name: "oncall")
+        #expect(f.windows.first == "2026-09-18..2026-09-24" && f.windows.count == 4)
+    }
+
+    // MARK: - An exact window
+
+    @Test func anExactWindowRunsAsGivenAndInChunksWhenLong() throws {
+        let f = try Fixture([Self.collector()])
+        let one = try f.scheduler.runWindow(name: "oncall", since: LocalDate("2026-09-10")!, until: LocalDate("2026-09-12")!)
+        #expect(one.count == 1 && f.windows == ["2026-09-10..2026-09-12"])
+        f.fake.requests.removeAll()
+        let long = try f.scheduler.runWindow(name: "oncall", since: LocalDate("2026-08-30")!, until: LocalDate("2026-09-21")!)
+        #expect(long.count == 4)
+        #expect(f.windows == ["2026-08-30..2026-09-05", "2026-09-06..2026-09-12", "2026-09-13..2026-09-19", "2026-09-20..2026-09-21"])
+    }
+
+    @Test func anExactWindowStopsAtTheFirstFailedChunk() throws {
+        let f = try Fixture([Self.collector()], failing: true)
+        let steps = try f.scheduler.runWindow(name: "oncall", since: LocalDate("2026-08-30")!, until: LocalDate("2026-09-21")!)
+        #expect(steps.count == 1 && steps[0].failed && f.fake.requests.count == 1)
+    }
+
+    @Test func anExactWindowIsChecked() throws {
+        let f = try Fixture([Self.collector()])
+        func refused(_ since: String, _ until: String) -> String? {
+            do {
+                _ = try f.scheduler.runWindow(name: "oncall", since: LocalDate(since)!, until: LocalDate(until)!)
+                return nil
+            } catch { return error.message }
+        }
+        #expect(refused("2026-09-12", "2026-09-10") == "--since 2026-09-12 is after --until 2026-09-10")
+        #expect(refused("2026-09-12", "2026-09-22") == "--until 2026-09-22 is in the future; today is 2026-09-21")
+        #expect(refused("1999-12-31", "2026-09-21") == "--since 1999-12-31 is before 2000-01-01")
+        #expect(f.fake.requests.isEmpty)
+        // Today itself is fine.
+        #expect(refused("2026-09-21", "2026-09-21") == nil)
     }
 
     // MARK: - Backfill
@@ -210,6 +324,28 @@ import Testing
         let f = try Fixture([Self.collector()], backfillFrom: "2026-09-01")
         _ = try f.scheduler.backfill(name: "oncall", from: LocalDate("2026-09-15"))
         #expect(f.windows == ["2026-09-15..2026-09-21"])
+    }
+
+    @Test func aBackfillStartMustBeBetween2000AndToday() throws {
+        #expect(
+            CollectJob.parse(Array(#"{"job":"backfill","name":"a","from":"2000-01-01"}"#.utf8))
+                == .backfill(name: "a", from: LocalDate("2000-01-01")))
+        #expect(CollectJob.parse(Array(#"{"job":"backfill","name":"a","from":"1999-12-31"}"#.utf8)) == nil)
+        let f = try Fixture([Self.collector("a")])
+        try f.job("late.json", #"{"job":"backfill","name":"a","from":"2026-09-22"}"#, age: 3)
+        try f.job("early.json", #"{"job":"backfill","name":"a","from":"1999-12-31"}"#, age: 2)
+        try f.job("today.json", #"{"job":"backfill","name":"a","from":"2026-09-21"}"#, age: 1)
+        let outcomes = try f.scheduler.processJobs()
+        #expect(outcomes.map(\.file) == ["late.json", "early.json", "today.json"])
+        #expect(outcomes.map { $0.job == nil } == [true, true, false])
+        #expect(outcomes.allSatisfy(\.removed) && f.remaining().isEmpty)
+        #expect(f.windows == ["2026-09-21..2026-09-21"])
+        do {
+            _ = try f.scheduler.backfill(name: "a", from: LocalDate("2026-09-22"))
+            Issue.record("a backfill from tomorrow should be refused")
+        } catch {
+            #expect(error.message == "backfill: 2026-09-22 is in the future; today is 2026-09-21")
+        }
     }
 
     @Test func backfillStopsAtTheFirstFailedChunk() throws {

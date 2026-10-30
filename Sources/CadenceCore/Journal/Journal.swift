@@ -118,9 +118,11 @@ public final class Journal {
     static let maxNote = 1000
     static let maxLinks = 5
 
-    /// `actor` writes the genesis event when the ledger is empty.
+    /// `actor` writes the genesis event when the ledger is empty, unless `writesGenesis` is false: a journal made only
+    /// to read (a dry run, a view) must not be what starts the ledger. Its reads work on an empty ledger.
     public init(
-        store: SQLiteStore, config: Config, clock: any Clock, ids: any IdentifierSource, actor: Actor = .app
+        store: SQLiteStore, config: Config, clock: any Clock, ids: any IdentifierSource, actor: Actor = .app,
+        writesGenesis: Bool = true
     ) throws(CadenceError) {
         guard let zone = TimeZone(identifier: config.profile.timezone) else {
             throw .validation("profile.timezone: unknown time zone '\(config.profile.timezone)'")
@@ -132,7 +134,7 @@ public final class Journal {
         self.zoneValue = zone
         self.classifier = try TicketClassifier(rules: config.tickets)
         // Reading must not need the write lock, so only an empty ledger takes it.
-        if try store.eventCount() == 0 {
+        if writesGenesis, try store.eventCount() == 0 {
             var profile: [String: JSONValue] = ["timezone": .string(config.profile.timezone)]
             if let name = config.profile.name { profile["name"] = .string(name) }
             if let role = config.profile.role { profile["role"] = .string(role) }
@@ -240,11 +242,14 @@ public final class Journal {
             durationS = parsed.durationS
         }
 
-        var links = parsed.links
+        // The same rule as an envelope link. A link typed into the text that fails it (credentials, say) is left out;
+        // one given as a field is an error, so the person sees why.
+        let httpHosts = Set(config.hosts.map { $0.lowercased() })
+        var links = parsed.links.filter { LinkRule.isKept($0.url, httpHosts: httpHosts) }
         for link in request.links {
-            guard link.url.lowercased().hasPrefix("https://"), link.url.count > "https://".count,
-                !link.url.contains(where: { $0.isWhitespace || $0.unicodeScalars.contains { $0.properties.generalCategory == .control } })
-            else { throw .validation("link: only https links are accepted") }
+            if let refusal = LinkRule.refusal(link.url, httpHosts: httpHosts) {
+                throw .validation("link: " + refusal.message(httpHosts: httpHosts))
+            }
             if !links.contains(link) { links.append(link) }
         }
         guard links.count <= Self.maxLinks else { throw .validation("links: at most \(Self.maxLinks) per entry") }
@@ -292,8 +297,11 @@ public final class Journal {
         }
     }
 
+    /// Resolves a task as done, slipped or dropped. The wrap-up deck lets the user change their mind (section 4.5), so
+    /// by default a resolved task can be resolved again; the CLI and the MCP tools pass `replacing: false` and refuse.
     public func planResolve(
-        taskID: String, status: TaskStatus, reason: String?, note: String?, links: [String], actor: Actor
+        taskID: String, status: TaskStatus, reason: String?, note: String?, links: [String], actor: Actor,
+        replacing: Bool = true
     ) throws(CadenceError) -> PlanTask {
         guard status == .done || status == .slipped || status == .dropped else {
             throw .validation("status: a task is resolved as done, slipped or dropped")
@@ -309,6 +317,9 @@ public final class Journal {
                 let next = try self.rows("SELECT id FROM plan_tasks WHERE carried_from = ?", [.text(taskID)]).first?.text("id")
                 throw .validation(
                     "task \(taskID) was carried to a later day" + (next.map { " as \($0); resolve that task instead" } ?? ""))
+            }
+            if !replacing, let state = current.text("status"), state != TaskStatus.open.rawValue {
+                throw .validation("task \(taskID) is already \(state); a resolved task is not resolved again")
             }
             for link in links where try self.rows("SELECT id FROM entries WHERE id = ?", [.text(link)]).first == nil {
                 throw .notFound("no entry with id \(link)")
@@ -390,10 +401,34 @@ public final class Journal {
         }
     }
 
+    /// The latest `day.declared` for a day: what it said and who wrote it.
+    public struct Declaration: Sendable, Equatable {
+        public var kind: DayKind
+        public var label: String?
+        public var actor: Actor
+    }
+
+    /// The latest declaration for `day`, or nil when nobody declared it. Read from the ledger, so it names the actor.
+    public func declaration(of day: LocalDate) throws(CadenceError) -> Declaration? {
+        guard
+            let event = try store.readEvents(
+                "SELECT * FROM events WHERE subject = ? AND type = 'day.declared' ORDER BY seq DESC LIMIT 1", [.text("day:\(day)")]
+            ).first,
+            case .dayDeclared(let declared)? = try? EventPayload(type: event.type, data: event.data)
+        else { return nil }
+        return Declaration(kind: declared.kind, label: declared.label, actor: event.actor)
+    }
+
+    /// Declares a day. The agent (`mcp`) never replaces a declaration made by anyone else, the user or a collector;
+    /// it may change its own. The CLI and the app replace whatever is there.
     public func declare(_ day: LocalDate, kind: DayKind, label: String?, actor: Actor) throws(CadenceError) {
         let label = label.map { Self.clean($0, limit: 100) }.flatMap { $0.isEmpty ? nil : $0 }
         let declared = DayDeclared(day: day.description, tz: try zone(of: day).identifier, kind: kind, label: label)
         try store.transact { () throws(CadenceError) -> Void in
+            if actor == .mcp, let existing = try self.declaration(of: day), existing.actor != .mcp {
+                let who = existing.actor == .app || existing.actor == .cli ? "the user" : existing.actor.rawValue
+                throw .validation("\(day) is already marked as \(Format.kind(existing.kind)) by \(who); only the user can change it")
+            }
             try self.append([EventPayload.dayDeclared(declared).draft(actor: actor)])
         }
     }
@@ -587,7 +622,7 @@ public final class Journal {
     }
 
     /// Unicode bidirectional format characters, which can make text read differently from how it is stored.
-    private static func isBidiFormat(_ scalar: Unicode.Scalar) -> Bool {
+    static func isBidiFormat(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 0x202A...0x202E, 0x2066...0x2069, 0x200E, 0x200F, 0x061C: true
         default: false

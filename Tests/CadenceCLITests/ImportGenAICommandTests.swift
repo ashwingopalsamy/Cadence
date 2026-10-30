@@ -52,6 +52,28 @@ import Testing
         #expect(holiday.hasSuffix("holiday"))
     }
 
+    @Test func sourcesThatDifferByTheLargestSafeIntegerDoNotCrashTheDryRunOrTheSummary() throws {
+        let home = CLIHome()
+        defer { home.remove() }
+        try FileManager.default.createDirectory(at: home.home, withIntermediateDirectories: true)
+        let day = "2026-10-28"
+        let big = "9007199254740991"
+        let small = home.home.appendingPathComponent("small.csv")
+        let large = home.home.appendingPathComponent("large.csv")
+        try "date,model,requests,input,output,cost_usd\n\(day),model-a,1,1,1,0.10\n".write(to: small, atomically: true, encoding: .utf8)
+        try "date,model,requests,input,output,cost_usd\n\(day),model-a,1,1,\(big),0.10\n".write(to: large, atomically: true, encoding: .utf8)
+        #expect(try home.run(["import", "genai", small.path, "--map", Self.map, "--name", "a-small"]).status == 0)
+        #expect(try home.run(["import", "genai", large.path, "--map", Self.map, "--name", "b-large"]).status == 0)
+
+        let dry = try home.run(["import", "genai", large.path, "--map", Self.map, "--name", "b-large", "--dry-run"])
+        #expect(dry.status == 0, "\(dry.stderr)")
+        let line = try #require(dry.stdout.split(separator: "\n").first { $0.hasPrefix(day) })
+        #expect(line.contains("import:a-small 1 (100.0% apart, mismatch)"), "\(line)")
+
+        let summary = try home.run(["summary", "--range", "\(day)..\(day)", "--json"])
+        #expect(summary.status == 0, "\(summary.stderr)")
+    }
+
     @Test func dryRunJsonCarriesTheSameDays() throws {
         let home = CLIHome()
         defer { home.remove() }

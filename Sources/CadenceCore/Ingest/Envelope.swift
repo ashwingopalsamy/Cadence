@@ -357,17 +357,9 @@ struct EnvelopeReader {
         return date
     }
 
-    /// `https`, or `http` on a host listed in `config.hosts`. A host is required; spaces, control characters and
-    /// credentials in the URL are not allowed, so no password ever reaches the ledger.
-    private func isKeptURL(_ url: String) -> Bool {
-        guard url.count <= 2048,
-            !url.unicodeScalars.contains(where: { $0.properties.generalCategory == .control || $0.properties.isWhitespace }),
-            let parts = URLComponents(string: url), let scheme = parts.scheme?.lowercased(),
-            let host = parts.host?.lowercased(), !host.isEmpty, parts.user == nil, parts.password == nil
-        else { return false }
-        if scheme == "https" { return true }
-        return scheme == "http" && context.httpHosts.contains(host)
-    }
+    /// The rule shared with `cadence log` and the MCP tools (`LinkRule`): `https`, or `http` on a host listed in
+    /// `config.hosts`; a host; no credentials, spaces, control or bidi characters; at most 2,048 characters.
+    private func isKeptURL(_ url: String) -> Bool { LinkRule.isKept(url, httpHosts: context.httpHosts) }
 
     private static func isName(_ text: String) -> Bool {
         (1...100).contains(text.count)

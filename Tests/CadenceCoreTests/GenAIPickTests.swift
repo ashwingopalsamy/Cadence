@@ -144,6 +144,47 @@ import Testing
         #expect(GenAIPick.apartTenthsPercent(chosen: 1000, other: nil) == nil)
     }
 
+    // Counters read from a file can reach 2^53 - 1, so the distance arithmetic must not wrap or trap.
+    @Test func hugeCountersNeitherTrapNorWrap() {
+        let big: Int64 = 9_007_199_254_740_991
+        #expect(GenAIPick.apartTenthsPercent(chosen: 1, other: big) == (big - 1) * 1000)
+        #expect(GenAIPick.isMismatch(chosen: 1, other: big))
+        #expect(GenAIPick.apartTenthsPercent(chosen: big, other: 1) == 1000)  // 100.0% apart
+        #expect(GenAIPick.isMismatch(chosen: big, other: 1))
+        #expect(!GenAIPick.isMismatch(chosen: big, other: big))
+        #expect(GenAIPick.apartTenthsPercent(chosen: big, other: big) == 0)
+        // 15% of the largest safe integer, to the digit.
+        let edge = big / 20 * 20  // divisible by 20, so 15% is exact
+        #expect(!GenAIPick.isMismatch(chosen: edge, other: edge + edge / 20 * 3))
+        #expect(GenAIPick.isMismatch(chosen: edge, other: edge + edge / 20 * 3 + 1))
+        // Whole Int64 range: a result that would not fit saturates instead of trapping.
+        #expect(GenAIPick.apartTenthsPercent(chosen: 1, other: Int64.max) == Int64.max)
+        #expect(GenAIPick.isMismatch(chosen: 1, other: Int64.max))
+        #expect(GenAIPick.isMismatch(chosen: Int64.max, other: Int64.min))
+        #expect(GenAIPick.isMismatch(chosen: Int64.min, other: Int64.max))
+        #expect(GenAIPick.apartTenthsPercent(chosen: Int64.max, other: Int64.min) == 2000)
+        #expect(GenAIPick.apartTenthsPercent(chosen: Int64.min, other: 5) == nil)
+    }
+
+    @Test func aPickBetweenTwoHugeSourcesKeepsBothFigures() {
+        let big: Int64 = 9_007_199_254_740_991
+        let config = Self.config(collectors: Self.collectors)
+        let days = GenAIPick.pick(
+            [Self.source("usage-api", [Self.row(out: 1)]), Self.source("cc", [Self.row(out: big)])], config: config)
+        #expect(days.count == 1 && days[0].source == "usage-api")
+        #expect(days[0].others.first?.outputTokens == big)
+        #expect(days[0].others.first?.apartTenthsPercent == (big - 1) * 1000)
+        #expect(days[0].mismatch)
+    }
+
+    @Test func sumsOfHugeCountersSaturate() {
+        let big: Int64 = 9_007_199_254_740_991
+        let rows = (0..<2000).map { Self.row("m\($0)", out: big) }
+        let source = Self.source("usage-api", rows)
+        #expect(source.tokens.output == Int64.max)
+        #expect(Self.source("usage-api", [Self.row("a", out: 5), Self.row("b", out: 7)]).tokens.output == 12)
+    }
+
     @Test func aDayCarriesTheMismatchFlagWhenAnyOtherSourceDisagrees() throws {
         let config = Self.config(collectors: Self.collectors)
         let all = [

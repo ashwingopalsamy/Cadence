@@ -13,10 +13,12 @@ extension CadenceMCP {
     /// At most this many entries in one `log_entries` call, so the preview table always fits a result.
     public static let maxBatch = 25
 
-    public static func tools(journal makeJournal: @escaping JournalProvider) -> [MCPTool] {
-        [
-            logEntryTool(makeJournal), logEntriesTool(makeJournal), planAddTool(makeJournal), planUpdateTool(makeJournal),
-            declareDayTool(makeJournal), getDayTool(makeJournal), queryTool(makeJournal), summaryTool(makeJournal), standupTool(makeJournal),
+    /// `readJournal` serves get_day, query, summary, standup and the dry run of log_entries; by default it is `journal`.
+    public static func tools(journal makeJournal: @escaping JournalProvider, readJournal: JournalProvider? = nil) -> [MCPTool] {
+        let read = readJournal ?? makeJournal
+        return [
+            logEntryTool(makeJournal), logEntriesTool(makeJournal, read: read), planAddTool(makeJournal), planUpdateTool(makeJournal),
+            declareDayTool(makeJournal), getDayTool(read), queryTool(read), summaryTool(read), standupTool(read),
         ]
     }
 
@@ -113,7 +115,7 @@ extension CadenceMCP {
         var problem: String?
     }
 
-    static func logEntriesTool(_ makeJournal: @escaping JournalProvider) -> MCPTool {
+    static func logEntriesTool(_ makeJournal: @escaping JournalProvider, read makeReadJournal: JournalProvider? = nil) -> MCPTool {
         let properties: [String: JSONValue] = [
             "transcript": Schema.string(
                 maxLength: 20_000,
@@ -139,7 +141,10 @@ extension CadenceMCP {
             inputSchema: Schema.object(properties), writes: true,
             call: { arguments throws(CadenceError) in
                 do throws(CadenceError) {
-                    return try logEntries(ToolArguments(arguments), journal: try makeJournal())
+                    // A dry run writes nothing, so it does not start the ledger either.
+                    let input = ToolArguments(arguments)
+                    let dryRun = input.bool("dry_run") ?? true
+                    return try logEntries(input, journal: try (dryRun ? makeReadJournal ?? makeJournal : makeJournal)())
                 } catch {
                     throw ToolText.forAgent(error)
                 }
@@ -350,7 +355,7 @@ extension CadenceMCP {
                         guard let status else { return try journal.task(id) }
                         return try journal.planResolve(
                             taskID: id, status: status, reason: input.string("reason"), note: input.string("note"),
-                            links: (input.array("entry_ids") ?? []).compactMap(\.stringValue), actor: .mcp)
+                            links: (input.array("entry_ids") ?? []).compactMap(\.stringValue), actor: .mcp, replacing: false)
                     }
                     let verb: String
                     switch status {
@@ -547,8 +552,13 @@ extension CadenceMCP {
                 do throws(CadenceError) {
                     let journal = try makeJournal()
                     let day = try ToolArguments(arguments).date("date") ?? journal.today()
-                    let text = try journal.standupText(day)
-                    return MCPToolResult(text: text, structured: ["day": .string(day.description), "text": .string(text)])
+                    let draft = try journal.standupDraft(day)
+                    // As many bullets as fit a result, from the top; a list that is cut says how many it left out.
+                    func render(_ count: Int) -> MCPToolResult {
+                        let text = draft.text(maxBullets: count)
+                        return MCPToolResult(text: text, structured: ["day": .string(day.description), "text": .string(text)])
+                    }
+                    return render(ToolText.largestFit(of: draft.longest, render: render))
                 } catch {
                     throw ToolText.forAgent(error)
                 }

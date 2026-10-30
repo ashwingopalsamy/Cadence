@@ -332,7 +332,7 @@ extension Journal {
         for pick in picks {
             // Unknown is not zero: a pick whose output tokens are unknown adds nothing.
             guard let out = pick.tokens.output else { continue }
-            tokens = (tokens ?? 0) + Int(out)
+            tokens = (tokens ?? 0).addingReportingOverflow(Int(out)).overflow ? Int.max : (tokens ?? 0) + Int(out)
             tokenDays[pick.source, default: []].insert(pick.day)
         }
         let tokenSources = tokenDays.mapValues(\.count)

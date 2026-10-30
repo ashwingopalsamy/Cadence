@@ -191,6 +191,47 @@ import Testing
         #expect(try f.journal.dayView(f.day("2026-10-29")) == before)
     }
 
+    // MARK: declarations and resolutions
+
+    @Test func theCLIReplacesAnyDeclarationButAnAgentOnlyItsOwn() throws {
+        let f = try Fixture()
+        let day = f.day("2026-10-28")
+        #expect(try f.journal.declaration(of: day) == nil)
+        try f.journal.declare(day, kind: .holiday, label: nil, actor: .mcp)
+        try f.journal.declare(day, kind: .leavePlanned, label: "Trip", actor: .mcp)  // its own: fine
+        try f.journal.declare(day, kind: .leavePlanned, label: "Trip", actor: .cli)  // the user takes it over
+        #expect(throws: CadenceError.self) { try f.journal.declare(day, kind: .holiday, label: nil, actor: .mcp) }
+        let before = try f.store.eventCount()
+        try f.journal.declare(day, kind: .leaveUnplanned, label: nil, actor: .cli)  // the CLI keeps replacing
+        #expect(try f.store.eventCount() == before + 1)
+        let found = try #require(try f.journal.declaration(of: day))
+        #expect(found.actor == .cli && found.kind == .leaveUnplanned && found.label == nil)
+        // A declaration by a collector is not the agent's either.
+        try f.journal.declare(f.day("2026-10-27"), kind: .holiday, label: nil, actor: .collector("hr"))
+        #expect(throws: CadenceError.self) { try f.journal.declare(f.day("2026-10-27"), kind: .leavePlanned, label: nil, actor: .mcp) }
+    }
+
+    @Test func aResolvedTaskIsNotResolvedAgainWhenTheCallerAsksNotTo() throws {
+        let f = try Fixture()
+        let task = try f.journal.planAdd(title: "One", day: nil, estimateMin: nil, origin: .selfReported, actor: .cli)
+        _ = try f.journal.planResolve(taskID: task.id, status: .done, reason: nil, note: nil, links: [], actor: .cli)
+        let before = try f.store.eventCount()
+        for status in [TaskStatus.done, .slipped, .dropped] {
+            do {
+                _ = try f.journal.planResolve(taskID: task.id, status: status, reason: "blocked", note: nil, links: [], actor: .mcp, replacing: false)
+                Issue.record("resolving a done task as \(status) should be refused")
+            } catch {
+                #expect(error.message == "task \(task.id) is already done; a resolved task is not resolved again")
+            }
+        }
+        #expect(try f.store.eventCount() == before)
+        #expect(try f.journal.task(task.id).status == .done)
+        // The default still lets the wrap-up deck change a decision.
+        let slipped = try f.journal.planResolve(
+            taskID: task.id, status: .slipped, reason: "blocked", note: nil, links: [], actor: .app)
+        #expect(slipped.status == .slipped)
+    }
+
     // MARK: stand-up without a witness
 
     @Test func standupTextIsTheStandupWithoutTheWitnessLineAndWritesNothing() throws {

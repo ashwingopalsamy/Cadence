@@ -287,6 +287,107 @@ import Testing
         #expect(try h.call("standup", ["date": "soon"]).isError)
     }
 
+    // MARK: size, measured the way the server counts it
+
+    /// Titles whose encoded form is longer than they look: quotes and backslashes are escaped, and a family emoji is one
+    /// character to read but seven code points to count. 260 of them do not fit one result.
+    static func awkwardLines(_ count: Int) -> [String] {
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}"
+        return (0..<count).map { "Fixed \"retry\" budget \\ re\u{301}try \(family)\(family)\(family)\(family) \u{E9}tape number \($0)" }
+    }
+
+    @Test func aBigDayKeepsItsStructuredCopyAndSaysHowManyEntriesAreShown() throws {
+        let h = try ToolHarness()
+        let written = try seed(h, Self.awkwardLines(260))
+        let reply = try h.call("get_day")
+        #expect(!reply.isError && reply.structured != nil)
+        #expect(reply.encodedSize <= MCPServer.maxResultCharacters, "\(reply.encodedSize)")
+        #expect(!reply.text.contains("left out") && !reply.text.contains("cut at"))
+        let shown = try #require(reply.structured?["entries"]?.arrayValue)
+        #expect(shown.count < 260 && reply.structured?["entries_total"] == 260)
+        #expect(shown.compactMap { $0["title"]?.stringValue } == written.prefix(shown.count).map(\.title))
+        #expect(reply.text.contains("Showing \(shown.count) of 260 entries"))
+    }
+
+    @Test func aBigQueryKeepsItsStructuredCopyAndItsCursorOnEveryPage() throws {
+        let h = try ToolHarness()
+        let written = try seed(h, Self.awkwardLines(260))
+        var titles: [String] = []
+        var cursor: String?
+        var pages = 0
+        repeat {
+            var arguments: [String: JSONValue] = [:]
+            if let cursor { arguments["cursor"] = .string(cursor) }
+            let reply = try h.call("query", .object(arguments))
+            #expect(!reply.isError && reply.structured != nil, "page \(pages)")
+            #expect(reply.encodedSize <= MCPServer.maxResultCharacters, "page \(pages): \(reply.encodedSize)")
+            #expect(!reply.text.contains("left out") && !reply.text.contains("cut at"), "page \(pages)")
+            titles += (reply.structured?["entries"]?.arrayValue ?? []).compactMap { $0["title"]?.stringValue }
+            cursor = reply.structured?["next_cursor"]?.stringValue
+            // The text names the cursor the structured copy holds, so a client reading either can continue.
+            if let cursor { #expect(reply.text.contains("call query again with cursor \(cursor)")) }
+            pages += 1
+        } while cursor != nil && pages < 30
+        #expect(pages > 1)
+        #expect(titles == written.map(\.title))
+    }
+
+    @Test func aBigStandupGivesWholeBulletsAndSaysHowManyAreLeftOut() throws {
+        let h = try ToolHarness()
+        let written = try seed(h, Self.awkwardLines(260))
+        let reply = try h.call("standup")
+        #expect(!reply.isError && reply.structured != nil)
+        #expect(reply.encodedSize <= MCPServer.maxResultCharacters, "\(reply.encodedSize)")
+        #expect(!reply.text.contains("cut at") && !reply.text.contains("left out"))
+        #expect(reply.structured?["text"]?.stringValue == reply.text)
+        let bullets = reply.text.split(separator: "\n").filter { $0.hasPrefix("\u{2022} ") }.map { String($0.dropFirst(2)) }
+        let titles = Set(written.map(\.title))
+        // Every bullet is a whole title, or the line that counts what was left out.
+        let whole = bullets.filter { titles.contains($0) }
+        let notes = bullets.filter { !titles.contains($0) }
+        #expect(!whole.isEmpty && whole.count < 260)
+        #expect(whole == written.prefix(whole.count).map(\.title))
+        #expect(notes.count == 2 && notes.first == "\(260 - whole.count) more not shown; use query for this date", "\(notes)")
+        #expect(notes.last == "Nothing planned")
+        #expect(reply.text.hasPrefix("*Thu 29 Oct*\nDone\n") && reply.text.hasSuffix("Blockers: none"))
+    }
+
+    @Test func aStandupThatFitsIsGivenInFull() throws {
+        let h = try ToolHarness()
+        let written = try seed(h, Self.awkwardLines(12))
+        let reply = try h.call("standup")
+        let bullets = reply.text.split(separator: "\n").filter { $0.hasPrefix("\u{2022} ") }.map { String($0.dropFirst(2)) }
+        #expect(bullets == written.map(\.title) + ["Nothing planned"])
+        #expect(!reply.text.contains("not shown"))
+    }
+
+    // MARK: a store with nothing in it yet
+
+    @Test func readsAndDryRunsOnAnEmptyStoreWriteNothingNotEvenTheGenesisEvent() throws {
+        let h = try ToolHarness(empty: true)
+        #expect(try h.eventCount() == 0)
+        let meta: JSONValue = ["io.modelcontextprotocol/protocolVersion": "2026-07-28"]
+        for (tool, arguments) in [
+            ("get_day", JSONValue.object([:])), ("query", ["from": "2026-10-01"]), ("summary", ["range": "cycle"]), ("standup", [:]),
+            ("log_entries", ["transcript": "- Fixed a bug\n- Reviewed a doc"]), ("log_entries", ["transcript": "- Fixed a bug", "dry_run": true]),
+        ] {
+            let reply = try h.call(tool, arguments)
+            #expect(!reply.isError, "\(tool): \(reply.text)")
+            #expect(try h.eventCount() == 0, "\(tool) wrote to an empty ledger")
+        }
+        for uri in ["cadence://week/current", "cadence://day/2026-10-28"] {
+            let reply = try h.send(method: "resources/read", params: ["uri": .string(uri), "_meta": meta])
+            #expect(reply.rpcError == nil, "\(uri)")
+        }
+        #expect(try h.eventCount() == 0)
+        // The first write starts the ledger, under the agent's own name.
+        let logged = try h.call("log_entry", ["text": "Fixed a bug"])
+        #expect(!logged.isError)
+        let events = try h.events()
+        #expect(events.map(\.type) == ["ledger.genesis", "entry.created"] && events.allSatisfy { $0.actor == .mcp })
+        #expect(try h.call("log_entries", ["transcript": "- Reviewed a doc", "dry_run": false]).isError == false)
+    }
+
     // MARK: every tool
 
     @Test func readToolsNeverWriteAndNoResultPassesTheLimit() throws {

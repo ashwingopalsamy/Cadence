@@ -202,7 +202,7 @@ extension Journal {
     /// unless the head already is one for this day.
     public func standup(_ day: LocalDate?, actor: Actor = .cli) throws(CadenceError) -> StandupText {
         let day = day ?? today()
-        let body = try standupLines(for: day)
+        let body = try standupDraft(for: day).lines()
         let witness = try store.witness(day: day, actor: actor)
         return StandupText(text: (body + [witness.line]).joined(separator: "\n"), code: witness.code)
     }
@@ -210,10 +210,15 @@ extension Journal {
     /// The stand-up text for `day` (default today) without a witness code. Reads only: nothing is appended,
     /// so a caller that must not write to the ledger can still show the text.
     public func standupText(_ day: LocalDate?) throws(CadenceError) -> String {
-        try standupLines(for: day ?? today()).joined(separator: "\n")
+        try standupDraft(for: day ?? today()).lines().joined(separator: "\n")
     }
 
-    private func standupLines(for day: LocalDate) throws(CadenceError) -> [String] {
+    /// The stand-up in parts, so a caller with a size limit can show fewer bullets and still end in whole lines.
+    public func standupDraft(_ day: LocalDate?) throws(CadenceError) -> StandupDraft {
+        try standupDraft(for: day ?? today())
+    }
+
+    private func standupDraft(for day: LocalDate) throws(CadenceError) -> StandupDraft {
         let today = self.today()
         guard day <= today else { throw .validation("date: \(day) is in the future") }
         let key = SQLValue.text(day.description)
@@ -228,8 +233,7 @@ extension Journal {
             ORDER BY COALESCE(occurred_at, ''), created_seq
             """, [key]
         ).map { (row) throws(CadenceError) -> Entry in try Readers.entry(row) }
-        var lines = ["*\(Self.standUpDate(day))*", "Done"]
-        lines += entries.isEmpty ? ["\u{2022} Nothing logged"] : entries.map { bullet($0.title, $0.ticket) }
+        let done = entries.map { bullet($0.title, $0.ticket) }
 
         // The same definitions as summary and proof: rows, not quantities.
         let reviews = try rows(
@@ -250,19 +254,19 @@ extension Journal {
         if reviews > 0 { parts.append("Reviews \(reviews)") }
         if merged > 0 { parts.append("PRs merged \(merged)") }
         if sessions > 0 { parts.append("Claude Code \(sessions) session\(sessions == 1 ? "" : "s")") }
-        if !parts.isEmpty { lines.append(parts.joined(separator: " \u{00B7} ")) }
-        if config.genai.standupLine, let line = try aiStandupLine(day: key, sessions: Int(sessions)) { lines.append(line) }
+        var countLines: [String] = []
+        if !parts.isEmpty { countLines.append(parts.joined(separator: " \u{00B7} ")) }
+        if config.genai.standupLine, let line = try aiStandupLine(day: key, sessions: Int(sessions)) { countLines.append(line) }
+        // The AI line of section 11.2 rides with the counts, so the size fitting keeps or drops them together.
+        let counts = countLines.isEmpty ? nil : countLines.joined(separator: "\n")
 
         // The same day a seal carries open tasks to, so Next shows where they went.
-        let next = try carryTarget(after: day, today: self.today(), rules: DayRules(config: config))
+        let nextDay = try carryTarget(after: day, today: self.today(), rules: DayRules(config: config))
         let tasks = try rows(
             "SELECT * FROM plan_tasks WHERE day = ? AND status = 'open' ORDER BY position, created_seq",
-            [.text(next.description)]
+            [.text(nextDay.description)]
         ).map { (row) throws(CadenceError) -> PlanTask in try Readers.task(row) }
-        lines.append("Next")
-        if tasks.isEmpty {
-            lines.append("\u{2022} Nothing planned")
-        }
+        var next: [String] = []
         for task in tasks {
             var line = bullet(task.title, task.ticket)
             if let from = task.carriedFrom, let source = try? self.task(from), source.status == .slipped,
@@ -270,10 +274,9 @@ extension Journal {
             {
                 line += " (slipped: \(reason))"
             }
-            lines.append(line)
+            next.append(line)
         }
-        lines.append("Blockers: none")
-        return lines
+        return StandupDraft(heading: "*\(Self.standUpDate(day))*", done: done, counts: counts, next: next)
     }
 
     /// The optional line of docs/SPEC.md section 11.2, "AI: 4 sessions · 2 of 3 merges AI-assisted". A part with no
@@ -308,4 +311,36 @@ extension Journal {
         let weekday = Weekday.allCases.firstIndex(of: day.weekday) ?? 0
         return "\(weekdays[weekday]) \(parts[2]) \(months[parts[1] - 1])"
     }
+}
+
+/// A stand-up before it is joined into text (docs/SPEC.md section 4.5): the bullets of Done and Next, whole.
+public struct StandupDraft: Sendable, Equatable {
+    public var heading: String
+    /// Done bullets, each with its leading bullet mark.
+    public var done: [String]
+    /// The line of counts, such as "Reviews 2, PRs merged 1" with a middle dot between them, when there is anything to
+    /// count, followed by the optional AI line on its own line.
+    public var counts: String?
+    public var next: [String]
+
+    /// The most bullets either list holds.
+    public var longest: Int { max(done.count, next.count) }
+
+    /// The text lines. With `maxBullets`, a list longer than that shows that many bullets and then one line saying how
+    /// many were left out, so a title is never cut in the middle.
+    public func lines(maxBullets: Int? = nil) -> [String] {
+        func shown(_ bullets: [String], empty: String) -> [String] {
+            if bullets.isEmpty { return ["\u{2022} \(empty)"] }
+            guard let maxBullets, bullets.count > maxBullets else { return bullets }
+            return Array(bullets.prefix(maxBullets)) + ["\u{2022} \(bullets.count - maxBullets) more not shown; use query for this date"]
+        }
+        var out = [heading, "Done"] + shown(done, empty: "Nothing logged")
+        if let counts { out.append(counts) }
+        out.append("Next")
+        out += shown(next, empty: "Nothing planned")
+        out.append("Blockers: none")
+        return out
+    }
+
+    public func text(maxBullets: Int? = nil) -> String { lines(maxBullets: maxBullets).joined(separator: "\n") }
 }

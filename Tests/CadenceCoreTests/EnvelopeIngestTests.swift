@@ -370,6 +370,15 @@ import Testing
         #expect(report.problems.first == "line 2: warning: links[0]: only https links (or http on a host in config.hosts) are kept; dropped")
     }
 
+    @Test func envelopeLinksFollowTheSameRuleAsTheCLIAndMCP() throws {
+        let f = try Fixture()
+        let long = "https://example.com/" + String(repeating: "a", count: 2048)
+        let links = #","links":[{"url":"https://example.com/\u202Eevil"},{"url":"https://example.com/a\u0007b"},{"url":"\#(long)"},{"url":"https://exa mple.com/"},{"url":"https:///x"},{"url":"https://example.com/ok"}]"#
+        let report = try f.ingest([Self.item("l:2", extra: links)])
+        #expect(report.count("created") == 1 && report.count("warnings") == 5)
+        #expect(try f.entry(ref: "l:2").links == [Link(kind: .other, url: "https://example.com/ok")])
+    }
+
     @Test func aStatedTicketWinsAndTheTitleKeepsItsText() throws {
         let f = try Fixture()
         try f.ingest([Self.item("k:1", title: "Retry budget", extra: #","ticket":"ACME-123456""#)])

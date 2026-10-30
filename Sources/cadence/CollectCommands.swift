@@ -93,25 +93,51 @@ struct CollectRunCommand: ParsableCommand {
         discussion: """
             --due handles any requests the app left in jobs/ and then runs every collector whose schedule says it is due, one at a \
             time. --name runs one collector for the usual window (the last good day minus 3 days, through today). With \
-            --backfill-from it reads from that day to today in 7-day chunks and stops at the first failure. A refused or failed \
-            collector does not change the exit status; only a failing store does.
+            --backfill-from it reads from that day to today; with --since and --until it reads exactly that window. A window \
+            longer than 7 days runs in 7-day chunks, oldest first, and stops at the first failure. Either form first drains the \
+            hook spool, and a drain that fails is reported on stderr without stopping the run. A refused or failed collector \
+            does not change the exit status; only a failing store does.
             """)
 
     @Flag(name: .long, help: "Process jobs, then run every collector that is due.") var due = false
     @Option(name: .long, help: "Run only this collector.") var name: String?
     @Option(name: .customLong("backfill-from"), help: "First day to read, YYYY-MM-DD. Needs --name.") var backfillFrom: String?
+    @Option(name: .long, help: "First day of an exact window, YYYY-MM-DD. Needs --name and --until.") var since: String?
+    @Option(name: .long, help: "Last day of an exact window, YYYY-MM-DD, today at most. Needs --name and --since.") var until: String?
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
         if !due && name == nil { throw ValidationError("pass --due or --name NAME") }
-        if due && (name != nil || backfillFrom != nil) { throw ValidationError("--due cannot be combined with --name or --backfill-from") }
+        if due && (name != nil || backfillFrom != nil || since != nil || until != nil) {
+            throw ValidationError("--due cannot be combined with --name, --backfill-from, --since or --until")
+        }
         if backfillFrom != nil && name == nil { throw ValidationError("--backfill-from needs --name") }
+        if (since == nil) != (until == nil) { throw ValidationError("--since and --until go together") }
+        if since != nil && name == nil { throw ValidationError("--since and --until need --name") }
+        if since != nil && backfillFrom != nil { throw ValidationError("--since and --until cannot be combined with --backfill-from") }
+    }
+
+    /// Hook lines wait in `spool/` until some `cadence` run drains them (docs/SPEC.md section 9.3). Collecting is one
+    /// of those runs. Best effort: a drain that fails is logged on stderr and the collectors run anyway.
+    static func drainSpool(_ context: CLIContext, _ journal: Journal) -> JSONValue {
+        do {
+            let report = try SpoolDrain(roots: context.roots, store: journal.store, config: journal.config, clock: context.clock).drain()
+            return report.json
+        } catch {
+            writeLine("cadence: spool drain failed: \(error.message)", to: FileHandle.standardError)
+            return ["error": .string(error.message)]
+        }
     }
 
     func run() throws {
         try output.run { context in
             let from = try Args.date(backfillFrom, option: "backfill-from")
-            let (scheduler, _, _) = try context.openScheduler()
+            let sinceDay = try Args.date(since, option: "since")
+            let untilDay = try Args.date(until, option: "until")
+            let (scheduler, _, journal) = try context.openScheduler()
+            if let from { try scheduler.validateBackfillStart(from) }
+            if let sinceDay, let untilDay { try scheduler.validateWindow(since: sinceDay, until: untilDay) }
+            let spool = Self.drainSpool(context, journal)
             var steps: [CollectStep] = []
             var jobLines: [String] = []
             var jobs: [JSONValue] = []
@@ -129,13 +155,20 @@ struct CollectRunCommand: ParsableCommand {
                 jobLines += ran.map(CollectText.line)
                 if ran.isEmpty && jobLines.isEmpty { jobLines = ["nothing is due"] }
             } else if let name {
-                let list = from != nil ? try scheduler.backfill(name: name, from: from) : [try scheduler.runIncremental(name: name)]
+                let list: [CollectStep]
+                if let sinceDay, let untilDay {
+                    list = try scheduler.runWindow(name: name, since: sinceDay, until: untilDay)
+                } else if from != nil {
+                    list = try scheduler.backfill(name: name, from: from)
+                } else {
+                    list = try scheduler.runIncremental(name: name)
+                }
                 steps = list
                 jobLines = list.map(CollectText.line)
             }
             return Rendered(
                 human: jobLines.joined(separator: "\n"),
-                json: ["runs": .array(steps.map(CollectText.json)), "jobs": .array(jobs)])
+                json: ["runs": .array(steps.map(CollectText.json)), "jobs": .array(jobs), "spool": spool])
         }
     }
 }
