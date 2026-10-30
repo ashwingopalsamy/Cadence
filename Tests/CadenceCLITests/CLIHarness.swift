@@ -40,7 +40,7 @@ struct CLIHome {
     }
 
     @discardableResult
-    func run(_ arguments: [String], environment extra: [String: String] = [:]) throws -> CLIRun {
+    func run(_ arguments: [String], environment extra: [String: String] = [:], stdin: String? = nil) throws -> CLIRun {
         let process = Process()
         process.executableURL = try Self.binary()
         process.arguments = arguments
@@ -52,7 +52,11 @@ struct CLIHome {
         let err = Pipe()
         process.standardOutput = out
         process.standardError = err
+        let input = Pipe()
+        process.standardInput = input
         try process.run()
+        input.fileHandleForWriting.write(Data((stdin ?? "").utf8))
+        try? input.fileHandleForWriting.close()
         let outData = out.fileHandleForReading.readDataToEndOfFile()
         let errData = err.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
