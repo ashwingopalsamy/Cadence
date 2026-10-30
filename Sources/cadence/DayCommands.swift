@@ -53,12 +53,33 @@ struct StandupCommand: ParsableCommand {
 
     @OptionGroup var output: OutputOptions
     @Option(help: "Day as YYYY-MM-DD. Default: today.") var date: String?
+    @Flag(help: "Also copy the text to the clipboard (macOS).") var copy = false
 
     func run() throws {
         try output.run { context in
+            #if !os(macOS)
+            if copy { throw CadenceError.usage("--copy needs macOS") }
+            #endif
             let requested = try Args.date(date)
             let result = try context.openJournal().standup(requested, actor: .cli)
-            return Rendered(human: result.text, json: ["text": .string(result.text), "code": .string(result.code)])
+            if copy { try Self.copyToClipboard(result.text, in: context) }
+            var json: [String: JSONValue] = ["text": .string(result.text), "code": .string(result.code)]
+            if copy { json["copied"] = .bool(true) }
+            return Rendered(human: result.text, json: .object(json))
         }
+    }
+
+    /// Hands the text to `pbcopy` on its standard input. Argv only, no shell.
+    static func copyToClipboard(_ text: String, in context: CLIContext) throws(CadenceError) {
+        let request = ProcessRequest(
+            executable: "/usr/bin/pbcopy", environment: ["LANG": "en_US.UTF-8"], workingDirectory: context.roots.home,
+            stdin: Data(text.utf8), timeout: .seconds(5))
+        let result: ProcessResult
+        do {
+            result = try SystemProcessRunner().run(request)
+        } catch {
+            throw (error as? CadenceError) ?? .io("pbcopy failed: \(error)")
+        }
+        guard result.succeeded else { throw .io("pbcopy did not copy the stand-up text") }
     }
 }

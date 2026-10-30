@@ -111,7 +111,10 @@ public final class Journal {
     static let maxNote = 1000
     static let maxLinks = 5
 
-    public init(store: SQLiteStore, config: Config, clock: any Clock, ids: any IdentifierSource) throws(CadenceError) {
+    /// `actor` writes the genesis event when the ledger is empty.
+    public init(
+        store: SQLiteStore, config: Config, clock: any Clock, ids: any IdentifierSource, actor: Actor = .app
+    ) throws(CadenceError) {
         guard let zone = TimeZone(identifier: config.profile.timezone) else {
             throw .validation("profile.timezone: unknown time zone '\(config.profile.timezone)'")
         }
@@ -126,7 +129,7 @@ public final class Journal {
             var profile: [String: JSONValue] = ["timezone": .string(config.profile.timezone)]
             if let name = config.profile.name { profile["name"] = .string(name) }
             if let role = config.profile.role { profile["role"] = .string(role) }
-            try store.ensureGenesis(profile: .object(profile))
+            try store.ensureGenesis(profile: .object(profile), actor: actor)
         }
     }
 
@@ -150,8 +153,16 @@ public final class Journal {
         let title = Self.clean(parsed.title, limit: Self.maxTitle)
         guard !title.isEmpty else { throw .validation("the entry has no title") }
 
-        let day = request.date ?? parsed.day
+        // An RFC 3339 time with no stated day names its own day.
+        var day = request.date ?? parsed.day
+        if request.date == nil, let at = request.occurredAt, Timestamp.parseClock(at) == nil,
+            let found = Timestamp.parse(at)
+        {
+            guard found <= now else { throw .validation("--at: \(at) is in the future") }
+            day = config.dayBoundary.day(of: found, in: zone)
+        }
         guard day <= today else { throw .validation("date: \(day) is in the future") }
+        let dayZone = try zone(of: day)
 
         let kind = request.kind ?? parsed.kind
         var ticket = parsed.ticket
@@ -159,9 +170,9 @@ public final class Journal {
 
         let occurred: Date?
         if let at = request.occurredAt {
-            occurred = try instant(at, on: day)
+            occurred = try instant(at, on: day, zone: dayZone)
         } else if let found = parsed.occurredAt {
-            occurred = day == parsed.day ? found : try instant(Timestamp.clockTime(found, in: zone), on: day)
+            occurred = day == parsed.day ? found : try instant(Timestamp.clockTime(found, in: zone), on: day, zone: dayZone)
         } else {
             occurred = day == today ? now : nil
         }
@@ -203,7 +214,7 @@ public final class Journal {
             let entry = Entry(
                 id: self.ids.next(), day: day.description, kind: kind,
                 family: EntryKind.family(for: kind, ticketClass: ticket?.class), title: title,
-                occurredAt: occurred.map { Timestamp.local($0, in: self.zone) }, durationS: durationS,
+                occurredAt: occurred.map { Timestamp.local($0, in: dayZone) }, durationS: durationS,
                 quantity: quantity, ticket: ticket, links: links, tags: parsed.tags, attrs: attrs, origin: origin,
                 status: isAgent && day < today ? .proposed : .accepted, backfilled: day < today, afterSeal: sealed,
                 export: kind == .note ? .digest : .include)
@@ -247,8 +258,13 @@ public final class Journal {
         if status == .slipped, reason == nil { throw .validation("a slipped task needs a reason") }
         let note = note.map { Self.clean($0, limit: Self.maxNote) }.flatMap { $0.isEmpty ? nil : $0 }
         return try store.transact { () throws(CadenceError) -> PlanTask in
-            guard try self.rows("SELECT id FROM plan_tasks WHERE id = ?", [.text(taskID)]).first != nil else {
+            guard let current = try self.rows("SELECT status FROM plan_tasks WHERE id = ?", [.text(taskID)]).first else {
                 throw .notFound("no plan task with id \(taskID)")
+            }
+            if current.text("status") == TaskStatus.moved.rawValue {
+                let next = try self.rows("SELECT id FROM plan_tasks WHERE carried_from = ?", [.text(taskID)]).first?.text("id")
+                throw .validation(
+                    "task \(taskID) was carried to a later day" + (next.map { " as \($0); resolve that task instead" } ?? ""))
             }
             for link in links where try self.rows("SELECT id FROM entries WHERE id = ?", [.text(link)]).first == nil {
                 throw .notFound("no entry with id \(link)")
@@ -273,17 +289,24 @@ public final class Journal {
         _ day: LocalDate?, at: String?, actor: Actor, payload: (DayMark) -> EventPayload
     ) throws(CadenceError) {
         let today = self.today()
-        let day = day ?? today
-        guard day <= today else { throw .validation("date: \(day) is in the future") }
+        let now = clock.now()
+        var day = day
+        if day == nil, let at, Timestamp.parseClock(at) == nil, let found = Timestamp.parse(at) {
+            guard found <= now else { throw .validation("--at: \(at) is in the future") }
+            day = config.dayBoundary.day(of: found, in: zone)
+        }
+        let target = day ?? today
+        guard target <= today else { throw .validation("date: \(target) is in the future") }
+        let dayZone = try zone(of: target)
         let instant: Date
         if let at {
-            instant = try self.instant(at, on: day)
+            instant = try self.instant(at, on: target, zone: dayZone)
         } else {
-            guard day == today else { throw .validation("a time is needed for a day that is not today") }
-            instant = clock.now()
+            guard target == today else { throw .validation("a time is needed for a day that is not today") }
+            instant = now
         }
         let mark = DayMark(
-            day: day.description, tz: zone.identifier, at: Timestamp.local(instant, in: zone),
+            day: target.description, tz: dayZone.identifier, at: Timestamp.local(instant, in: dayZone),
             source: at != nil || actor != .app ? .manual : .input)
         try store.transact { () throws(CadenceError) -> Void in
             try self.append([payload(mark).draft(actor: actor)])
@@ -292,7 +315,7 @@ public final class Journal {
 
     public func declare(_ day: LocalDate, kind: DayKind, label: String?, actor: Actor) throws(CadenceError) {
         let label = label.map { Self.clean($0, limit: 100) }.flatMap { $0.isEmpty ? nil : $0 }
-        let declared = DayDeclared(day: day.description, tz: zone.identifier, kind: kind, label: label)
+        let declared = DayDeclared(day: day.description, tz: try zone(of: day).identifier, kind: kind, label: label)
         try store.transact { () throws(CadenceError) -> Void in
             try self.append([EventPayload.dayDeclared(declared).draft(actor: actor)])
         }
@@ -437,23 +460,46 @@ public final class Journal {
         return Ticket(key: match.key, class: match.selfInitiated ? .selfInitiated : .assigned)
     }
 
-    /// "HH:MM" on `day` (a time before the day boundary falls on the next calendar date), or an RFC 3339 instant.
-    private func instant(_ text: String, on day: LocalDate) throws(CadenceError) -> Date {
-        if let (hour, minute) = Timestamp.parseClock(text) {
-            let before = hour * 60 + minute < config.dayBoundary.hour * 60 + config.dayBoundary.minute
-            return Timestamp.resolve(before ? day.adding(days: 1) : day, hour: hour, minute: minute, in: zone)
-        }
-        if let date = Timestamp.parse(text) { return date }
-        throw .validation("time must be HH:MM or an RFC 3339 time")
+    /// The zone a day was recorded in: the one its `days` row carries, otherwise the profile zone.
+    func zone(of day: LocalDate) throws(CadenceError) -> TimeZone {
+        try rows("SELECT tz FROM days WHERE date = ?", [.text(day.description)]).first?.text("tz")
+            .flatMap { TimeZone(identifier: $0) } ?? zoneValue
     }
 
-    /// Control characters out, whitespace collapsed, cut to `limit` characters.
+    /// "HH:MM" on `day` in `zone` (a time before the day boundary falls on the next calendar date), or an
+    /// RFC 3339 instant. The instant must not be in the future and must belong to `day`.
+    private func instant(_ text: String, on day: LocalDate, zone: TimeZone) throws(CadenceError) -> Date {
+        let found: Date
+        if let (hour, minute) = Timestamp.parseClock(text) {
+            let before = hour * 60 + minute < config.dayBoundary.hour * 60 + config.dayBoundary.minute
+            found = Timestamp.resolve(before ? day.adding(days: 1) : day, hour: hour, minute: minute, in: zone)
+        } else if let date = Timestamp.parse(text) {
+            found = date
+        } else {
+            throw .validation("time must be HH:MM or an RFC 3339 time")
+        }
+        guard found <= clock.now() else { throw .validation("--at: \(text) is in the future") }
+        guard config.dayBoundary.day(of: found, in: zone) == day else {
+            throw .validation("--at: \(text) is not on \(day)")
+        }
+        return found
+    }
+
+    /// Unicode bidirectional format characters, which can make text read differently from how it is stored.
+    private static func isBidiFormat(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x202A...0x202E, 0x2066...0x2069, 0x200E, 0x200F, 0x061C: true
+        default: false
+        }
+    }
+
+    /// Control characters and bidi format characters out, whitespace collapsed, cut to `limit` characters.
     static func clean(_ raw: String, limit: Int) -> String {
         var spaced = String.UnicodeScalarView()
         for scalar in raw.unicodeScalars {
             if scalar == "\n" || scalar == "\t" || scalar == "\r" {
                 spaced.append(" ")
-            } else if scalar.properties.generalCategory != .control {
+            } else if scalar.properties.generalCategory != .control, !Self.isBidiFormat(scalar) {
                 spaced.append(scalar)
             }
         }

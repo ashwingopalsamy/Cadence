@@ -133,6 +133,35 @@ import Testing
         #expect(summary.aiDays == 3 && summary.aiCountedDays == 3)  // usage rows on the 27th, 28th and 29th
     }
 
+    @Test func slipsCountOnlyTasksOnCountedDays() throws {
+        let (journal, _, _) = try Self.journal()
+        func slip(_ day: String, _ reason: String) throws {
+            let task = try journal.planAdd(title: "Task", day: LocalDate(day)!, estimateMin: nil, origin: .selfReported, actor: .cli)
+            _ = try journal.planResolve(taskID: task.id, status: .slipped, reason: reason, note: nil, links: [], actor: .cli)
+        }
+        try slip("2026-10-29", "reprioritised")
+        try slip("2026-10-30", "blocked")  // today: unsealed, grace still open, so the day is not counted yet
+        let (from, to) = Self.range("2026-10-27", "2026-10-30")
+        let summary = try journal.summary(from: from, to: to)
+        #expect(summary.slipsByReason == ["reprioritised": 1])
+        #expect(summary.planTotal == 3)  // T1, T2 on the 28th and the slipped task on the 29th
+    }
+
+    @Test func aUsageRowWithoutSessionsButWithTokensIsAIActivity() throws {
+        let (journal, store, _) = try Self.journal()
+        let (from, to) = Self.range("2026-10-27", "2026-10-30")
+        let base = try journal.summary(from: from, to: to)
+        try store.db.run(
+            "INSERT INTO genai_usage (day, tool, model, source, sessions, tokens_out) VALUES (?, ?, ?, ?, NULL, ?)",
+            [.text("2026-10-27"), .text("claude-code"), .text("*"), .text("endpoint"), .int(50)])
+        try store.db.run(
+            "INSERT INTO genai_usage (day, tool, model, source, sessions) VALUES (?, ?, ?, ?, NULL)",
+            [.text("2026-10-26"), .text("claude-code"), .text("*"), .text("endpoint")])
+        let summary = try journal.summary(from: from, to: to)
+        #expect(summary.aiDays == (base.aiDays ?? 0) + 1)
+        #expect(summary.aiCountedDays == base.aiCountedDays + 1)
+    }
+
     @Test func aSummaryRefusesBadRanges() throws {
         let (journal, _, _) = try Self.journal()
         #expect(throws: CadenceError.self) { try journal.summary(from: LocalDate("2026-10-30")!, to: LocalDate("2026-10-01")!) }

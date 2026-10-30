@@ -59,7 +59,7 @@ import Testing
         defer { cli.remove() }
         let today = try cli.today()
         #expect(try cli.run(["export", "proof", "--from", "2026-13-01", "--to", today.description]).status == 2)
-        #expect(try cli.run(["export", "proof", "--from", today.description, "--to", today.adding(days: -1).description]).status == 1)
+        #expect(try cli.run(["export", "proof", "--from", today.description, "--to", today.adding(days: -1).description]).status == 2)
         #expect(try cli.run(["export", "proof", "--from", today.description, "--to", today.adding(days: 1).description]).status == 2)
         #expect(try cli.run(["export", "proof", "--to", today.description]).status == 1)
     }

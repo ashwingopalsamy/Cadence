@@ -50,7 +50,7 @@ struct DoctorCommand: ParsableCommand {
         let context = CLIContext.current()
         var checks: [Check] = []
         do {
-            try context.prepareFolders()
+            try context.prepareFolders(repair: false)
         } catch {
             checks.append(Check(name: "folders", status: .fail, detail: error.message))
         }
@@ -107,6 +107,31 @@ struct DoctorCommand: ParsableCommand {
         if let dbMode = mode(context.roots.database), dbMode & 0o077 != 0 {
             checks.append(
                 Check(name: "database file", status: .warn, detail: "mode \(octal(dbMode)); run chmod 600 on cadence.db"))
+        }
+        let sidecars = ["cadence.db-wal", "cadence.db-shm"].compactMap { name -> String? in
+            let url = context.roots.home.appendingPathComponent(name)
+            guard let found = mode(url), found != 0o600 else { return nil }
+            return "\(name) is \(octal(found))"
+        }
+        if !sidecars.isEmpty {
+            checks.append(
+                Check(name: "database sidecars", status: .warn, detail: sidecars.joined(separator: "; ") + ", expected 0600"))
+        }
+        var readable: [String] = []
+        for folder in [context.roots.backups, context.roots.exports] {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            for name in names.sorted() {
+                var isFolder: ObjCBool = false
+                let url = folder.appendingPathComponent(name)
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder), !isFolder.boolValue,
+                    let found = mode(url), found & 0o077 != 0
+                else { continue }
+                readable.append("\(folder.lastPathComponent)/\(name) is \(octal(found))")
+            }
+        }
+        if !readable.isEmpty {
+            checks.append(
+                Check(name: "private files", status: .warn, detail: readable.joined(separator: "; ") + "; run chmod 600 on them"))
         }
         return checks
     }

@@ -22,14 +22,21 @@ struct CLIContext {
         return 3000
     }
 
-    /// Creates the Cadence folders with mode 0700.
-    func prepareFolders() throws(CadenceError) {
+    /// Creates the Cadence folders with mode 0700. With `repair`, a folder that already exists and belongs to
+    /// this user is tightened to 0700 too; a folder owned by someone else is left alone and `doctor` reports it.
+    func prepareFolders(repair: Bool = true) throws(CadenceError) {
+        let manager = FileManager.default
         for folder in roots.folders {
             do {
-                try FileManager.default.createDirectory(
+                try manager.createDirectory(
                     at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                guard repair, let attributes = try? manager.attributesOfItem(atPath: folder.path),
+                    let owner = attributes[.ownerAccountID] as? NSNumber, owner.uint32Value == geteuid(),
+                    let mode = attributes[.posixPermissions] as? NSNumber, mode.intValue & 0o7777 != 0o700
+                else { continue }
+                try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
             } catch {
-                throw .io("cannot create \(folder.path): \(error.localizedDescription)")
+                throw .io("cannot prepare \(folder.path): \(error.localizedDescription)")
             }
         }
     }

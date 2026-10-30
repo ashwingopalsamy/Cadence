@@ -22,6 +22,7 @@ struct ExportProof: ParsableCommand {
         try output.run { context in
             let from = try Args.required(self.from, option: "from")
             let to = try Args.required(self.to, option: "to")
+            guard from <= to else { throw CadenceError.validation("--from: \(from) is after --to \(to)") }
             let journal = try context.openJournal()
             guard to <= journal.today() else { throw CadenceError.validation("--to: \(to) is in the future") }
             let profile = journal.config.profile

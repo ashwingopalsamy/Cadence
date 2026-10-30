@@ -334,6 +334,15 @@ import Testing
         _ = try f.journal.log(
             LogRequest(text: "Reviewed settlement batching RFC", kind: .docReviewed, quantity: 3), actor: .cli,
             origin: .selfReported)
+        // Reviews and merged PRs count rows, not quantities: one review.given, and only collected github merges.
+        _ = try f.journal.log(
+            LogRequest(text: "Reviewed the refunds PR", kind: .reviewGiven, quantity: 4), actor: .cli, origin: .selfReported)
+        try f.store.append([
+            EventPayload.entryCreated(Entry(
+                id: "01TESTCOLLECTED000000000001", day: "2026-10-29", kind: .prMerged, family: .delivery,
+                title: "Merged the replay PR", origin: .collected, source: "github", sourceRef: "github:PR_x:merged"))
+                .draft(actor: .collector("github"))
+        ])
         _ = try f.journal.log(
             LogRequest(text: "Paired on the flaky ledger test", kind: .mentoring), actor: .cli, origin: .selfReported)
         _ = try f.journal.log(LogRequest(text: "Standup", kind: .meetingAttended), actor: .cli, origin: .selfReported)
@@ -358,11 +367,13 @@ import Testing
         let expected = """
             *Thu 29 Oct*
             Done
+            \u{2022} Merged the replay PR
             \u{2022} Shipped retry budget for capture path (ACME-482913)
             \u{2022} Merged the capture PR
             \u{2022} Reviewed settlement batching RFC
+            \u{2022} Reviewed the refunds PR
             \u{2022} Paired on the flaky ledger test
-            Reviews 3 \u{00B7} PRs merged 1 \u{00B7} Claude Code 2 sessions
+            Reviews 1 \u{00B7} PRs merged 1 \u{00B7} Claude Code 2 sessions
             Next
             \u{2022} Draft idempotency ADR (slipped: reprioritised)
             \u{2022} Prototype webhook replay tool ACME-000000

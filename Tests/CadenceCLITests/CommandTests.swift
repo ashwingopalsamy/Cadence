@@ -120,12 +120,14 @@ import Testing
 
     @Test func dayStartEndShowFirstAndLastActivity() throws {
         defer { cli.remove() }
-        let started = try cli.json(["day", "start", "--at", "09:05"])
+        // A past day, so the times are never in the future whatever the hour of the run.
+        let day = try cli.today().adding(days: -1).description
+        let started = try cli.json(["day", "start", "--date", day, "--at", "09:05"])
         #expect(started["day"]?["first_activity"]?.stringValue?.contains("T09:05:00") == true)
-        try cli.run(["day", "end", "--at", "17:40"])
-        let today = try cli.json(["today"])
-        #expect(today["day"]?["last_activity"]?.stringValue?.contains("T17:40:00") == true)
-        let human = try cli.run(["today"])
+        try cli.run(["day", "end", "--date", day, "--at", "17:40"])
+        let shown = try cli.json(["day", "show", "--date", day])
+        #expect(shown["day"]?["last_activity"]?.stringValue?.contains("T17:40:00") == true)
+        let human = try cli.run(["day", "show", "--date", day])
         #expect(human.stdout.contains("First activity 09:05, last activity 17:40"))
     }
 
@@ -221,7 +223,7 @@ import Testing
         defer { cli.remove() }
         try cli.run(["log", "Fixed the flaky test"])
         try cli.run(["plan", "add", "Write the RFC", "--estimate", "30"])
-        try cli.run(["day", "start", "--at", "09:00"])
+        try cli.run(["day", "start", "--date", try cli.today().adding(days: -1).description, "--at", "09:00"])
         try cli.run(["day", "leave", "2026-10-12"])
         let before = try cli.run(["today", "--json"])
         let rebuilt = try cli.json(["rebuild"])
@@ -289,7 +291,8 @@ import Testing
     @Test func configTimezoneIsUsed() throws {
         defer { cli.remove() }
         try cli.run(["config", "set", "profile.timezone", "Asia/Kolkata"])
-        let entry = try cli.json(["log", "Fixed the flaky test", "--at", "10:30"])["entry"]
+        let yesterday = try cli.today().adding(days: -1).description
+        let entry = try cli.json(["log", "Fixed the flaky test", "--date", yesterday, "--at", "10:30"])["entry"]
         #expect(entry?["occurred_at"]?.stringValue?.hasSuffix("T10:30:00+05:30") == true)
     }
 

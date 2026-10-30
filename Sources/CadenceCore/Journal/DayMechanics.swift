@@ -219,12 +219,16 @@ extension Journal {
         var lines = ["*\(Self.standUpDate(day))*", "Done"]
         lines += entries.isEmpty ? ["\u{2022} Nothing logged"] : entries.map { bullet($0.title, $0.ticket) }
 
+        // The same definitions as summary and proof: rows, not quantities.
         let reviews = try rows(
-            "SELECT COALESCE(SUM(quantity), 0) AS n FROM entries WHERE day = ? AND status = 'accepted' AND family = 'review'",
+            "SELECT COUNT(*) AS n FROM entries WHERE day = ? AND status = 'accepted' AND kind = 'review.given'",
             [key]
         ).first?.int("n") ?? 0
         let merged = try rows(
-            "SELECT COALESCE(SUM(quantity), 0) AS n FROM entries WHERE day = ? AND status = 'accepted' AND kind = 'pr.merged'",
+            """
+            SELECT COUNT(*) AS n FROM entries
+            WHERE day = ? AND status = 'accepted' AND kind = 'pr.merged' AND origin = 'collected' AND source = 'github'
+            """,
             [key]
         ).first?.int("n") ?? 0
         let sessions = try rows(

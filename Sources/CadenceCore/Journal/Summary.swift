@@ -231,7 +231,7 @@ extension Journal {
             return config.dayBoundary.day(of: at, in: dayZone(day.description)) <= day
         }
         var slips: [String: Int] = [:]
-        for row in taskRows where row.text("status") == "slipped" { slips[row.text("reason") ?? "unspecified", default: 0] += 1 }
+        for row in counted where row.text("status") == "slipped" { slips[row.text("reason") ?? "unspecified", default: 0] += 1 }
 
         // Entries: every accepted entry in range.
         let entryRows = try rows(
@@ -268,7 +268,11 @@ extension Journal {
 
         // GenAI.
         var aiDays = Set<String>()
-        for row in try rows("SELECT DISTINCT day FROM genai_sessions UNION SELECT DISTINCT day FROM genai_usage WHERE sessions > 0") {
+        for row in try rows("""
+            SELECT DISTINCT day FROM genai_sessions UNION SELECT DISTINCT day FROM genai_usage
+            WHERE sessions > 0 OR (sessions IS NULL AND (COALESCE(tokens_in, 0) > 0 OR COALESCE(tokens_out, 0) > 0
+              OR COALESCE(tokens_cache_read, 0) > 0 OR COALESCE(tokens_cache_write, 0) > 0))
+            """) {
             if let day = row.text("day") { aiDays.insert(day) }
         }
         let firstAIDay = aiDays.min()
@@ -298,7 +302,7 @@ extension Journal {
             sealedWorkdays: countable.isEmpty ? nil : sealedInGrace, countedWorkdays: countable.count,
             beforeLedger: beforeLedger,
             planDone: counted.isEmpty ? nil : done.count, planTotal: counted.isEmpty ? nil : counted.count,
-            slipsByReason: taskRows.isEmpty ? nil : slips,
+            slipsByReason: counted.isEmpty ? nil : slips,
             mergedPRs: prsKnown ? merged.count : nil,
             assignedPRs: prsKnown ? merged.filter { $0.text("ticket_class") == TicketClass.assigned.rawValue }.count : nil,
             selfInitiatedPRs: prsKnown ? merged.filter { $0.text("ticket_class") == TicketClass.selfInitiated.rawValue }.count : nil,

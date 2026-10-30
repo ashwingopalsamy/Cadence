@@ -7,6 +7,7 @@ extension CLIContext {
         let config = try loadConfig().config
         let store = try openStore()
         return try Journal(
-            store: store, config: config, clock: clock, ids: ULIDGenerator(clock: clock, random: SystemRandomSource()))
+            store: store, config: config, clock: clock, ids: ULIDGenerator(clock: clock, random: SystemRandomSource()),
+            actor: .cli)
     }
 }

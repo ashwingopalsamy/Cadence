@@ -8,6 +8,8 @@ public struct ProcessRequest: Sendable, Equatable {
     /// The complete environment. Nothing is inherited from the calling process.
     public var environment: [String: String]
     public var workingDirectory: URL
+    /// Bytes written to the command's standard input, which is then closed. Nil gives it no input.
+    public var stdin: Data?
     /// Wall-clock limit before SIGTERM.
     public var timeout: Duration
     /// Time between SIGTERM and SIGKILL.
@@ -22,6 +24,7 @@ public struct ProcessRequest: Sendable, Equatable {
         arguments: [String] = [],
         environment: [String: String] = [:],
         workingDirectory: URL,
+        stdin: Data? = nil,
         timeout: Duration = .seconds(60),
         killGrace: Duration = .seconds(5),
         stdoutLimit: Int = 10 * 1024 * 1024,
@@ -31,6 +34,7 @@ public struct ProcessRequest: Sendable, Equatable {
         self.arguments = arguments
         self.environment = environment
         self.workingDirectory = workingDirectory
+        self.stdin = stdin
         self.timeout = timeout
         self.killGrace = killGrace
         self.stdoutLimit = stdoutLimit
