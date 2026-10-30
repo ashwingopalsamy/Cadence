@@ -160,6 +160,26 @@ test_proof_envelope() {
   check "proof and envelope files fail" $?
 }
 
+test_large_canonical_proof() {
+  # Canonical JSON sorts keys, so "format" comes after a long chain: well past the first line's 100 KB.
+  { printf '{"chain":{"algo":"sha256","c14n":"cadence-c14n/1","events":['
+    i=0; while [ $i -lt 3000 ]; do printf '{"seq":%d,"hash":"%064d"},' $i $i; i=$((i + 1)); done
+    printf '{"seq":0}]},"format":"cadence.proof/1"}\n'; } > "$REPO/october.json"
+  stage
+  run_guard --staged
+  [ $RC -eq 2 ] && has "guard: data file (proof) october.json"
+  check "a large canonical proof fails" $?
+}
+
+test_proof_in_examples() {
+  mkdir -p "$REPO/examples"
+  printf '{\n  "format": "cadence.proof/1"\n}\n' > "$REPO/examples/pretty.json"
+  stage
+  run_guard --staged
+  [ $RC -eq 2 ] && has "guard: data file (proof) examples/pretty.json"
+  check "a pretty-printed proof under examples fails" $?
+}
+
 test_vectors_exempt() {
   mkdir -p "$REPO/Tests/Vectors" "$REPO/examples" "$REPO/tools/tests/fixtures"
   printf '{"schema":"cadence.proof/1"}\n' > "$REPO/Tests/Vectors/valid.json"
@@ -168,7 +188,7 @@ test_vectors_exempt() {
   stage
   run_guard --staged
   [ $RC -eq 0 ]
-  check "data files under Tests/Vectors, examples and tools/tests pass" $?
+  check "vectors under Tests/Vectors and tools/tests, and envelopes under examples, pass" $?
 }
 
 # Builds secrets at runtime so this file never contains a matching literal.
@@ -289,7 +309,7 @@ test_unknown_flag() {
 
 for fn in test_clean test_term_staged test_term_working_only test_case_insensitive \
   test_index_counting test_fixed_string test_missing_list test_sqlite \
-  test_proof_envelope test_vectors_exempt test_secrets test_allow_secret \
+  test_proof_envelope test_large_canonical_proof test_proof_in_examples test_vectors_exempt test_secrets test_allow_secret \
   test_binary_skip test_history test_all_untracked test_path_withheld \
   test_install_hooks test_unknown_flag; do
   new_repo

@@ -21,7 +21,7 @@ else
 IS_MAC :=
 endif
 
-.PHONY: build test test-fast check vectors proof-vectors guard guard-all guard-test ledger-stress hooks lint snapshots-check \
+.PHONY: build test test-fast check symbols vectors proof-vectors guard guard-all guard-test ledger-stress hooks lint snapshots-check \
         app install uninstall run demo snapshots spike sounds entitlements clean help
 
 help:
@@ -29,6 +29,11 @@ help:
 
 build:
 	$(SWIFT) build -c $(CONFIG)
+
+# No networking in the cadence binary (docs/SPEC.md section 13.1).
+symbols: build
+	@bash tools/tests/check_symbols_test.sh
+	@bash tools/check_symbols.sh "$$($(SWIFT) build -c $(CONFIG) --show-bin-path)/cadence"
 
 test:
 	$(SWIFT) test
@@ -83,7 +88,7 @@ lint:
 	@if [ -x tools/lint_copy.sh ]; then tools/lint_copy.sh; else echo "SKIP lint: tools/lint_copy.sh arrives with the String Catalog (T3.19)"; fi
 
 # The one gate before every push (docs/SPEC.md section 14.6).
-check: build test ledger-stress app proof-vectors guard-test guard-all lint entitlements snapshots-check
+check: build symbols test ledger-stress app proof-vectors guard-test guard-all lint entitlements snapshots-check
 	@echo "make check: all gates passed on $(UNAME)"
 
 demo:

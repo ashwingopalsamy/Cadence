@@ -96,6 +96,14 @@ is_exempt_path() {
   return 1
 }
 
+# Store and proof files are real work data even in examples/; only synthetic vectors may hold them.
+is_vector_path() {
+  case "$1" in
+    Tests/Vectors/*|tools/tests/*) return 0 ;;
+  esac
+  return 1
+}
+
 is_git_path() {
   case "$1" in
     .git|.git/*|*/.git|*/.git/*) return 0 ;;
@@ -132,16 +140,24 @@ scan() {
     fi
   done
 
-  if ! is_exempt_path "$rel"; then
+  if ! is_vector_path "$rel"; then
     if [ "$(head -c 15 "$f" | tr -d '\000')" = "SQLite format 3" ]; then
       finding "guard: data file (sqlite) $shown"
     fi
-    local first
+    local first lead
     first="$(head -n 1 "$f" | head -c 100000 | tr -d '\000')"
-    if printf '%s\n' "$first" | grep -a -q -F '"cadence.proof/1"'; then
+    lead="$(head -c 4096 "$f" | tr -d '\000' | tr -d ' \t\r\n' | head -c 1)"
+    # A proof is JSON: canonical exports sort "format" after the whole chain, so the format string
+    # can sit megabytes in. Any JSON-looking file that names the format anywhere is a proof.
+    if printf '%s\n' "$first" | grep -a -q -F '"cadence.proof/1"' \
+      || { [ "$lead" = "{" ] && grep -a -q -E '"format" ?: ?"cadence\.proof/1"' "$f"; }; then
       finding "guard: data file (proof) $shown"
     fi
-    if printf '%s\n' "$first" | grep -a -q -E '"cadence": ?"envelope/1"'; then
+  fi
+  if ! is_exempt_path "$rel"; then
+    local head1
+    head1="$(head -n 1 "$f" | head -c 100000 | tr -d '\000')"
+    if printf '%s\n' "$head1" | grep -a -q -E '"cadence": ?"envelope/1"'; then
       finding "guard: data file (envelope) $shown"
     fi
   fi
