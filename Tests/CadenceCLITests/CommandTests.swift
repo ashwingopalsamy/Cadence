@@ -414,4 +414,57 @@ import Testing
         #expect(lines.last == "cadence \(code)")
         #expect(try cli.run(["standup", "--date", "2999-01-01"]).status == 2)
     }
+
+    // MARK: summary
+
+    @Test func summaryOfAnEmptyHomeShowsDashesAndNulls() throws {
+        defer { cli.remove() }
+        let text = try cli.run(["summary"])
+        #expect(text.status == 0)
+        #expect(text.stdout.hasPrefix("Week: "))
+        #expect(text.stdout.contains("No counted data in this range yet."))
+        #expect(text.stdout.split(separator: "\n").contains { $0.hasPrefix("Plan done") && $0.hasSuffix("  -") })
+        #expect(!text.stdout.contains("\u{2013}") && !text.stdout.contains("\u{2014}"))
+
+        let json = try cli.json(["summary"])
+        #expect(json["range"]?["label"]?.stringValue == "week")
+        #expect(json["plan_done"]?["value"] == .null)
+        #expect(json["merged_prs"]?["value"] == .null)
+        #expect(json["ai"]?["sessions"] == .null)
+        #expect(json["findings"] == .array([]))
+    }
+
+    @Test func summaryCountsWhatWasLoggedAndSealed() throws {
+        defer { cli.remove() }
+        let today = try cli.today()
+        try cli.run(["log", "Reviewed the ACME retry budget", "--kind", "review.given"])
+        try cli.run(["log", "Fixed the flaky test"])
+        let task = try id(try cli.json(["plan", "add", "Write the RFC"]), "task")
+        try cli.run(["plan", "done", task])
+        try cli.run(["day", "seal"])
+
+        let json = try cli.json(["summary", "--range", "\(today)..\(today)"])
+        #expect(json["range"]?["from"]?.stringValue == today.description)
+        #expect(json["entries"]?["value"]?.intValue == 2)
+        #expect(json["reviews"]?["value"]?.intValue == 1)
+        #expect(json["entries"]?["by_family"]?["review"]?.intValue == 1)
+        #expect(json["streak"]?["best"] != nil)
+
+        let month = try cli.json(["summary", "--range", "month"])
+        #expect(month["range"]?["label"]?.stringValue == "month")
+        let cycle = try cli.json(["summary", "--range", "cycle"])
+        #expect(cycle["range"]?["label"]?.stringValue == "cycle")
+        let human = try cli.run(["summary", "--range", "\(today)..\(today)"])
+        #expect(human.stdout.contains("Reviews"))
+        #expect(human.stdout.contains("Findings: none yet"))
+    }
+
+    @Test func summaryRejectsABadRange() throws {
+        defer { cli.remove() }
+        for bad in ["year", "2026-10-31..2026-10-01", "2026-10-01"] {
+            let result = try cli.run(["summary", "--range", bad])
+            #expect(result.status == 2)
+            #expect(result.stderr.contains("--range"))
+        }
+    }
 }
