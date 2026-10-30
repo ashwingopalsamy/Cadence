@@ -272,13 +272,13 @@ import Testing
         #expect(throws: CadenceError.self) { try Self.collector(runner).envelope(since: "2026-10-26", until: "2026-10-29") }
     }
 
-    @Test func floatsInFieldsWeDoNotReadDoNotFailTheRun() throws {
+    @Test func floatsAndHugeNumbersInUnreadFieldsDoNotFailTheParse() throws {
         // search-2.json carries "extensions": {"cost": {"score": 1.5, "limit": 5e3}}.
         let (_, items) = try Self.records(Self.collector(Self.recorded()).envelope(since: Self.window.since, until: Self.window.until))
         #expect(Self.item(items, "github:PR_acme005:merged") != nil)
 
-        let scrubbed = GitHubGraphQL.scrubNumbers(Array(#"{"a":1.5,"b":[2e3,-0.5,7],"s":"1.5e9 \"3.5\"","t":true,"id":12345678901234567890}"#.utf8))
-        #expect(try JSONParser.parse(bytes: scrubbed) == ["a": 0, "b": [0, 0, 7], "s": "1.5e9 \"3.5\"", "t": true, "id": 0])
+        let parsed = try GitHubGraphQL.parse(Data(#"{"a":1.5,"b":[2e3,7],"id":12345678901234567890}"#.utf8))
+        #expect(parsed == ["a": "1.5", "b": ["2e3", 7], "id": "12345678901234567890"])
     }
 
     // MARK: - Through the real ingester

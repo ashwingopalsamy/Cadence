@@ -51,62 +51,14 @@ struct GitHubGraphQL: Sendable {
 
     // MARK: - Parsing
 
-    /// Strict parse. If the strict parser refuses a number (a float, or a huge id, in a field Cadence never reads),
-    /// those numbers are zeroed and the parse is retried, so an unused field cannot fail a run.
+    /// gh's JSON can hold floats or huge ids in fields Cadence never reads. Those numbers stay as their text
+    /// instead of failing the parse; every field the collector reads is a string or a safe integer.
     static func parse(_ data: Data) throws(CadenceError) -> JSONValue {
-        let bytes = Array(data)
-        var failure: JSONParser.Failure
         do {
-            return try JSONParser.parse(bytes: bytes)
+            return try JSONParser.parseKeepingNumberText(bytes: Array(data))
         } catch {
-            failure = error
+            throw .io("gh output is not valid JSON (\(error))")
         }
-        switch failure {
-        case .floatNotAllowed, .integerOutOfRange:
-            do {
-                return try JSONParser.parse(bytes: scrubNumbers(bytes))
-            } catch {
-                failure = error
-            }
-        default: break
-        }
-        throw .io("gh output is not valid JSON (\(failure))")
-    }
-
-    /// Replaces every number token outside strings that has a fraction, an exponent or more than 15 digits with 0.
-    static func scrubNumbers(_ bytes: [UInt8]) -> [UInt8] {
-        var out: [UInt8] = []
-        out.reserveCapacity(bytes.count)
-        var inString = false
-        var escaped = false
-        var i = 0
-        func isDigit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
-        while i < bytes.count {
-            let b = bytes[i]
-            if inString {
-                out.append(b)
-                if escaped { escaped = false } else if b == 0x5C { escaped = true } else if b == 0x22 { inString = false }
-                i += 1
-            } else if b == 0x22 {
-                inString = true
-                out.append(b)
-                i += 1
-            } else if isDigit(b) || b == 0x2D {
-                var j = i
-                var odd = false
-                var digits = 0
-                while j < bytes.count, isDigit(bytes[j]) || [0x2B, 0x2D, 0x2E, 0x65, 0x45].contains(bytes[j]) {
-                    if isDigit(bytes[j]) { digits += 1 } else if j > i { odd = true }
-                    j += 1
-                }
-                if odd || digits > 15 { out.append(0x30) } else { out.append(contentsOf: bytes[i..<j]) }
-                i = j
-            } else {
-                out.append(b)
-                i += 1
-            }
-        }
-        return out
     }
 
     private static func tail(_ data: Data) -> String {
