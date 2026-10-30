@@ -277,20 +277,16 @@ extension Journal {
         let sessionsKnown = firstSessionDay.map { $0 <= to.description } ?? false
         let sessionCount =
             try rows("SELECT COUNT(*) AS n FROM genai_sessions WHERE day >= ? AND day <= ?", [low, high]).first?.int("n").map(Int.init) ?? 0
-        var usageByDay: [String: [String: [SQLRow]]] = [:]  // day -> source -> rows
-        for row in try rows("SELECT * FROM genai_usage WHERE day >= ? AND day <= ?", [low, high]) {
-            usageByDay[row.text("day") ?? "", default: [:]][row.text("source") ?? "", default: []].append(row)
-        }
+        // One source per day and tool (the daily pick), never summed across sources.
         var tokens: Int?
-        var tokenSources: [String: Int] = [:]
-        for (_, bySource) in usageByDay {
-            // The first source present wins, by configured priority; a source outside the list comes last.
-            guard let source = (config.genai.priority + bySource.keys.sorted()).first(where: { bySource[$0] != nil }) else { continue }
-            let outs = (bySource[source] ?? []).compactMap { $0.int("tokens_out").map(Int.init) }
-            guard !outs.isEmpty else { continue }
-            tokens = (tokens ?? 0) + outs.reduce(0, +)
-            tokenSources[source, default: 0] += 1
+        var tokenDays: [String: Set<LocalDate>] = [:]
+        for pick in try genaiDays(from: from, to: to) {
+            // Unknown is not zero: a pick whose output tokens are unknown adds nothing.
+            guard let out = pick.tokens.output else { continue }
+            tokens = (tokens ?? 0) + Int(out)
+            tokenDays[pick.source, default: []].insert(pick.day)
         }
+        let tokenSources = tokenDays.mapValues(\.count)
 
         let streak = try self.streak(asOf: min(to, today()))
         return Summary(
