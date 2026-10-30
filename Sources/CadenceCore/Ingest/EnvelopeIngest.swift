@@ -191,17 +191,10 @@ extension Journal {
     private func writeUsage(_ usage: UsageRecord, collector: String, actor: Actor) throws(CadenceError) -> IngestOutcome {
         let payload = GenAIUsage(
             day: usage.day.description, tool: usage.tool, model: usage.model, source: collector, sessions: usage.sessions,
-            requests: usage.requests, tokens: usage.tokens, costMicros: usage.costMicros)
-        if let row = try rows(
-            "SELECT * FROM genai_usage WHERE day = ? AND tool = ? AND model = ? AND source = ?",
-            [.text(payload.day), .text(payload.tool), .text(payload.model), .text(payload.source)]
-        ).first {
-            let same =
-                row.int("sessions") == payload.sessions && row.int("requests") == payload.requests
-                && row.int("tokens_in") == payload.tokens.input && row.int("tokens_out") == payload.tokens.output
-                && row.int("tokens_cache_read") == payload.tokens.cacheRead
-                && row.int("tokens_cache_write") == payload.tokens.cacheWrite && row.int("cost_micros") == payload.costMicros
-            if same { return .unchanged }
+            requests: usage.requests, tokens: usage.tokens, costMicros: usage.costMicros, estimated: usage.estimated)
+        // The row's last event is what the row holds, the estimated flag included.
+        if let last = try store.events(subject: EventPayload.genaiUsage(payload).subject(id: nil) ?? "").last {
+            if (try? GenAIUsage(json: last.data)) == payload { return .unchanged }
             let outcome = try appendChecked(EventPayload.genaiUsage(payload).draft(actor: actor))
             return outcome == .created ? .updated : outcome
         }

@@ -1030,7 +1030,7 @@ envelope/1: first line is the header, then one record per line
 Record| Required| Optional| Becomes
 ---|---|---|---
 `item`| source_ref, kind, title, occurred_at or day| ticket (otherwise parsed from the title), links, attrs, duration_s, quantity, tags| `entry.created`, later `entry.updated`
-`genai.usage`| source_ref, day, tool| model, sessions, requests, tokens.in, out, cache_read, cache_write, cost_micros| One `genai_usage` row for that source
+`genai.usage`| source_ref, day, tool| model, sessions, requests, tokens.in, out, cache_read, cache_write, cost_micros, estimated (true when the cost came from a price table)| One `genai_usage` row for that source
 `presence.span`| source_ref, start, end| none| Fills gaps only. Never overrides spans the Mac observed
 `leave`| source_ref, day, kind| label| `day.declared`, only if you have not declared that day yourself
 

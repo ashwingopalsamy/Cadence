@@ -33,6 +33,8 @@ struct UsageRecord: Sendable, Equatable {
     var requests: Int64?
     var tokens: TokenCounts
     var costMicros: Int64?
+    /// The cost was computed from a price table, not reported by the source.
+    var estimated: Bool
 }
 
 struct PresenceRecord: Sendable, Equatable {
@@ -278,7 +280,7 @@ struct EnvelopeReader {
     private func usage(_ value: JSONValue) throws(CadenceError) -> UsageRecord {
         let r = try RecordReader(
             value, owner: "genai.usage", required: ["type", "source_ref", "day", "tool"],
-            optional: ["model", "sessions", "requests", "tokens", "cost_micros"])
+            optional: ["model", "sessions", "requests", "tokens", "cost_micros", "estimated"])
         let sourceRef = try sourceRef(r)
         let day = try pastDay(r)
         let tool = try r.string("tool")
@@ -292,9 +294,16 @@ struct EnvelopeReader {
                 input: try t.optionalInt("in"), output: try t.optionalInt("out"), cacheRead: try t.optionalInt("cache_read"),
                 cacheWrite: try t.optionalInt("cache_write"))
         }
+        let estimated: Bool
+        switch r.raw("estimated") {
+        case .null: estimated = false
+        case .bool(let b): estimated = b
+        default: throw r.fail("estimated", "must be a boolean")
+        }
         return UsageRecord(
             sourceRef: sourceRef, day: day, tool: tool, model: model, sessions: try r.optionalInt("sessions"),
-            requests: try r.optionalInt("requests"), tokens: tokens, costMicros: try r.optionalInt("cost_micros"))
+            requests: try r.optionalInt("requests"), tokens: tokens, costMicros: try r.optionalInt("cost_micros"),
+            estimated: estimated)
     }
 
     private func presence(_ value: JSONValue) throws(CadenceError) -> PresenceRecord {

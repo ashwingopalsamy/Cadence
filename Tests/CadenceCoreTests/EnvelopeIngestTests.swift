@@ -414,6 +414,11 @@ import Testing
         let rows = try f.store.db.query("SELECT sessions FROM genai_usage")
         #expect(rows.map { $0.int("sessions") } == [6])
 
+        let estimated = try f.ingest([changed.replacingOccurrences(of: #""sessions":6"#, with: #""sessions":6,"cost_micros":1200,"estimated":true"#)])
+        #expect(estimated.count("updated") == 1)
+        let last = try GenAIUsage(json: try #require(try f.events("genai.usage").last).data)
+        #expect(last.estimated && last.costMicros == 1200)
+
         let unknown = try f.ingest([#"{"type":"genai.usage","source_ref":"u","day":"2026-09-18","tool":"chat","tokens":{"out":10}}"#])
         #expect(unknown.count("created") == 1)
         let row = try #require(try f.store.db.query("SELECT * FROM genai_usage WHERE tool = 'chat'").first)
