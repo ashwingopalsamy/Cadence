@@ -121,22 +121,22 @@ Every task has a tier. The tier is a floor, not a ceiling: on any doubt, move a 
 
 | ID | Task | Tier | Spec | Done when |
 |---|---|---|---|---|
-| [ ] T2.1 ★ | MCP over stdio: JSON-RPC framing, `initialize` (2025-11-25), stateless 2026-07-28 with `server/discover` and `resultType`, error mapping | planner | §9.2 | Protocol tests for both revisions |
-| [ ] T2.2 | MCP tools: `log_entry`, `log_entries` (dry run), `plan_add`, `plan_update`, `declare_day`, `get_day`, `query`, `summary`, `standup`; origin agent; 60 per minute | builder | §9.2 | Schema and behaviour tests; there is no tool that deletes, seals, accepts or edits presence |
-| [ ] T2.3 | MCP resources and prompts, dictation import included | builder | §9.2 | Tests |
+| [x] T2.1 ★ | MCP over stdio: JSON-RPC framing, `initialize` (2025-11-25), stateless 2026-07-28 with `server/discover` and `resultType`, error mapping | planner | §9.2 | Protocol tests for both revisions |
+| [x] T2.2 | MCP tools: `log_entry`, `log_entries` (dry run), `plan_add`, `plan_update`, `declare_day`, `get_day`, `query`, `summary`, `standup`; origin agent; 60 per minute | builder | §9.2 | Schema and behaviour tests; there is no tool that deletes, seals, accepts or edits presence |
+| [x] T2.3 | MCP resources and prompts, dictation import included | builder | §9.2 | Tests |
 | [x] T2.4 | `cadence hook <event>`: allowlisted fields, one `O_APPEND` line to `spool/`, never opens SQLite; plan injection at SessionStart, read-only, 200 ms cap | builder | §9.3 | Under 10 ms in a benchmark test; a test proves no SQLite open |
 | [x] T2.5 | Spool drain into `genai.session`, idempotent | builder | §9.3 | Replaying the same spool writes nothing new |
 | [x] T2.6 ★ | `envelope/1` validation and ingest: `source_ref` idempotency, per-field ownership, no deletes, after-seal marking, `inbox/` on skips | planner | §10.1 | Tests for every rule in §10.1 |
 | [x] T2.7 ★ | Collector runner: argv only, absolute path, env allowlist, placeholders, timeout and kill, stdout and stderr caps, approval digests, 0600 config check, locks, `ingest.run`, the three-failure error state | planner | §10.2 | Security tests: shell metacharacters stay inert, an unapproved command is refused, oversized output is cut |
 | [x] T2.8 | GitHub collector through `gh api graphql`: contributions, merged search, pagination, mapping, ticket parsing, AI marker, own-PR skip, author login dropped | builder | §10.3 | Tests against synthetic recorded responses |
 | [x] T2.9 | Claude Code transcripts collector: incremental scan, minimal decoder, dedupe by message id, per day and model, sessions and requests, optional price table | builder | §10.4 | Fixture tests; a test proves message content is never decoded |
-| [ ] T2.10 ★ | `map/1` engine: JSONPath subset, const, default, exact decimal scale, formats, CSV, `source_ref` template | planner | §10.5 | `"0.4213"` scales to 421300 exactly; full table tests |
-| [ ] T2.11 | `cadence import genai FILE --map --dry-run` with a per-day table and conflicts | builder | §10.6 | Output matches the spec's example shape |
-| [ ] T2.12 | GenAI daily pick: endpoint, then transcripts, then import; never summed; mismatch flag above 15% | builder | §10.6, §11 | Tests |
+| [x] T2.10 ★ | `map/1` engine: JSONPath subset, const, default, exact decimal scale, formats, CSV, `source_ref` template | planner | §10.5 | `"0.4213"` scales to 421300 exactly; full table tests |
+| [x] T2.11 | `cadence import genai FILE --map --dry-run` with a per-day table and conflicts | builder | §10.6 | Output matches the spec's example shape |
+| [x] T2.12 | GenAI daily pick: endpoint, then transcripts, then import; never summed; mismatch flag above 15% | builder | §10.6, §11 | Tests |
 | [x] T2.13 | `cadence presence backfill --since`: parse `pmset -g log` (the parser is testable on Linux) | builder | §8.4 | Fixture tests; the command runs on the Mac |
-| [ ] T2.14 | `cadence collect run --due`: `every` and `at`, 3-day overlap, 7-day backfill chunks, `jobs/`; launchd plist template | builder | §10.2, §14.3 | Scheduling tests with an injected clock |
-| [ ] T2.15 | `integrations/claude-code`: `hooks.json`, `skills/cadence/SKILL.md`, README | mechanic | §9 | Files match the spec text |
-| [ ] T2.16 | `examples/`: `config.example.json`, the on-call collector in shell and Python, sample maps with synthetic data | mechanic | §7.4, §10 | The guard is clean and the examples run |
+| [x] T2.14 | `cadence collect run --due`: `every` and `at`, 3-day overlap, 7-day backfill chunks, `jobs/`; launchd plist template | builder | §10.2, §14.3 | Scheduling tests with an injected clock |
+| [x] T2.15 | `integrations/claude-code`: `hooks.json`, `skills/cadence/SKILL.md`, README | mechanic | §9 | Files match the spec text |
+| [x] T2.16 | `examples/`: `config.example.json`, the on-call collector in shell and Python, sample maps with synthetic data | mechanic | §7.4, §10 | The guard is clean and the examples run |
 | [ ] T2.17 | On your Mac, local only: maps for your endpoint and October app, backfill from 2026-10-01, totals checked against your app | builder | §10.5, §10.6 | October totals match; nothing is committed |
 | [ ] T2.18 | Phase 2 audit | auditor | §9 to §11, §13 | No open gaps |
 

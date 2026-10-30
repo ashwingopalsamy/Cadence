@@ -43,3 +43,15 @@ Other settled choices: Apache-2.0 licence (section 16); GitHub CI deferred, `mak
 - Approvals are read without following symlinks and checked on the open file.
 - An envelope with an unreadable header is still kept in `inbox/` (section 10.1 wins over the "writes nothing" of 10.2, which is about the ledger).
 - JSON read through a map, and gh output, keep non-integer numbers as text instead of failing or zeroing them.
+- A map's `source_ref` is built in one pass, and `%`, `:`, `{` and `}` in field values are percent-encoded, so values can neither inject a placeholder nor collide across a delimiter. When a map skips rows or fails, the collector's raw output is kept beside the inbox copy.
+
+## Planner decisions for MCP, T2.1 to T2.3 (2026-10-30)
+
+- Messages are parsed strictly. A fraction or an integer past 2^53 anywhere in a message is refused as an invalid request with a null id, because the id itself may be that number and could not be echoed faithfully.
+- A schema is checked at registration for keyword, type and shape: a keyword needs the type it applies to, `required` names must be properties, bounds are integers. Lengths count code points.
+- The 20,000 limit counts the whole encoded result in code points. A tool result loses its structured copy first, then its text is cut; resources and prompts are cut the same way, and the tools and resources keep inside an 18,000 budget so the server rarely has to.
+- Naming 2025-11-25 in `_meta` does not stand in for its handshake; `initialize` only agrees to 2025-11-25.
+- File and integrity errors reach the client as a generic line; the detail goes to stderr.
+- MCP plan tasks carry plan origin `suggested` with actor `mcp`, since plan origin has no agent value; entries carry origin `agent`.
+- `query` pages hold at most 200 entries and fewer when a page would pass the size budget; the cursor still walks every entry.
+- `standup` over MCP is read-only and writes no witness checkpoint.
