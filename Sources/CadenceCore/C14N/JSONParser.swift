@@ -25,9 +25,24 @@ public struct JSONParser {
 
     private let bytes: [UInt8]
     private var index = 0
+    private var numbersAsText = false
 
     private init(_ bytes: [UInt8]) {
         self.bytes = bytes
+    }
+
+    /// For outside data read through a map (docs/SPEC.md section 10.5): a number with a fraction or exponent, or
+    /// beyond ±(2^53 - 1), becomes a string holding its exact text instead of failing, so scaling can be done on
+    /// the decimal text with no float in between. Every other rule is the same as `parse(bytes:)`.
+    public static func parseKeepingNumberText(bytes: [UInt8]) throws(Failure) -> JSONValue {
+        guard String(validating: bytes, as: UTF8.self) != nil else { throw .invalidUTF8 }
+        var parser = JSONParser(bytes)
+        parser.numbersAsText = true
+        parser.skipWhitespace()
+        let value = try parser.parseValue(depth: 0)
+        parser.skipWhitespace()
+        if parser.index != parser.bytes.count { throw .trailingContent(offset: parser.index) }
+        return value
     }
 
     public static func parse(_ text: String) throws(Failure) -> JSONValue {
@@ -79,7 +94,9 @@ public struct JSONParser {
         case 0x74: try expect([0x74, 0x72, 0x75, 0x65]); return .bool(true)
         case 0x66: try expect([0x66, 0x61, 0x6C, 0x73, 0x65]); return .bool(false)
         case 0x6E: try expect([0x6E, 0x75, 0x6C, 0x6C]); return .null
-        case 0x2D, 0x30...0x39: return .int(try parseInteger())
+        case 0x2D, 0x30...0x39:
+            if numbersAsText { return try parseNumberText() }
+            return .int(try parseInteger())
         case let other: throw .unexpectedByte(other, offset: index)
         }
     }
@@ -157,6 +174,40 @@ public struct JSONParser {
         }
         if index < bytes.count, [0x2E, 0x65, 0x45].contains(bytes[index]) { throw .floatNotAllowed(offset: start) }
         return negative ? -magnitude : magnitude
+    }
+
+    /// RFC 8259 number grammar. A safe integer is returned as `.int`, anything else as its exact text.
+    private mutating func parseNumberText() throws(Failure) -> JSONValue {
+        let start = index
+        func digits() throws(Failure) -> Int {
+            let from = index
+            while index < bytes.count, (0x30...0x39).contains(bytes[index]) { index += 1 }
+            guard index > from else {
+                if index < bytes.count { throw .unexpectedByte(bytes[index], offset: index) }
+                throw .unexpectedEnd
+            }
+            return index - from
+        }
+        if bytes[index] == 0x2D { index += 1 }
+        guard index < bytes.count else { throw .unexpectedEnd }
+        let leadingZero = bytes[index] == 0x30
+        let count = try digits()
+        if leadingZero && count > 1 { throw .unexpectedByte(bytes[start + (bytes[start] == 0x2D ? 2 : 1)], offset: start) }
+        var integral = true
+        if index < bytes.count, bytes[index] == 0x2E {
+            index += 1
+            _ = try digits()
+            integral = false
+        }
+        if index < bytes.count, bytes[index] == 0x65 || bytes[index] == 0x45 {
+            index += 1
+            if index < bytes.count, bytes[index] == 0x2B || bytes[index] == 0x2D { index += 1 }
+            _ = try digits()
+            integral = false
+        }
+        let text = String(decoding: bytes[start..<index], as: UTF8.self)
+        if integral, let value = Int64(text), value <= JSONValue.maxSafeInteger, value >= -JSONValue.maxSafeInteger { return .int(value) }
+        return .string(text)
     }
 
     private mutating func parseHex4() throws(Failure) -> UInt32 {

@@ -1158,7 +1158,8 @@ maps/genai-endpoint.json (written on your Mac by Claude Code from a real sample;
 
   * **Paths** are a small JSONPath subset: `$`, `.key`, `['key']`, `[n]`, `[*]`. No filters and no scripts.
   * **Formats** for days and times: `yyyy-MM-dd`, `iso8601`, `epoch-s`, `epoch-ms`, converted in your profile zone.
-  * **Scale** is exact decimal arithmetic on the text, so `"0.4213"` dollars becomes 421300 micro-dollars with no float in between.
+  * **Scale** is exact decimal arithmetic on the text, so `"0.4213"` dollars becomes 421300 micro-dollars with no float in between. Digits finer than one unit are rounded half away from zero. Number fields without a scale must be whole numbers.
+  * **Bad records.** A record that cannot be mapped is left out, counted as skipped in `ingest.run` with its reason, and the output is kept in `inbox/`.
   * **CSV** with `"input": "csv"` turns each row into an object keyed by header, so `$.output_tokens` reads that column.
 
 

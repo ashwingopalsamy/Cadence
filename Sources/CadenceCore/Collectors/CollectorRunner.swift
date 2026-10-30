@@ -69,7 +69,37 @@ public struct CollectorHealth: Sendable, Equatable {
 
 /// Turns a non-envelope output into an envelope, for collectors with a `map` (docs/SPEC.md section 10.5).
 public protocol CollectorOutputTransform: Sendable {
-    func envelope(from output: [UInt8], collector: Config.Collector, window: IngestWindow) throws(CadenceError) -> [UInt8]
+    func envelope(from output: [UInt8], collector: Config.Collector, window: IngestWindow) throws(CadenceError) -> MapOutput
+}
+
+/// Loads the collector's `map/1` from the maps folder (or an absolute path) and applies it.
+public struct MapTransform: CollectorOutputTransform {
+    let roots: FileRoots
+    let zone: TimeZone
+    let boundary: DayBoundary
+    let clock: any Clock
+    let ids: any IdentifierSource
+
+    public init(roots: FileRoots, zone: TimeZone, boundary: DayBoundary, clock: any Clock, ids: any IdentifierSource) {
+        self.roots = roots
+        self.zone = zone
+        self.boundary = boundary
+        self.clock = clock
+        self.ids = ids
+    }
+
+    public static func location(of map: String, roots: FileRoots) -> URL {
+        map.hasPrefix("/") ? URL(fileURLWithPath: map) : roots.maps.appendingPathComponent(map)
+    }
+
+    public func envelope(from output: [UInt8], collector: Config.Collector, window: IngestWindow) throws(CadenceError) -> MapOutput {
+        guard let mapName = collector.map else { throw .validation("collector \(collector.name) has no map") }
+        let url = Self.location(of: mapName, roots: roots)
+        guard let data = FileManager.default.contents(atPath: url.path) else { throw .io("cannot read the map \(url.lastPathComponent)") }
+        let map = try MapFile(bytes: Array(data), name: url.deletingPathExtension().lastPathComponent)
+        return try MapEngine(map: map, zone: zone, boundary: boundary)
+            .envelope(from: output, collector: collector.name, window: window, run: ids.next(), generatedAt: clock.now())
+    }
 }
 
 /// Runs collectors under the rules of docs/SPEC.md section 10.2: argv only, an absolute path, a fixed environment,
@@ -211,17 +241,20 @@ public struct CollectorRunner {
             return .ran(try journal.recordIngestFailure(collector: name, window: window, error: failure))
         }
         var output = Array(result.stdout)
+        var mapSkipped: [String] = []
         if collector.map != nil {
             guard let transform else {
                 return .ran(try journal.recordIngestFailure(collector: name, window: window, error: "map collectors need map/1"))
             }
             do {
-                output = try transform.envelope(from: output, collector: collector, window: window)
+                let mapped = try transform.envelope(from: output, collector: collector, window: window)
+                output = mapped.envelope
+                mapSkipped = mapped.skipped
             } catch {
                 return .ran(try journal.recordIngestFailure(collector: name, window: window, error: "map: \(error.message)"))
             }
         }
-        return .ran(try journal.ingest(envelope: output, collector: name, window: window, inbox: roots.inbox))
+        return .ran(try journal.ingest(envelope: output, collector: name, window: window, inbox: roots.inbox, skipped: mapSkipped))
     }
 
     /// `{since}` and `{until}` are replaced inside argv elements, and nowhere else.

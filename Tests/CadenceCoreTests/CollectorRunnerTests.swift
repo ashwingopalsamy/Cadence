@@ -255,6 +255,25 @@ import Testing
         #expect(report.status == "error" && report.problems == ["map collectors need map/1"])
     }
 
+    @Test func aMapCollectorsOutputIsMappedAndBadRowsAreCounted() throws {
+        var mapped = Config.Collector(name: "endpoint", command: ["/usr/bin/curl", "-s", "https://usage.example.com/daily?from={since}"])
+        mapped.map = "endpoint.json"
+        let f = try Fixture(collectors: [mapped])
+        try FileManager.default.createDirectory(at: f.roots.maps, withIntermediateDirectories: true)
+        try Data(MapEngineTests.endpointMap.utf8).write(to: f.roots.maps.appendingPathComponent("endpoint.json"))
+        let body = #"{"data":[{"date":"2026-09-18","model":"model-a","output_tokens":9,"cost_usd":0.4213},{"date":"2026-09-18","model":"model-b","output_tokens":-1}]}"#
+        let runner = CollectorRunner(
+            roots: f.roots, journal: f.journal, runner: FakeRunner(Self.output(body)), selfExecutable: "/x", environment: [:],
+            transform: MapTransform(roots: f.roots, zone: f.journal.zone, boundary: f.journal.config.dayBoundary, clock: f.clock, ids: CountingIDs()))
+        try f.approveAll(runner)
+        let report = try f.report(try runner.run(name: "endpoint", window: Self.window))
+        #expect(report.count("created") == 1 && report.count("skipped") == 1 && report.count("records") == 2)
+        #expect(report.problems == ["map: record 2: tokens.out: must not be negative"])
+        #expect(report.inbox != nil)
+        let row = try #require(try f.store.db.query("SELECT * FROM genai_usage").first)
+        #expect(row.int("cost_micros") == 421_300 && row.text("source") == "endpoint")
+    }
+
     @Test func aBadWindowIsRefused() throws {
         let f = try Fixture(collectors: [Self.oncall])
         #expect(throws: CadenceError.self) {

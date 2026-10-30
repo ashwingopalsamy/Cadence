@@ -42,9 +42,12 @@ extension Journal {
     /// - Parameters:
     ///   - collector: the configured collector name; the header must name it.
     ///   - actor: `collector:<name>` by default, `import:<name>` for imports.
+    ///   - skipped: records already dropped before the envelope was made, such as rows a map could not read.
+    ///     They count as skipped and keep the envelope in `inbox`.
     @discardableResult
     public func ingest(
-        envelope bytes: [UInt8], collector: String, window: IngestWindow, actor: Actor? = nil, inbox: URL? = nil
+        envelope bytes: [UInt8], collector: String, window: IngestWindow, actor: Actor? = nil, inbox: URL? = nil,
+        skipped: [String] = []
     ) throws(CadenceError) -> IngestReport {
         guard Actor.isValidName(collector) else { throw .validation("collector: '\(collector)' is not a valid name") }
         let actor = actor ?? .collector(collector)
@@ -70,8 +73,9 @@ extension Journal {
 
         var counts: [String: Int64] = [:]
         for key in IngestReport.countKeys { counts[key] = 0 }
-        counts["records"] = Int64(lines.count)
-        var problems: [String] = []
+        counts["records"] = Int64(lines.count + skipped.count)
+        counts["skipped"] = Int64(skipped.count)
+        var problems = skipped.map { "map: \($0)" }
 
         let report = try store.transact { () throws(CadenceError) -> IngestReport in
             // A key a record writes to. A second record for the same key in one envelope is skipped, so the
