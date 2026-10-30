@@ -126,7 +126,7 @@ import Testing
             (#"{"text":"hi","colour":"red"}"#, "Not done: colour: is not a known argument."),
             (#"{"text":"this text is far too long"}"#, "Not done: text: must be at most 20 characters."),
             (#"{"text":"hi","times":9}"#, "Not done: times: must be at most 3."),
-            (#"{"text":"hi","times":1.5}"#, "Not done: times: must be a whole number."),
+            (#"{"text":"hi","times":"2"}"#, "Not done: times: must be a whole number."),
             (#"{"text":"hi","date":"29/10/2026"}"#, "Not done: date: must be a date as YYYY-MM-DD."),
             (#"{"text":"hi","kind":"video"}"#, "Not done: kind: must be one of pr, doc."),
             (#"{"text":"fail"}"#, "Not done: text: cannot be fail"),
@@ -248,6 +248,169 @@ import Testing
         let replies = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n")
         #expect(replies.count == 3)
         #expect(try replies.map { try JSONParser.parse(String($0))["id"] } == [1, 2, 3])
+    }
+
+    // MARK: - Audit findings
+
+    @Test func fractionsAndUnsafeIntegersAreRefusedWithoutEchoingAnAlteredID() throws {
+        let server = try Self.server()
+        try Self.initialized(server)
+        for message in [
+            #"{"jsonrpc":"2.0","id":1.0,"method":"ping"}"#,
+            #"{"jsonrpc":"2.0","id":12345678901234567890,"method":"ping"}"#,
+            #"{"jsonrpc":"2.0","id":1e2,"method":"ping"}"#,
+            #"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"echo","arguments":{"text":1.5}}}"#,
+        ] {
+            let reply = try Self.send(server, message)
+            #expect(reply?["error"]?["code"] == .int(RPCError.invalidRequest), "\(message)")
+            #expect(reply?["id"] == .null, "\(message)")
+        }
+        // A string field given a number is a tool error, never the number's text.
+        let result = try Self.send(server, Self.request(5, "tools/call", #"{"name":"echo","arguments":{"text":15}}"#))?["result"]
+        #expect(result?["content"] == [["type": "text", "text": "Not done: text: must be a string."]])
+        #expect(try Self.send(server, #"{"jsonrpc":"2.0","id":true,"method":"ping"}"#)?["error"]?["code"] == .int(RPCError.invalidRequest))
+        #expect(try Self.send(server, #"{"jsonrpc":"2.0","id":null,"method":"ping"}"#)?["error"]?["code"] == .int(RPCError.invalidRequest))
+    }
+
+    @Test func malformedSchemaShapesAreRefusedAtRegistration() {
+        func tool(_ properties: JSONValue, required: JSONValue? = nil) -> MCPTool {
+            var schema: [String: JSONValue] = ["type": "object", "additionalProperties": false, "properties": properties]
+            if let required { schema["required"] = required }
+            return MCPTool(name: "t", description: "", inputSchema: .object(schema), writes: false, call: { _ throws(CadenceError) in MCPToolResult(text: "") })
+        }
+        let bad: [MCPTool] = [
+            tool(["k": ["enum": "pr"]]),
+            tool(["k": ["enum": []]]),
+            tool(["k": ["type": "string", "enum": ["a", 1]]]),
+            tool(["k": ["type": "string"]], required: "k"),
+            tool(["k": ["type": "string"]], required: ["y"]),
+            tool(["k": ["type": "string", "maxLength": "5"]]),
+            tool(["k": ["type": "string", "minimum": 1]]),
+            tool(["k": ["type": "integer", "format": "date"]]),
+            tool(["k": ["required": ["url"], "properties": ["url": ["type": "string"]]]]),
+            tool(["k": ["type": "array", "items": ["required": ["url"]]]]),
+            tool(["k": ["type": "object", "properties": "x"]]),
+        ]
+        for t in bad {
+            #expect(throws: CadenceError.self, "\(t.inputSchema)") { try MCPServer(name: "c", version: "1", tools: [t], clock: ManualClock(Date())) }
+        }
+        // The spec's log_entry links field is accepted and its nested checks run.
+        let links = MCPTool(
+            name: "links", description: "",
+            inputSchema: [
+                "type": "object", "additionalProperties": false,
+                "properties": [
+                    "links": [
+                        "type": "array", "maxItems": 5,
+                        "items": [
+                            "type": "object", "required": ["url"],
+                            "properties": ["url": ["type": "string", "format": "uri"], "kind": ["enum": ["pr", "ticket", "doc", "other"]]],
+                        ],
+                    ]
+                ],
+            ],
+            writes: false, call: { _ throws(CadenceError) in MCPToolResult(text: "ok") })
+        let server = try? MCPServer(name: "c", version: "1", tools: [links], clock: ManualClock(Date()))
+        #expect(server != nil)
+        if let server {
+            for (arguments, text) in [
+                (#"{"links":[{"nourl":1}]}"#, "Not done: links[0].url: is required."),
+                (#"{"links":[{"url":"https://"}]}"#, "Not done: links[0].url: must be an http or https URL."),
+                (#"{"links":[{"url":"https://example.com/pr/1","kind":"pr"}]}"#, "ok"),
+            ] {
+                let result = try? Self.send(server, Self.request(1, "tools/call", #"{"name":"links","arguments":\#(arguments)}"#, stateless: true))?["result"]
+                #expect(result?["content"] == [["type": "text", "text": .string(text)]], "\(arguments)")
+            }
+        }
+    }
+
+    @Test func structuredContentResourcesAndPromptsStayUnderTheLimit() throws {
+        let big = String(repeating: "y", count: 100_000)
+        let tool = MCPTool(
+            name: "big", description: "", inputSchema: ["type": "object", "additionalProperties": false, "properties": [:]], writes: false,
+            call: { _ throws(CadenceError) in MCPToolResult(text: "short", structured: ["rows": .string(big)]) })
+        let server = try MCPServer(
+            name: "c", version: "1", tools: [tool],
+            resources: [MCPResource(uri: "cadence://week/current", name: "w", description: "") { _ throws(CadenceError) in big }],
+            prompts: [MCPPrompt(name: "p", description: "") { _ throws(CadenceError) in big }],
+            clock: ManualClock(Date()))
+        for (method, params) in [
+            ("tools/call", #"{"name":"big"}"#), ("resources/read", #"{"uri":"cadence://week/current"}"#), ("prompts/get", #"{"name":"p"}"#),
+        ] {
+            let line = try #require(server.handle(line: Array(Self.request(1, method, params, stateless: true).utf8)))
+            #expect(String(decoding: line, as: UTF8.self).unicodeScalars.count <= MCPServer.maxResultCharacters + 100, "\(method)")
+            #expect(String(decoding: line, as: UTF8.self).contains("ask for a narrower range."), "\(method)")
+        }
+        // Combining marks cannot stretch a length limit or the result cap.
+        let marks = "a" + String(repeating: "\u{0301}", count: 200)
+        let echoServer = try Self.server()
+        let result = try Self.send(echoServer, Self.request(2, "tools/call", #"{"name":"echo","arguments":{"text":"\#(marks)"}}"#, stateless: true))?["result"]
+        #expect(result?["content"] == [["type": "text", "text": "Not done: text: must be at most 20 characters."]])
+    }
+
+    @Test func theHandshakeRevisionNeedsItsHandshake() throws {
+        let server = try Self.server()
+        let session = #"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2025-11-25"}}}"#
+        #expect(try Self.send(server, session)?["error"]?["code"] == .int(RPCError.invalidRequest))
+        // initialize asking for the stateless revision is offered the session revision instead.
+        let reply = try Self.send(server, Self.request(2, "initialize", #"{"protocolVersion":"2026-07-28"}"#))
+        #expect(reply?["result"]?["protocolVersion"] == "2025-11-25")
+    }
+
+    @Test func aClockSetBackDoesNotBlockWrites() throws {
+        let clock = ManualClock(Date(timeIntervalSince1970: 1_790_000_000))
+        let server = try Self.server(clock: clock, limit: 2)
+        try Self.initialized(server)
+        let call = Self.request(7, "tools/call", #"{"name":"echo","arguments":{"text":"hi"}}"#)
+        for _ in 0..<2 { #expect(try Self.send(server, call)?["result"] != nil) }
+        clock.set(Date(timeIntervalSince1970: 1_790_000_000 - 3600 + 300))
+        #expect(try Self.send(server, call)?["result"] != nil)
+    }
+
+    @Test func refusalsQuoteClientTextSafelyAndHideSystemDetail() throws {
+        let message = #"{"jsonrpc":"2.0","id":9,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2030-01-01\u0000\n"}}}"#
+        #expect(try Self.send(try Self.server(), message)?["error"]?["data"]?["requested"] == "2030-01-01")
+        let failing = MCPTool(
+            name: "io", description: "", inputSchema: ["type": "object", "additionalProperties": false, "properties": [:]], writes: true,
+            call: { _ throws(CadenceError) in throw CadenceError.io("cannot open /Users/someone/.cadence/cadence.db: disk I/O error") })
+        let server = try MCPServer(name: "c", version: "1", tools: [failing], clock: ManualClock(Date()))
+        let text = try Self.send(server, Self.request(1, "tools/call", #"{"name":"io"}"#, stateless: true))?["result"]?["content"]?.arrayValue?.first?["text"]?.stringValue
+        #expect(text == "Not done: Cadence could not finish this; the details are in its log.")
+    }
+
+    @Test func serveHandlesOversizedFinalCRLFAndSplitLines() throws {
+        let server = try Self.server()
+        let input = Pipe()
+        let output = Pipe()
+        let first = Self.request(1, "ping", "{}", stateless: true)
+        let writer = input.fileHandleForWriting
+        let second = Self.request(2, "ping")
+        // More than a pipe holds, so it is written while serve reads.
+        let feeder = Thread {
+            writer.write(Data(first.prefix(10).utf8))
+            writer.write(Data((first.dropFirst(10) + "\r\n").utf8))
+            writer.write(Data((second + "\n").utf8))
+            writer.write(Data(repeating: 0x20, count: MCPServer.maxLine + 10))  // oversized and never ended
+            try? writer.close()
+        }
+        feeder.start()
+        server.serve(input: input.fileHandleForReading, output: output.fileHandleForWriting)
+        try output.fileHandleForWriting.close()
+        let replies = try String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .split(separator: "\n").map { try JSONParser.parse(String($0)) }
+        #expect(replies.count == 3)
+        #expect(replies.map { $0["id"] } == [1, 2, .null])
+        #expect(replies[2]["error"]?["code"] == .int(RPCError.invalidRequest))
+    }
+
+    @Test func serveStopsWhenTheClientGoesAway() throws {
+        let server = try Self.server()
+        let input = Pipe()
+        let output = Pipe()
+        try output.fileHandleForReading.close()
+        input.fileHandleForWriting.write(Data((Self.request(1, "ping", "{}", stateless: true) + "\n").utf8))
+        try input.fileHandleForWriting.close()
+        server.serve(input: input.fileHandleForReading, output: output.fileHandleForWriting)  // returns instead of dying of SIGPIPE
     }
 
     @Test func schemasUsingUnenforcedKeywordsAreRefused() {

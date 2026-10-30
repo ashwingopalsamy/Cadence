@@ -158,20 +158,26 @@ public final class MCPServer: @unchecked Sendable {
     // MARK: - Transport
 
     /// Reads newline-delimited JSON-RPC from `input` until end of file and writes one line per response.
+    /// It stops when the client closes either stream.
     public func serve(input: FileHandle, output: FileHandle) {
+        // A client that goes away must end the loop through a failed write, not kill the process with SIGPIPE.
+        signal(SIGPIPE, SIG_IGN)
+        let tooLarge = Self.errorLine(id: .null, code: RPCError.invalidRequest, message: "the message is larger than 1 MB")
         var pending: [UInt8] = []
         var discarding = false
-        while true {
+        func finish() -> Bool {
+            let reply = discarding ? tooLarge : handle(line: pending)
+            pending.removeAll(keepingCapacity: true)
+            discarding = false
+            guard let reply else { return true }
+            return Self.write(reply + [0x0A], to: output.fileDescriptor)
+        }
+        reading: while true {
             let chunk = input.availableData
             if chunk.isEmpty { break }
             for byte in chunk {
                 if byte == 0x0A {
-                    if !discarding, let reply = handle(line: pending) { output.write(Data(reply + [0x0A])) }
-                    if discarding, let reply = Self.errorLine(id: .null, code: RPCError.invalidRequest, message: "the message is larger than 1 MB") {
-                        output.write(Data(reply + [0x0A]))
-                    }
-                    pending.removeAll(keepingCapacity: true)
-                    discarding = false
+                    guard finish() else { break reading }
                 } else if !discarding {
                     pending.append(byte)
                     if pending.count > Self.maxLine {
@@ -181,7 +187,20 @@ public final class MCPServer: @unchecked Sendable {
                 }
             }
         }
-        if !pending.isEmpty, !discarding, let reply = handle(line: pending) { output.write(Data(reply + [0x0A])) }
+        if !pending.isEmpty || discarding { _ = finish() }
+    }
+
+    private static func write(_ bytes: [UInt8], to fd: Int32) -> Bool {
+        bytes.withUnsafeBytes { raw in
+            var offset = 0
+            while offset < raw.count {
+                let n = Foundation.write(fd, raw.baseAddress! + offset, raw.count - offset)
+                if n < 0, errno == EINTR { continue }
+                if n <= 0 { return false }
+                offset += n
+            }
+            return true
+        }
     }
 
     // MARK: - Messages
@@ -196,9 +215,15 @@ public final class MCPServer: @unchecked Sendable {
         }
         let message: JSONValue
         do {
-            // Clients may send floats; they reach tools as text and fail schema checks with a clear message.
-            message = try JSONParser.parseKeepingNumberText(bytes: Array(bytes))
+            message = try JSONParser.parse(bytes: Array(bytes))
         } catch {
+            // Valid JSON with a fraction or an integer past 2^53 cannot be read faithfully, and its id may be one of
+            // those numbers, so the reply cannot name it.
+            if (try? JSONParser.parseKeepingNumberText(bytes: Array(bytes))) != nil {
+                return Self.errorLine(
+                    id: .null, code: RPCError.invalidRequest,
+                    message: "numbers must be whole and between -(2^53-1) and 2^53-1")
+            }
             return Self.errorLine(id: .null, code: RPCError.parse, message: "parse error: the message is not valid JSON")
         }
         guard let object = message.objectValue else {
@@ -241,7 +266,7 @@ public final class MCPServer: @unchecked Sendable {
     private func notify(_ method: String) {
         switch method {
         case "notifications/initialized", "notifications/cancelled", "notifications/roots/list_changed": break
-        default: log("mcp: ignored notification \(method)")
+        default: log("mcp: ignored notification \(EnvelopeText.printable(method))")
         }
     }
 
@@ -251,11 +276,12 @@ public final class MCPServer: @unchecked Sendable {
         if method == "server/discover" { return .success(discovery()) }
 
         // Which revision governs this request: the stateless revision names itself in _meta on every request;
-        // otherwise the session agreed in initialize.
+        // otherwise the session agreed in initialize. Naming the session revision in _meta does not stand in for
+        // the handshake that revision requires.
         let meta = params["_meta"]?.objectValue ?? [:]
-        if let stated = CadenceMCP.versionMetaKeys.lazy.compactMap({ meta[$0]?.stringValue }).first {
-            guard CadenceMCP.supportedRevisions.contains(stated) else { return .failure(unsupported(stated)) }
-        } else if currentSession() == nil {
+        let stated = CadenceMCP.versionMetaKeys.lazy.compactMap({ meta[$0]?.stringValue }).first
+        if let stated, !CadenceMCP.supportedRevisions.contains(stated) { return .failure(unsupported(stated)) }
+        if stated != CadenceMCP.statelessRevision, currentSession() == nil {
             return .failure(Failure(
                 code: RPCError.invalidRequest,
                 message: "call initialize first, or send the protocol version in _meta (stateless revision)"))
@@ -291,8 +317,9 @@ public final class MCPServer: @unchecked Sendable {
         guard let requested = params["protocolVersion"]?.stringValue else {
             return .failure(Failure(code: RPCError.invalidParams, message: "initialize needs protocolVersion"))
         }
-        // The client's version when we speak it, otherwise the session revision we offer instead.
-        let agreed = CadenceMCP.supportedRevisions.contains(requested) ? requested : CadenceMCP.sessionRevision
+        // Only the session revision has a handshake; any other request is offered that one instead. A client that
+        // asked for the stateless revision then either accepts the session or uses server/discover.
+        let agreed = CadenceMCP.sessionRevision
         lock.lock()
         negotiated = agreed
         lock.unlock()
@@ -323,7 +350,7 @@ public final class MCPServer: @unchecked Sendable {
     private func unsupported(_ version: String) -> Failure {
         Failure(
             code: RPCError.invalidParams, message: "unsupported protocol version",
-            data: ["supported": .array(CadenceMCP.supportedRevisions.map(JSONValue.string)), "requested": .string(version)])
+            data: ["supported": .array(CadenceMCP.supportedRevisions.map(JSONValue.string)), "requested": .string(EnvelopeText.printable(version))])
     }
 
     // MARK: - Tools
@@ -345,7 +372,7 @@ public final class MCPServer: @unchecked Sendable {
             return .success(Self.toolResult(try tool.call(arguments.objectValue ?? [:])))
         } catch {
             log("mcp: \(name) failed: \(error.message)")
-            return .success(Self.toolResult(MCPToolResult(text: "Not done: \(error.message)", isError: true)))
+            return .success(Self.toolResult(MCPToolResult(text: "Not done: \(Self.shown(error))", isError: true)))
         }
     }
 
@@ -354,21 +381,59 @@ public final class MCPServer: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         let now = clock.now()
-        recentWrites.removeAll { now.timeIntervalSince($0) >= 60 }
+        // A clock set back leaves entries in the future; they are dropped too, or writes would stay blocked.
+        recentWrites.removeAll { now.timeIntervalSince($0) >= 60 || now.timeIntervalSince($0) < 0 }
         guard recentWrites.count < writesPerMinute else { return false }
         recentWrites.append(now)
         return true
     }
 
     static func toolResult(_ result: MCPToolResult) -> [String: JSONValue] {
-        var text = result.text
-        if text.count > maxResultCharacters {
-            text = String(text.prefix(maxResultCharacters - 60)) + "\n… cut at \(maxResultCharacters) characters; ask for a narrower range."
+        func build(_ text: String, _ structured: JSONValue?) -> [String: JSONValue] {
+            var out: [String: JSONValue] = ["content": [["type": "text", "text": .string(text)]]]
+            if let structured { out["structuredContent"] = structured }
+            if result.isError { out["isError"] = true }
+            return out
         }
-        var out: [String: JSONValue] = ["content": [["type": "text", "text": .string(text)]]]
-        if let structured = result.structured { out["structuredContent"] = structured }
-        if result.isError { out["isError"] = true }
-        return out
+        let whole = build(result.text, result.structured)
+        if size(whole) <= maxResultCharacters { return whole }
+        // Too long: the structured copy goes first, then the text is cut.
+        guard result.structured != nil else { return fit(result.text) { build($0, nil) } }
+        let said = result.text + "\n… the structured copy was left out at \(maxResultCharacters) characters; ask for a narrower range."
+        return fit(said) { build($0, nil) }
+    }
+
+    /// The error text a client may see. Validation and lookups explain themselves; file and integrity failures
+    /// can carry paths and system text, so those stay in the log.
+    static func shown(_ error: CadenceError) -> String {
+        switch error {
+        case .io, .integrity: "Cadence could not finish this; the details are in its log."
+        default: error.message
+        }
+    }
+
+    /// The encoded size of a result, in code points, which is what the 20,000 limit counts.
+    static func size(_ result: [String: JSONValue]) -> Int {
+        guard let bytes = encode(.object(result)) else { return .max }
+        return String(decoding: bytes, as: UTF8.self).unicodeScalars.count
+    }
+
+    /// Cuts `text` until the result `build` makes from it encodes within the limit.
+    static func fit(_ text: String, _ build: (String) -> [String: JSONValue]) -> [String: JSONValue] {
+        let note = "\n… cut at \(maxResultCharacters) characters; ask for a narrower range."
+        let scalars = Array(text.unicodeScalars)
+        var keep = scalars.count
+        var result = build(text)
+        var total = size(result)
+        while total > maxResultCharacters, keep > 0 {
+            // Shrink in proportion to the overshoot; escaping can make a kept character cost more than one.
+            keep = max(0, min(keep - 1, keep * maxResultCharacters / total - note.unicodeScalars.count - 64))
+            var cut = String.UnicodeScalarView()
+            cut.append(contentsOf: scalars[0..<keep])
+            result = build(String(cut) + note)
+            total = size(result)
+        }
+        return result
     }
 
     private static func describe(_ tool: MCPTool) -> JSONValue {
@@ -382,10 +447,13 @@ public final class MCPServer: @unchecked Sendable {
         for resource in resources {
             do throws(CadenceError) {
                 if let text = try resource.read(uri) {
-                    return .success(["contents": [["uri": .string(uri), "mimeType": .string(resource.mimeType), "text": .string(text)]]])
+                    return .success(Self.fit(text) {
+                        ["contents": [["uri": .string(uri), "mimeType": .string(resource.mimeType), "text": .string($0)]]]
+                    })
                 }
             } catch {
-                return .failure(Failure(code: RPCError.invalidParams, message: error.message))
+                log("mcp: resource \(EnvelopeText.printable(uri)) failed: \(error.message)")
+                return .failure(Failure(code: RPCError.invalidParams, message: Self.shown(error)))
             }
         }
         return .failure(Failure(code: RPCError.invalidParams, message: "unknown resource: \(EnvelopeText.printable(uri))", data: ["uri": .string(uri)]))
@@ -405,12 +473,15 @@ public final class MCPServer: @unchecked Sendable {
         }
         do throws(CadenceError) {
             let text = try prompt.render(arguments)
-            return .success([
-                "description": .string(prompt.description),
-                "messages": [["role": "user", "content": ["type": "text", "text": .string(text)]]],
-            ])
+            return .success(Self.fit(text) {
+                [
+                    "description": .string(prompt.description),
+                    "messages": [["role": "user", "content": ["type": "text", "text": .string($0)]]],
+                ]
+            })
         } catch {
-            return .failure(Failure(code: RPCError.invalidParams, message: error.message))
+            log("mcp: prompt \(name) failed: \(error.message)")
+            return .failure(Failure(code: RPCError.invalidParams, message: Self.shown(error)))
         }
     }
 
