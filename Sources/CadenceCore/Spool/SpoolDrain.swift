@@ -205,7 +205,8 @@ public final class SpoolDrain {
         var session = GenAISession(
             sessionId: begin.sessionId, tool: Self.tool,
             day: config.dayBoundary.day(of: begin.date, in: zone).description, startedAt: begin.at,
-            projectAlias: fold.start?.project ?? fold.first.project,
+            // privacy.projectAliases off: the folder name never reaches the ledger.
+            projectAlias: config.privacy.projectAliases ? fold.start?.project ?? fold.first.project : nil,
             models: fold.start?.model.map { [$0] } ?? [])
         if let end = fold.end {
             session.endedAt = end.at

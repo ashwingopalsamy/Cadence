@@ -10,7 +10,7 @@ import Testing
         let roots: FileRoots
         let clock: ManualClock
         let store: SQLiteStore
-        let config: Config
+        var config: Config
 
         /// The clock reads 2026-09-21T14:13:20Z; the spool dates below are around it.
         init() throws {
@@ -360,5 +360,14 @@ import Testing
         #expect(before.contains("session_id"))
         try f.store.rebuild()
         #expect(try f.store.projectionDump() == before)
+    }
+
+    @Test func projectAliasesOffKeepsTheFolderNameOutOfTheLedger() throws {
+        var f = try Fixture()
+        f.config.privacy.projectAliases = false
+        try f.write([Self.start("s1", "2026-09-21T09:00:00.000Z"), Self.end("s1", "2026-09-21T09:30:00.000Z", reason: "clear")])
+        _ = try f.drain()
+        let payload = try GenAISession(json: try f.sessionEvents()[0].data)
+        #expect(payload.projectAlias == nil)
     }
 }
