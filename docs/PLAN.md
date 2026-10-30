@@ -107,12 +107,12 @@ Every task has a tier. The tier is a floor, not a ceiling: on any doubt, move a 
 | [x] T1.11 | Capture parser: every token rule and the lexicon order, `work.done` included | builder | §4.3 | Table tests mirror every demo example |
 | [x] T1.12 | `config/1`: load, validate, defaults, `cadence config get\|set\|path`, 0600 owner check | builder | §7.4 | Bad configs are rejected with clear errors |
 | [x] T1.13 | CLI scaffold: `--json` everywhere, exit codes 0 to 4, `CADENCE_HOME` | builder | §9.5 | Exit-code tests |
-| [ ] T1.14 | Commands: `log`, `plan`, `day`, `today`, `inbox`, `query`, `summary`, `standup`, `rebuild`, `doctor` | builder | §9.5 | Each command has an integration test against a temp home |
+| [x] T1.14 | Commands: `log`, `plan`, `day`, `today`, `inbox`, `query`, `summary`, `standup`, `rebuild`, `doctor` | builder | §9.5 | Each command has an integration test against a temp home |
 | [x] T1.15 | Day mechanics: seal, grace window, after-seal marking, open tasks moving, streaks paused by leave and holidays | builder | §3, §4.5 | Scenario tests, October example included |
 | [x] T1.16 ★ | Witness checkpoint event; the code is the first 16 hex characters of the head hash | planner | §4.5, §12.1 | The code appears in stand-up output and verifies |
 | [x] T1.17 ★ | `cadence export proof`: chain from genesis, hash-only outside the range, export policies, summary with definitions, witnesses, `export_digest`, embedded verifier and `how_to_verify` | planner | §12 | The Python verifier passes the export; editing one byte fails it |
-| [ ] T1.18 | `cadence verify FILE [--recompute]` in Swift, matching Python on every vector | builder | §12.3 | Parity tests |
-| [ ] T1.19 | Backups: daily `VACUUM INTO`, keeping 14 daily and 8 weekly | builder | §7.4 | Retention tests with an injected clock |
+| [x] T1.18 | `cadence verify FILE [--recompute]` in Swift, matching Python on every vector | builder | §12.3 | Parity tests |
+| [x] T1.19 | Backups: daily `VACUUM INTO`, keeping 14 daily and 8 weekly | builder | §7.4 | Retention tests with an injected clock |
 | [ ] T1.20 | Deterministic ACME demo seed matching the spec's October example data | mechanic | §5 | Seeded totals equal the numbers in the spec |
 | [ ] T1.21 | Phase 1 audit | auditor | §3, §7, §12 | No open gaps |
 
