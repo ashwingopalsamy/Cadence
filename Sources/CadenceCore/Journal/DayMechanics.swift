@@ -240,7 +240,8 @@ extension Journal {
         if sessions > 0 { parts.append("Claude Code \(sessions) session\(sessions == 1 ? "" : "s")") }
         if !parts.isEmpty { lines.append(parts.joined(separator: " \u{00B7} ")) }
 
-        let next = DayRules(config: config).nextWorkday(after: day, declared: try declaredKinds())
+        // The same day a seal carries open tasks to, so Next shows where they went.
+        let next = try carryTarget(after: day, today: self.today(), rules: DayRules(config: config))
         let tasks = try rows(
             "SELECT * FROM plan_tasks WHERE day = ? AND status = 'open' ORDER BY position, created_seq",
             [.text(next.description)]
