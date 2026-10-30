@@ -154,4 +154,24 @@ import Testing
         try f.journal.declare(f.yesterday, kind: .holiday, label: "Holi\(tricks)day", actor: .cli)
         #expect(try f.journal.dayView(f.yesterday).day.label == "Holiday")
     }
+
+    // MARK: classifier
+
+    @Test func recordClassifierAppendsOnlyWhenTheRulesChange() throws {
+        let f = try Fixture()
+        #expect(try f.journal.recordClassifier(actor: .cli) == false)
+        var config = Config.defaults(timezone: JournalTests.zoneID)
+        config.tickets.pattern = #"\b(?<key>[A-Z]{2,5}-(?<num>\d{3,6}))\b"#
+        let changed = try Journal(store: f.store, config: config, clock: f.clock, ids: CountingIDs())
+        #expect(try changed.recordClassifier(actor: .cli) == true)
+        #expect(try changed.recordClassifier(actor: .cli) == false)
+        let events = try f.store.events(subject: "config").filter { $0.type == "config.classifier" }
+        #expect(events.count == 1)
+        let hasher = SHA256Hasher()
+        let patterns = try ConfigClassifier(json: events[0].data).patterns
+        #expect(patterns == [
+            "sha256:" + hasher.sha256Hex(Array(config.tickets.pattern.utf8)),
+            "sha256:" + hasher.sha256Hex(Array(config.tickets.selfInitiated.utf8)),
+        ])
+    }
 }

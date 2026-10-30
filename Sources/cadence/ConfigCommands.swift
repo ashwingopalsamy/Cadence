@@ -46,8 +46,15 @@ struct ConfigSet: ParsableCommand {
 
     func run() throws {
         try output.run { context in
-            let updated = try context.loadConfig().config.setting(path, to: value)
+            let current = try context.loadConfig().config
+            let updated = try current.setting(path, to: value)
             try ConfigStore.save(updated, to: context.roots.config)
+            // The ticket rules decide how entries are classified, so a change to them is recorded as digests.
+            if updated.tickets.pattern != current.tickets.pattern
+                || updated.tickets.selfInitiated != current.tickets.selfInitiated
+            {
+                try context.openJournal().recordClassifier(actor: .cli)
+            }
             let stored = try updated.value(at: path)
             let shown = try stored.stringValue ?? OutputOptions.canonical(stored)
             let human = "Set \(path) to \(shown)"

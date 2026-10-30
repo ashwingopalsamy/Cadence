@@ -321,6 +321,30 @@ public final class Journal {
         }
     }
 
+    /// Records the ticket rules in force as `config.classifier` (digests only, never the pattern text), but only
+    /// when they differ from the last recorded rules, or from the defaults when none was recorded. Returns
+    /// whether an event was written.
+    @discardableResult
+    public func recordClassifier(actor: Actor) throws(CadenceError) -> Bool {
+        let hasher = SHA256Hasher()
+        func digests(_ rules: TicketRules) -> [String] {
+            [rules.pattern, rules.selfInitiated].map { "sha256:" + hasher.sha256Hex(Array($0.utf8)) }
+        }
+        let current = digests(config.tickets)
+        return try store.transact { () throws(CadenceError) -> Bool in
+            let last = try self.store.readEvents(
+                "SELECT * FROM events WHERE type = 'config.classifier' ORDER BY seq DESC LIMIT 1", []
+            ).first
+            var recorded = digests(TicketRules())
+            if let last, case .configClassifier(let found)? = try? EventPayload(type: last.type, data: last.data) {
+                recorded = found.patterns
+            }
+            guard recorded != current else { return false }
+            try self.append([EventPayload.configClassifier(ConfigClassifier(patterns: current)).draft(actor: actor)])
+            return true
+        }
+    }
+
     /// Inbox moves: proposed to accepted or dismissed, accepted to dismissed, dismissed to accepted.
     /// The entry's origin never changes.
     public func setStatus(entryID: String, to: EntryStatus, note: String?, actor: Actor) throws(CadenceError) -> Entry {
