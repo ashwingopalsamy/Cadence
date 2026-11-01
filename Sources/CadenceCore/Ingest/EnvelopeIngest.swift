@@ -244,21 +244,9 @@ extension Journal {
     /// that day already covers stays as it is, and only the uncovered pieces are written, so sending the same span
     /// again writes nothing.
     private func writePresence(_ span: PresenceRecord, actor: Actor) throws(CadenceError) -> IngestOutcome {
-        // Whole seconds, as the spans are stored, so a resent span compares equal to what it wrote.
-        var cursor = Date(timeIntervalSince1970: span.start.timeIntervalSince1970.rounded(.down))
-        let end = Date(timeIntervalSince1970: span.end.timeIntervalSince1970.rounded(.down))
-        var pieces: [(day: LocalDate, zone: TimeZone, start: Date, end: Date)] = []
-        repeat {
-            let (day, dayZone) = try workday(of: cursor)
-            let next = day.adding(days: 1)
-            let dayEnd = Timestamp.resolve(next, hour: config.dayBoundary.hour, minute: config.dayBoundary.minute, in: dayZone)
-            let pieceEnd = min(end, dayEnd)
-            guard pieceEnd > cursor else { return .skipped("presence.span: cannot place the span on a day") }
-            for gap in try gaps(day: day, from: cursor, to: pieceEnd) {
-                pieces.append((day, dayZone, gap.0, gap.1))
-            }
-            cursor = pieceEnd
-        } while cursor < end
+        guard let pieces = try uncoveredPresence(from: span.start, to: span.end) else {
+            return .skipped("presence.span: cannot place the span on a day")
+        }
         guard !pieces.isEmpty else { return .unchanged }
         guard pieces.allSatisfy({ $0.day <= today() }) else { return .skipped("presence.span.start: is in the future") }
         for piece in pieces {
@@ -272,8 +260,39 @@ extension Journal {
         return .created
     }
 
-    /// The parts of `from..<to` that no span of `day` covers, each at least a minute long.
-    private func gaps(day: LocalDate, from: Date, to: Date) throws(CadenceError) -> [(Date, Date)] {
+    /// One piece of presence that belongs to a single workday.
+    struct PresencePiece {
+        var day: LocalDate
+        var zone: TimeZone
+        var start: Date
+        var end: Date
+    }
+
+    /// The gap rule every presence writer after a first one shares (section 10.1). `from..<to` is taken in whole
+    /// seconds, as spans are stored, so a resent span compares equal to what it wrote. It is cut at each day
+    /// boundary in the day's own zone, and only the parts no span of that day already covers are kept, each at
+    /// least `minimum` long, so the same span sent again yields nothing. Nil when a piece cannot be placed on a day.
+    func uncoveredPresence(from: Date, to: Date, minimum: TimeInterval = minPresenceGap) throws(CadenceError) -> [PresencePiece]? {
+        var cursor = Date(timeIntervalSince1970: from.timeIntervalSince1970.rounded(.down))
+        let end = Date(timeIntervalSince1970: to.timeIntervalSince1970.rounded(.down))
+        var pieces: [PresencePiece] = []
+        repeat {
+            let (day, dayZone) = try workday(of: cursor)
+            let next = day.adding(days: 1)
+            let dayEnd = Timestamp.resolve(next, hour: config.dayBoundary.hour, minute: config.dayBoundary.minute, in: dayZone)
+            // A repeated hour can put the cursor past a day end that lies behind it; the rest stays on this day.
+            let pieceEnd = dayEnd > cursor ? min(end, dayEnd) : end
+            guard pieceEnd > cursor else { return nil }
+            for gap in try gaps(day: day, from: cursor, to: pieceEnd, minimum: minimum) {
+                pieces.append(PresencePiece(day: day, zone: dayZone, start: gap.0, end: gap.1))
+            }
+            cursor = pieceEnd
+        } while cursor < end
+        return pieces
+    }
+
+    /// The parts of `from..<to` that no span of `day` covers, each at least `minimum` long.
+    private func gaps(day: LocalDate, from: Date, to: Date, minimum: TimeInterval) throws(CadenceError) -> [(Date, Date)] {
         var covered: [(Date, Date)] = []
         for row in try rows("SELECT start_at, end_at FROM presence_spans WHERE day = ?", [.text(day.description)]) {
             if let a = row.text("start_at").flatMap(Timestamp.parse), let b = row.text("end_at").flatMap(Timestamp.parse) {
@@ -288,7 +307,7 @@ extension Journal {
             cursor = max(cursor, b)
         }
         if cursor < to { gaps.append((cursor, to)) }
-        return gaps.filter { $0.1.timeIntervalSince($0.0) >= Self.minPresenceGap }
+        return gaps.filter { $0.1.timeIntervalSince($0.0) >= minimum }
     }
 
     /// Section 10.1: `day.declared`, only if you have not declared that day yourself.
@@ -321,9 +340,16 @@ extension Journal {
 
     /// The workday an instant falls on and the zone it is read in. The day comes from the same zone as its end,
     /// so the end always lies after the instant.
-    private func workday(of instant: Date) throws(CadenceError) -> (LocalDate, TimeZone) {
-        let dayZone = try zone(of: config.dayBoundary.day(of: instant, in: zone))
-        return (config.dayBoundary.day(of: instant, in: dayZone), dayZone)
+    func workday(of instant: Date) throws(CadenceError) -> (LocalDate, TimeZone) {
+        let profileDay = config.dayBoundary.day(of: instant, in: zone)
+        let dayZone = try zone(of: profileDay)
+        let day = config.dayBoundary.day(of: instant, in: dayZone)
+        // After a move west the old zone reaches its next day first. A day with no row yet must not inherit that zone,
+        // or every later day would too; the instant stays on the profile's day, read in the profile's zone.
+        if day != profileDay, try rows("SELECT 1 AS found FROM days WHERE date = ?", [.text(day.description)]).isEmpty {
+            return (profileDay, zone)
+        }
+        return (day, dayZone)
     }
 
     /// Collectors and imports never own a field; you do, through the app, the CLI or an agent.

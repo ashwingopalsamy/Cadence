@@ -802,7 +802,7 @@ App/Cadence.entitlements
 
 ### 8.4 Presence engine
 
-Pure logic in CadenceCore, fed by a thin macOS adapter. The adapter samples idle time with `CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)` (any input, no Accessibility permission) every 30 s while active and every 60 s while idle, plus `NSWorkspace` wake, sleep, screen lock and unlock, and session notifications.
+Pure logic in CadenceCore, fed by a thin macOS adapter. The adapter samples idle time with `CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)` (any input, no Accessibility permission) every 30 s while active and every 60 s while idle, plus `NSWorkspace` wake, sleep, screen lock and unlock, and session notifications.
 
 PresenceEngine, simplified
 

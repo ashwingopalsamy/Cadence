@@ -73,7 +73,17 @@ public struct LedgerProjector: Projector {
             try db.run(
                 "INSERT INTO presence_spans (id, day, start_at, end_at, source) VALUES (?, ?, ?, ?, ?)",
                 [seq, .text(span.day), .text(span.start), .text(span.end), .text(span.source.rawValue)])
-            try widenActivity(day: span.day, first: span.start, last: span.end, db: db)
+            // A manual day start or end stands: later presence does not move it.
+            let subject = SQLValue.text("day:\(span.day)")
+            func corrected(_ type: String) throws -> Bool {
+                try !db.query(
+                    "SELECT 1 AS found FROM events WHERE subject = ? AND type = ? AND seq < ? AND json_extract(data, '$.source') = 'manual' LIMIT 1",
+                    [subject, .text(type), seq]
+                ).isEmpty
+            }
+            try widenActivity(
+                day: span.day, first: try corrected("day.started") ? nil : span.start,
+                last: try corrected("day.ended") ? nil : span.end, db: db)
             try touchDay(span.day, seq: seq, db: db)
 
         case .dayDeclared(let declared):
