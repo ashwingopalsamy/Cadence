@@ -129,3 +129,10 @@ Planner decisions on the second audit. Each defect has a test that failed before
 - **`agent_entries` in the proof counts listed items only,** so it can differ from `cadence summary`, which counts every accepted entry in the range (excluded and digest ones included). The definition says so.
 - **Spool backlog.** A spool folder that is there but cannot be listed, and a spool file that cannot be read, give `unknown` (a warning) instead of `ok`. A folder that is not there is still an empty spool. With some files readable the detail also says how many lines wait in the others.
 - **`profile.backfillFrom`** is held to the same floor as a backfill job and `--since`: 2000-01-01. An earlier date is a config error, "profile.backfillFrom: must not be before 2000-01-01".
+
+## Planner decisions from the Mac spikes (2026-11-01)
+
+- S3: the ad-hoc spike app never appeared in Notifications settings. Notifications are designed around a plain notification whose click opens the capture bar; the inline text-input reply of section 4.7 is an upgrade, checked in the real signed app under T3.11 and dropped if it does not work there.
+- S7: Apple Intelligence does not run on the work Mac. The deterministic parser is the only capture path, and Foundation Models stays in the "Later" list.
+- S4: lock, unlock, sleep and wake notifications all arrive in the sandbox. Which idle query to use (`.null` or any input, V6) waits for the hands-off sample.
+- S8: `#Preview` needs Xcode's macro plugins, so previews stay out of code that the Command Line Tools build compiles.

@@ -157,7 +157,7 @@ Every task has a tier. The tier is a floor, not a ceiling: on any doubt, move a 
 | [ ] T3.8 | Capture bar: global hotkey, live chips from the core parser, Tab between chips, save as self | builder | §4.3 | Parser parity with core tests |
 | [ ] T3.9 | Morning plan sheet: carried tasks, collector suggestions, chips, ⌘↩, `plan.committed` | builder | §4.4 | UI test of the flow |
 | [ ] T3.10 | Wrap-up deck: three-way toggle, reasons, tiles, meetings, seal, stand-up copy with witness, ring animation, sound, haptic | builder | §4.5 | UI test from reminder to sealed in under 60 s |
-| [ ] T3.11 | Notifications: plan prompt, wrap reminders (16:00, 17:30, 18:00, custom), text-input action, counts instead of titles by default | builder | §4.7 | Scheduling tests; manual check on the Mac |
+| [ ] T3.11 | Notifications: plan prompt, wrap reminders (16:00, 17:30, 18:00, custom), counts instead of titles by default; a click opens the capture bar (baseline, S3), and the inline text-input reply is an upgrade checked in the signed app | builder | §4.7 | Scheduling tests; manual check on the Mac |
 | [ ] T3.12 ★ | Presence engine: idle sampling, workspace events, spans closing after 5 minutes idle, day start; pure logic in Core | planner | §8.4 | Boundary, sleep and wake tests |
 | [ ] T3.13 | Login item and agent through SMAppService, with the LaunchAgent fallback if S2 fails | builder | §8.1 | Survives logout and login |
 | [ ] T3.14 | `tools/make_sounds.swift` renders the six sounds from the note table to CAF | mechanic | §5.6 | Files are generated reproducibly |
