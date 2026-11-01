@@ -6,9 +6,14 @@ func arg(_ name: String) -> String? {
     guard let i = a.firstIndex(of: name), i + 1 < a.count else { return nil }
     return a[i + 1]
 }
+/// A required argument; the spike exits 2 without it.
+func required(_ name: String) -> String {
+    guard let value = arg(name) else { exit(2) }
+    return value
+}
 // Globals, not guard bindings, so the C callback below captures nothing.
-let logPath: String = arg("--log") ?? exit(2)
-let name: String = arg("--name") ?? exit(2)
+let logPath = required("--log")
+let name = required("--name")
 func log(_ s: String) {
     let data = Data((s + "\n").utf8)
     if let h = FileHandle(forWritingAtPath: logPath) {
