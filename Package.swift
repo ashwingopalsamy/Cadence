@@ -62,6 +62,7 @@ package.targets += [
         dependencies: ["CadenceUI", "CadenceCore", "CadenceIngest"],
         swiftSettings: swiftSettings
     ),
+    .executableTarget(name: "CadenceTokenSheet", dependencies: ["CadenceUI"], swiftSettings: swiftSettings),
     .testTarget(name: "CadenceUITests", dependencies: ["CadenceUI"], swiftSettings: swiftSettings),
 ]
 package.products += [.executable(name: "CadenceApp", targets: ["CadenceApp"])]

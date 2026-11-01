@@ -22,7 +22,7 @@ IS_MAC :=
 endif
 
 .PHONY: build test test-fast check symbols vectors proof-vectors guard guard-all guard-test ledger-stress hooks lint snapshots-check \
-        app install uninstall run demo snapshots spike sounds entitlements clean help
+        app install uninstall run demo snapshots token-sheet spike sounds entitlements clean help
 
 help:
 	@echo "build test check app install uninstall run demo snapshots spike guard sounds clean"
@@ -154,6 +154,15 @@ snapshots-check:
 	@echo "SKIP snapshots-check: needs macOS"
 
 endif
+
+# Renders the design tokens in both themes (T3.3). Not part of make check: it opens a window.
+token-sheet:
+	@if [ -z "$(IS_MAC)" ]; then echo "SKIP token-sheet: needs macOS"; exit 0; fi; \
+	$(SWIFT) build -c $(CONFIG) --product CadenceTokenSheet; \
+	bin="$$($(SWIFT) build -c $(CONFIG) --show-bin-path)/CadenceTokenSheet"; \
+	mkdir -p docs/snapshots; \
+	"$$bin" light docs/snapshots/token-sheet-light.png; \
+	"$$bin" dark docs/snapshots/token-sheet-dark.png
 
 spike:
 	bash tools/spike/run.sh
