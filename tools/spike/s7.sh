@@ -11,6 +11,7 @@ fi
 out=$("$TMP/s7" 2>&1 | head -1 || true)
 case "$out" in
   available) result S7 PASS "SystemLanguageModel.default is available" ;;
+  *modelNotReady*) result S7 MANUAL "$out: Apple Intelligence is on but the model is still downloading; rerun later. Until then the deterministic parser is the only path" ;;
   unavailable*) result S7 FAIL "$out; fallback is the deterministic parser only" ;;
   *) result S7 FAIL "unexpected probe output: $out" ;;
 esac

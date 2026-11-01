@@ -21,7 +21,7 @@ fi
 sleep 1
 "$TMP/s6_post" "$NAME" >/dev/null
 if wait_log "$LOG" '^received' 5; then
-  result S6 PASS "unsandboxed notify_post reached the sandboxed listener"
+  result S6 PASS "a Darwin notification posted unsandboxed reached the sandboxed listener"
 else
   result S6 FAIL "no delivery within 5 s (register status $(getv "$LOG" register)); fallback is polling PRAGMA data_version"
 fi

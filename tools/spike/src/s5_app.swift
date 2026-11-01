@@ -7,7 +7,9 @@ func arg(_ name: String) -> String? {
     guard let i = a.firstIndex(of: name), i + 1 < a.count else { return nil }
     return a[i + 1]
 }
-guard let logPath = arg("--log") else { exit(2) }
+// A global, not a guard binding: newer Swift treats top-level guard bindings as locals that closures and C
+// callbacks cannot capture.
+let logPath: String = arg("--log") ?? exit(2)
 func log(_ s: String) {
     let data = Data((s + "\n").utf8)
     if let h = FileHandle(forWritingAtPath: logPath) {

@@ -19,7 +19,7 @@ if [ "${1:-}" = watch ]; then
   exit 0
 fi
 
-note "Do not touch the mouse or keyboard for the next 5 seconds."
+note "Do not touch the mouse or keyboard for the next 6 seconds."
 run_app "$APP" --log "$LOG" || true
 if [ ! -f "$LOG" ]; then result S4 FAIL "app wrote no log (sandbox blocked it?)"; exit 0; fi
 
@@ -38,5 +38,17 @@ if awk -v a="$aa" -v b="$ab" 'BEGIN{exit !(b-a>=2.0)}'; then
 elif awk -v a="$aa" -v b="$ab" 'BEGIN{exit !(b<a)}'; then
   result S4 MANUAL "input was detected during the sample (idle $aa -> $ab); rerun and keep hands off"
 else
-  result S4 FAIL "idle did not increase without input ($aa -> $ab)"
+  # Something produced input during the sample. Name the kind with the smallest idle time.
+  src=""; best=""
+  for k in mouse key flags scroll click tablet; do
+    v=$(getv "$LOG" "kind_$k")
+    [ -n "$v" ] || continue
+    if [ -z "$best" ] || awk -v v="$v" -v b="$best" 'BEGIN{exit !(v<b)}'; then best="$v"; src="$k"; fi
+  done
+  note "idle by kind:$(for k in mouse key flags scroll click tablet; do printf ' %s=%s' "$k" "$(getv "$LOG" "kind_$k")"; done)"
+  if [ -n "$src" ] && awk -v b="$best" 'BEGIN{exit !(b<2.0)}'; then
+    result S4 MANUAL "input of kind '$src' arrived during the hands-off sample (idle $aa -> $ab). Rerun hands off; if it repeats, an app (a mouse mover, remote control or MDM agent) posts '$src' events and presence would always look active"
+  else
+    result S4 FAIL "idle did not increase without input ($aa -> $ab) and no single kind explains it"
+  fi
 fi

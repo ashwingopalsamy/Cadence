@@ -8,7 +8,9 @@ func arg(_ name: String) -> String? {
     guard let i = a.firstIndex(of: name), i + 1 < a.count else { return nil }
     return a[i + 1]
 }
-guard let logPath = arg("--log") else { exit(2) }
+// A global, not a guard binding: newer Swift treats top-level guard bindings as locals that closures and C
+// callbacks cannot capture.
+let logPath: String = arg("--log") ?? exit(2)
 func log(_ s: String) {
     let data = Data((s + "\n").utf8)
     if let h = FileHandle(forWritingAtPath: logPath) {
@@ -44,13 +46,20 @@ let watch = arg("--watch").flatMap(Double.init)
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 
-DispatchQueue.main.async {
+// The first sample waits a second, so the key that started the run is not counted.
+DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
     log("null_a=\(idle(.null))")
     log("any_a=\(idle(anyInput))")
 }
-DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
     log("null_b=\(idle(.null))")
     log("any_b=\(idle(anyInput))")
+    // Per kind, so an input that keeps "any input" low can be named.
+    let kinds: [(String, CGEventType)] = [
+        ("mouse", .mouseMoved), ("key", .keyDown), ("flags", .flagsChanged), ("scroll", .scrollWheel),
+        ("click", .leftMouseDown), ("tablet", .tabletProximity),
+    ]
+    for (label, kind) in kinds { log("kind_\(label)=\(idle(kind))") }
     if watch == nil { exit(0) }
 }
 if let w = watch { DispatchQueue.main.asyncAfter(deadline: .now() + w) { exit(0) } }

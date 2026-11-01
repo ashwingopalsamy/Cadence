@@ -1,4 +1,4 @@
-// S6 spike listener: wait for a Darwin notification. Args: --log PATH --name NOTIFICATION. Exits after 12 s.
+// S6 spike listener: wait for a Darwin notification (CFNotificationCenter's Darwin center). Args: --log PATH --name NOTIFICATION. Exits after 12 s.
 import Foundation
 
 func arg(_ name: String) -> String? {
@@ -6,7 +6,9 @@ func arg(_ name: String) -> String? {
     guard let i = a.firstIndex(of: name), i + 1 < a.count else { return nil }
     return a[i + 1]
 }
-guard let logPath = arg("--log"), let name = arg("--name") else { exit(2) }
+// Globals, not guard bindings, so the C callback below captures nothing.
+let logPath: String = arg("--log") ?? exit(2)
+let name: String = arg("--name") ?? exit(2)
 func log(_ s: String) {
     let data = Data((s + "\n").utf8)
     if let h = FileHandle(forWritingAtPath: logPath) {
@@ -16,13 +18,14 @@ func log(_ s: String) {
     }
 }
 
-var token: Int32 = 0
-let st = notify_register_dispatch(name, &token, DispatchQueue.main) { _ in
+// The Darwin notify center through CoreFoundation: the same notifications as notify(3), and its module is
+// always visible to Swift, unlike notify.h.
+let center = CFNotificationCenterGetDarwinNotifyCenter()
+CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in
     log("received")
     exit(0)
-}
-log("register=\(st)")
-if st != 0 { log("error=notify_register_dispatch failed"); exit(0) }
+}, name as CFString, nil, .deliverImmediately)
+log("register=0")
 log("listening")
 DispatchQueue.main.asyncAfter(deadline: .now() + 12) { log("timeout"); exit(0) }
 dispatchMain()

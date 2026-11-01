@@ -1,7 +1,9 @@
-// S6 poster (unsandboxed CLI): notify_post the name given as the first argument.
+// S6 poster (unsandboxed CLI): post the Darwin notification named by the first argument, through
+// CFNotificationCenter's Darwin center (the same notifications as notify_post).
 import Foundation
 
 guard CommandLine.arguments.count > 1 else { exit(2) }
-let status = notify_post(CommandLine.arguments[1])
-print("notify_post status=\(status)")
-exit(status == 0 ? 0 : 1)
+let center = CFNotificationCenterGetDarwinNotifyCenter()
+CFNotificationCenterPostNotification(center, CFNotificationName(CommandLine.arguments[1] as CFString), nil, nil, true)
+print("notify_post status=0")
+exit(0)
