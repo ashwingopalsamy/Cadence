@@ -82,13 +82,13 @@ Every task has a tier. The tier is a floor, not a ceiling: on any doubt, move a 
 | ID | Task | Tier | Spec | Done when |
 |---|---|---|---|---|
 | [x] T0.1 | Repo tree, `.gitignore` (db, proof, maps, local config, `.claude/settings.local.json`), Apache-2.0 LICENSE, NOTICE, CODE_OF_CONDUCT | mechanic | §14.1, §16 | Tree matches §14.1; `git status` clean |
-| [ ] T0.2 | (Linux done 2026-10-30; Mac build pending) `Package.swift` with Linux-safe targets and macOS-only targets behind `#if os(macOS)`; CSQLite module map; empty targets compile | builder | §14.2 | `swift build` passes on Linux and on the Mac |
+| [x] T0.2 | `Package.swift` with Linux-safe targets and macOS-only targets behind `#if os(macOS)`; CSQLite module map; empty targets compile | builder | §14.2 | `swift build` passes on Linux and on the Mac |
 | [x] T0.3 | Core interfaces: `Clock`, `FileRoots`, `ProcessRunner`, `Store`, `Hasher`, error types, the module boundaries | planner | §8.5, §18 | Protocols compile; the builder briefs below reference them |
 | [x] T0.4 | Makefile: build, test, check, app, install, uninstall, run, demo, snapshots, spike, guard, sounds; macOS-only steps skip cleanly on Linux | builder | §14.4 | `make check` green on Linux |
 | [x] T0.5 | `tools/guard.sh`: terms from `~/.config/cadence/forbidden.txt`; data-file signatures; secret patterns; `--staged`, `--all`, `--history`; prints file and line, never the term; installs git hooks | builder | §13.1 | Fixture tests pass, including one that proves the term is never printed |
 | [x] T0.6 | `tools/verify_proof.py` (from the tested script), `tools/make_vectors.py`, `Tests/Vectors/proofs/{valid,tampered}.json` | mechanic | §12.3 | Valid passes, tampered fails, inside `make check` |
 | [x] T0.7 | `docs/SPEC.md` from the blueprint (text only), `docs/SPIKES.md` listing S1 to S9 and every verify tag, `CLAUDE.md` from §18.1, README stub | mechanic | §18 | Every spec section is present; the planner diffs the headings |
-| [ ] T0.8 | (written and skip-tested on Linux; Mac run pending) `tools/spike/`: one small check per S1 to S9, printing PASS, FAIL or MANUAL with steps | builder | §8.7 | Runs on the Mac; results go into `SPIKES.md` |
+| [x] T0.8 | `tools/spike/`: one small check per S1 to S9, printing PASS, FAIL or MANUAL with steps | builder | §8.7 | Runs on the Mac; results go into `SPIKES.md` |
 
 ## Phase 1 · Ledger, CLI, proof · v0.1
 
@@ -147,7 +147,7 @@ Every task has a tier. The tier is a floor, not a ceiling: on any doubt, move a 
 
 | ID | Task | Tier | Spec | Done when |
 |---|---|---|---|---|
-| [ ] T3.1 | Run spikes S1 to S8 and record the results; the planner picks the fallbacks | planner | §8.7 | `SPIKES.md` is complete |
+| [x] T3.1 | Run spikes S1 to S8 and record the results; the planner picks the fallbacks | planner | §8.7 | `SPIKES.md` is complete |
 | [ ] T3.2 ★ | App shell: accessory app, single instance, `bundle.sh`, Info.plist, entitlements, inside-out ad-hoc signing, `make app`, `install`, `uninstall` | planner | §8.3, §14.3 | Entitlement and symbol check passes; installs without admin |
 | [ ] T3.3 | Design tokens in Swift: colours for both themes, type, spacing, motion, the SF Symbols map | builder | §6 | Snapshot of the token sheet |
 | [ ] T3.4 | Status item and dot renderer: template image, all 11 states, arc fraction, animations, VoiceOver strings | builder | §4.1, §5.7 | Snapshots of every state; VoiceOver labels tested |

@@ -134,5 +134,5 @@ Planner decisions on the second audit. Each defect has a test that failed before
 
 - S3: the ad-hoc spike app never appeared in Notifications settings. Notifications are designed around a plain notification whose click opens the capture bar; the inline text-input reply of section 4.7 is an upgrade, checked in the real signed app under T3.11 and dropped if it does not work there.
 - S7: Apple Intelligence does not run on the work Mac. The deterministic parser is the only capture path, and Foundation Models stays in the "Later" list.
-- S4: lock, unlock, sleep and wake notifications all arrive in the sandbox. Which idle query to use (`.null` or any input, V6) waits for the hands-off sample.
+- S4: lock, unlock, sleep and wake notifications all arrive in the sandbox, and idle time for any input (`CGEventType(rawValue: ~0)`) works there. The presence adapter uses any input, not `.null` (V6). S5 and S6 pass, so the hotkey and the store-changed Darwin notification need no fallback.
 - S8: `#Preview` needs Xcode's macro plugins, so previews stay out of code that the Command Line Tools build compiles.
