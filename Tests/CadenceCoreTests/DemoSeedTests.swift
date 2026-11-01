@@ -27,6 +27,14 @@ import Testing
         try store.db.query(sql)
     }
 
+    @Test func everySealedDayCopiesAStandUpSoTheProofCarriesWitnessCodes() throws {
+        let (store, _, _) = try Self.seeded()
+        let sealed = try Self.rows(store, "SELECT date FROM days WHERE seal_event IS NOT NULL ORDER BY date").map { $0.text("date") }
+        let witnessed = try store.witnesses().map { $0.date.description as String? }
+        #expect(!sealed.isEmpty)
+        #expect(witnessed == sealed)
+    }
+
     @Test func theOctoberProofMatchesTheSpec() throws {
         let (store, _, _) = try Self.seeded()
         let proof = try ProofExporter.export(store, Self.october())

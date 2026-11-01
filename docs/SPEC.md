@@ -1271,7 +1271,7 @@ october.cadence-proof.json (shape; arrays shortened)
   "verifier_py": "…the script in 12.3, verbatim…",
   "summary": {
     "sealed_workdays": { "value": 19, "of": 19, "before_ledger": 0, "definition": "Workdays wrapped up by 23:59 the next day, counted from the day the ledger began; …" },
-    "plan_done":       { "value": 61, "of": 73, "definition": "Planned tasks on counted workdays marked done by the end of their day; …" },
+    "plan_done":       { "value": 61, "of": 73, "after_seal": 2, "definition": "Planned tasks on counted workdays marked done by the end of their day; …" },
     "merged_prs":      { "value": 14, "assigned": 11, "self_initiated": 3, "definition": "Merged PRs authored, from the GitHub collector; …" },
     "reviews":         { "value": 47, "definition": "Review entries, one per PR per day" },
     "ai_days":         { "value": 17, "of": 19, "definition": "Counted workdays with an AI coding session or usage record, from the first day any AI source recorded" },
@@ -1284,6 +1284,7 @@ october.cadence-proof.json (shape; arrays shortened)
     "date": "2026-10-28", "kind": "workday",
     "first_activity": "09:41", "last_activity": "19:02",
     "sealed_at": "2026-10-28T17:24:10+05:30", "seal_ev": "9c41…",
+    "flags": { "declared_late": false },
     "items": [
       { "ev": "1f07…", "last_ev": "1f07…", "kind": "pr.merged", "family": "delivery",
         "title": "ACME-482901 Batch settlement writes", "occurred_at": "2026-10-28T15:12:40+05:30",
@@ -1335,7 +1336,9 @@ This is a Cadence work log export. To check it:
    dates. A match shows the log up to that point existed at the message's time.
 4. Treat origin "self" and "agent" items as self-reported: plausible, not proven.
    Items flagged after_seal were added after that day's wrap-up, and items flagged
-   edited were changed after it.
+   edited were changed after it. A day flagged declared_late was marked leave or
+   holiday after its grace window had closed. Plan tasks added after a wrap-up are
+   left out of plan_done and counted in its after_seal.
 5. This file is tamper-evident, not tamper-proof: its owner could have rebuilt the
    whole chain before the first witness. Witnesses narrow that window. export_digest
    catches accidental edits only, since anyone can recompute it.

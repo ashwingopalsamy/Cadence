@@ -52,6 +52,7 @@ public enum Format {
         if let estimate = task.estimateMin { line += " (\(estimate)m)" }
         line += "  \(task.status.rawValue)"
         if let reason = task.reason { line += ": \(reason)" }
+        if task.afterSeal { line += "  after wrap-up" }
         return line + "  [\(task.id)]"
     }
 

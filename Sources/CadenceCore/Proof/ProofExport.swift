@@ -157,6 +157,7 @@ private struct Builder {
         var hashBySeq: [Int64: String] = [:]
         var privateEvents = 0
         var declared: [String: DayKind] = [:]
+        var leftTheCount: [String: Date] = [:]  // day -> recorded time it entered its current leave or holiday state
         var firstSeal: [String: Int64] = [:]  // day -> seq of its first day.sealed
         var updateSeqs: [String: [Int64]] = [:]  // entry id -> seqs of its entry.updated events
         var ledgerStart: LocalDate? = nil
@@ -191,6 +192,12 @@ private struct Builder {
                     case .dayDeclared(let p)? = try? EventPayload(type: event.type, data: event.data)
                 {
                     declared[d] = p.kind
+                    // Leave or holiday declared again keeps the time the day first left the count; any other kind clears it.
+                    if p.kind.isLeaveOrHoliday {
+                        if leftTheCount[d] == nil { leftTheCount[d] = Timestamp.parse(event.at) }
+                    } else {
+                        leftTheCount[d] = nil
+                    }
                 }
                 if event.type == "day.sealed", let d = day, firstSeal[d] == nil { firstSeal[d] = event.seq }
                 var e: [String: JSONValue] = [
@@ -242,6 +249,11 @@ private struct Builder {
             d["last_activity"] = clock(row?.text("last_activity"), dayZone)
             d["sealed_at"] = sealedAt.map { .string(Timestamp.local($0, in: dayZone)) } ?? .null
             d["seal_ev"] = sealHash.map(JSONValue.string) ?? .null
+            // Leave or holiday that was declared after the day's grace window: it still takes the day out of the count,
+            // and the file says it came late. False for every other day, so a reader never has to guess.
+            let late = kind.isLeaveOrHoliday
+                && (leftTheCount[key].map { request.rules.declaredLate(date, at: $0, in: dayZone) } ?? false)
+            d["flags"] = ["declared_late": .bool(late)]
             d["items"] = .array(items.map { entry in
                 // Edited means changed after the day's wrap-up: an entry.updated after the first seal.
                 let edited = sealSeq.map { seal in (updateSeqs[entry.id] ?? []).contains { $0 > seal } } ?? false
@@ -268,10 +280,15 @@ private struct Builder {
             $0.kind == EntryKind.prMerged.rawValue && $0.origin == Origin.collected.rawValue && $0.source == "github"
         }
         let reviews = listed.filter { $0.kind == EntryKind.reviewGiven.rawValue }
-        let tasks = try query(
-            "SELECT day, status, resolved_at FROM plan_tasks WHERE day >= ? AND day <= ? AND status != 'moved'",
+        // A task added after its day's wrap-up is in neither plan_done number; after_seal says how many were left out.
+        let taskRows = try query(
+            """
+            SELECT day, status, resolved_at, \(Journal.taskAfterSealSQL) AS after_seal FROM plan_tasks
+            WHERE day >= ? AND day <= ? AND status != 'moved'
+            """,
             [.text(request.from.description), .text(request.to.description)]
         ).filter { countableSet.contains($0.text("day") ?? "") }
+        let tasks = taskRows.filter { !$0.bool("after_seal") }
         let doneOnDay = tasks.filter { r in
             guard r.text("status") == "done", let day = r.text("day").flatMap(LocalDate.init),
                 let at = r.text("resolved_at").flatMap(Timestamp.parse)
@@ -292,7 +309,8 @@ private struct Builder {
             ],
             "plan_done": [
                 "value": .int(Int64(doneOnDay.count)), "of": .int(Int64(tasks.count)),
-                "definition": "Planned tasks on counted workdays marked done by the end of their day; tasks moved to another day count on that day",
+                "after_seal": .int(Int64(taskRows.count - tasks.count)),
+                "definition": .string(PlanDoneText.definition),
             ],
             "merged_prs": [
                 "value": known(merged.count),

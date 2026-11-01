@@ -291,7 +291,9 @@ public final class Journal {
             ).first?.int("highest") ?? 0
             let task = PlanTask(
                 id: self.ids.next(), day: day.description, position: highest + 1, title: cleaned, ticket: ticket,
-                estimateMin: estimateMin, origin: origin, plannedAt: plannedAt)
+                estimateMin: estimateMin, origin: origin, plannedAt: plannedAt,
+                // Added to a day that already has its first seal: after the wrap-up, as an entry would be.
+                afterSeal: try self.isSealed(day.description))
             try self.append([EventPayload.planAdded(task).draft(actor: actor)])
             return task
         }
@@ -494,7 +496,7 @@ public final class Journal {
             view = Day(date: day.description, tz: zone.identifier)
         }
         view.kind = DayRules(config: config).kind(of: day, declared: try store.declaredKind(of: day))
-        let tasks = try rows("SELECT * FROM plan_tasks WHERE day = ? ORDER BY position, created_seq", [key])
+        let tasks = try rows("SELECT \(Self.taskColumns) FROM plan_tasks WHERE day = ? ORDER BY position, created_seq", [key])
             .map { (row) throws(CadenceError) -> PlanTask in try Readers.task(row) }
         let entries = try rows(
             """
@@ -567,7 +569,7 @@ public final class Journal {
     }
 
     public func task(_ id: String) throws(CadenceError) -> PlanTask {
-        guard let row = try rows("SELECT * FROM plan_tasks WHERE id = ?", [.text(id)]).first else {
+        guard let row = try rows("SELECT \(Self.taskColumns) FROM plan_tasks WHERE id = ?", [.text(id)]).first else {
             throw .notFound("no plan task with id \(id)")
         }
         return try Readers.task(row)

@@ -68,7 +68,8 @@ public enum SummaryRendering {
         var rows: [[String]] = [
             ["Sealed workdays", ratio(s.sealedWorkdays, of: s.sealedWorkdays == nil ? nil : s.countedWorkdays)
                 + (s.beforeLedger > 0 ? " (\(s.beforeLedger) before the ledger began)" : "")],
-            ["Plan done", ratio(s.planDone, of: s.planTotal)],
+            ["Plan done", ratio(s.planDone, of: s.planTotal)
+                + (s.planAfterSeal.map { $0 > 0 ? " (\($0) added after wrap-up \($0 == 1 ? "is" : "are") not counted)" : "" } ?? "")],
             ["PRs merged", s.mergedPRs.map { merged in
                 "\(merged) (assigned \(n(s.assignedPRs)), self-initiated \(n(s.selfInitiatedPRs)))"
             } ?? "-"],

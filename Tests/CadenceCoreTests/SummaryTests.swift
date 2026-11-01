@@ -106,7 +106,7 @@ import Testing
 
     @Test func slipsGroupByReasonAndTokensTakeOneSourcePerDay() throws {
         let (journal, store, _) = try Self.journal()
-        let day = LocalDate("2026-10-29")!
+        let day = LocalDate("2026-10-27")!  // unsealed and past its window: the 29th is sealed, and later tasks are left out
         let task = try journal.planAdd(title: "Draft design", day: day, estimateMin: nil, origin: .selfReported, actor: .cli)
         let other = try journal.planAdd(title: "Write ADR", day: day, estimateMin: nil, origin: .selfReported, actor: .cli)
         _ = try journal.planResolve(taskID: task.id, status: .slipped, reason: "reprioritised", note: nil, links: [], actor: .cli)
@@ -139,12 +139,12 @@ import Testing
             let task = try journal.planAdd(title: "Task", day: LocalDate(day)!, estimateMin: nil, origin: .selfReported, actor: .cli)
             _ = try journal.planResolve(taskID: task.id, status: .slipped, reason: reason, note: nil, links: [], actor: .cli)
         }
-        try slip("2026-10-29", "reprioritised")
+        try slip("2026-10-27", "reprioritised")
         try slip("2026-10-30", "blocked")  // today: unsealed, grace still open, so the day is not counted yet
         let (from, to) = Self.range("2026-10-27", "2026-10-30")
         let summary = try journal.summary(from: from, to: to)
         #expect(summary.slipsByReason == ["reprioritised": 1])
-        #expect(summary.planTotal == 3)  // T1, T2 on the 28th and the slipped task on the 29th
+        #expect(summary.planTotal == 3)  // T1, T2 on the 28th and the slipped task on the 27th
     }
 
     @Test func aUsageRowWithoutSessionsButWithTokensIsAIActivity() throws {

@@ -119,6 +119,8 @@ public enum DemoSeed {
             try journal.endDay(day, at: nil, actor: .app)
             clock.set(at(day, seal))
             let result = try journal.seal(day, actor: .app)
+            // A wrap-up copies the stand-up, so the demo proof carries a witness code for the day.
+            _ = try journal.standup(day, actor: .app)
             for carried in result.carried {
                 pending[carried.task.day, default: []].append(carried.task.id)
             }

@@ -279,6 +279,22 @@ import Testing
         #expect(json["checks"]?.arrayValue?.contains { $0["name"]?.stringValue == "ledger" } == true)
     }
 
+    @Test func doctorReportsFileVaultAndNeverFailsOnIt() throws {
+        defer { cli.remove() }
+        let result = try cli.run(["doctor"])
+        #expect(result.status == 0)
+        let line = try #require(result.stdout.split(separator: "\n").first { $0.contains("filevault:") }, "no filevault line")
+        #if os(macOS)
+            // The real fdesetup answers on a Mac: on is ok, anything else only warns.
+            #expect(line.hasPrefix("ok    filevault:") || line.hasPrefix("warn  filevault:"), "\(line)")
+        #else
+            #expect(line == "ok    filevault: not applicable on this system")
+        #endif
+        let json = try cli.json(["doctor"])
+        let check = try #require(json["checks"]?.arrayValue?.first { $0["name"]?.stringValue == "filevault" })
+        #expect(["ok", "warn"].contains(check["status"]?.stringValue ?? ""))
+    }
+
     @Test func doctorVerifiesTheChainAfterWrites() throws {
         defer { cli.remove() }
         try cli.run(["log", "Fixed the flaky test"])

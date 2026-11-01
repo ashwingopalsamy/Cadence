@@ -14,12 +14,15 @@ public struct PlanTask: Sendable, Equatable, JSONRepresentable {
     public var linkedEntries: [String]
     public var plannedAt: String
     public var resolvedAt: String?
+    /// True when the task was added after its day's first seal (docs/SPEC.md section 3). Read from the order of the
+    /// ledger, never stored and never part of a payload: `json` leaves it out, `viewJSON` adds it.
+    public var afterSeal: Bool
 
     public init(
         id: String, day: String, position: Int64, title: String, ticket: Ticket? = nil,
         estimateMin: Int64? = nil, origin: PlanOrigin, carriedFrom: String? = nil,
         status: TaskStatus = .open, reason: String? = nil, reasonNote: String? = nil,
-        linkedEntries: [String] = [], plannedAt: String, resolvedAt: String? = nil
+        linkedEntries: [String] = [], plannedAt: String, resolvedAt: String? = nil, afterSeal: Bool = false
     ) {
         self.id = id
         self.day = day
@@ -35,6 +38,14 @@ public struct PlanTask: Sendable, Equatable, JSONRepresentable {
         self.linkedEntries = linkedEntries
         self.plannedAt = plannedAt
         self.resolvedAt = resolvedAt
+        self.afterSeal = afterSeal
+    }
+
+    /// The task as a reader sees it: the stored fields plus `after_seal`. For output only. A ledger payload is `json`.
+    public var viewJSON: JSONValue {
+        var object = json.objectValue ?? [:]
+        object["after_seal"] = .bool(afterSeal)
+        return .object(object)
     }
 
     public var json: JSONValue {
@@ -72,5 +83,6 @@ public struct PlanTask: Sendable, Equatable, JSONRepresentable {
         linkedEntries = try f.strings("linked_entries")
         plannedAt = try f.string("planned_at")
         resolvedAt = try f.optionalString("resolved_at")
+        afterSeal = false
     }
 }

@@ -87,7 +87,7 @@ struct PlanList: ParsableCommand {
             lines += tasks.map { "  " + Format.taskLine($0) }
             return Rendered(
                 human: lines.joined(separator: "\n"),
-                json: ["day": .string(day.description), "tasks": .array(tasks.map(\.json))])
+                json: ["day": .string(day.description), "tasks": .array(tasks.map(\.viewJSON))])
         }
     }
 }

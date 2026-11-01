@@ -174,6 +174,7 @@ enum ToolText {
         if let ticket = task.ticket { object["ticket"] = ticket.json }
         if let estimate = task.estimateMin { object["estimate_min"] = .int(estimate) }
         if let reason = task.reason { object["reason"] = .string(reason) }
+        if task.afterSeal { object["after_seal"] = true }
         return .object(object)
     }
 }

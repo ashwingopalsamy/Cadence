@@ -56,6 +56,7 @@ struct DoctorCommand: ParsableCommand {
             checks.append(Check(name: "folders", status: .fail, detail: error.message))
         }
         checks += Self.permissionChecks(context)
+        checks.append(Self.fileVaultCheck(context))
         checks += Self.storeChecks(context)
         checks.append(Self.configCheck(context))
         checks += Self.integrationChecks(context)
@@ -136,6 +137,13 @@ struct DoctorCommand: ParsableCommand {
                 Check(name: "private files", status: .warn, detail: readable.joined(separator: "; ") + "; run chmod 600 on them"))
         }
         return checks
+    }
+
+    /// Whether FileVault is on (docs/SPEC.md section 13.1). Advice: Off and unknown warn, so a Mac without it still exits 0.
+    /// Off macOS the line says it does not apply.
+    static func fileVaultCheck(_ context: CLIContext) -> Check {
+        let result = FileVaultCheck(runner: SystemProcessRunner(), platform: .current, workingDirectory: context.userHome).run()
+        return Check(name: result.name, status: result.level == .ok ? .ok : .warn, detail: result.detail)
     }
 
     static func storeChecks(_ context: CLIContext) -> [Check] {

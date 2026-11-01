@@ -32,6 +32,19 @@ public struct DayRules: Sendable, Equatable {
         sealedAt <= graceEnd(of: date, in: zone)
     }
 
+    /// Whether a leave or holiday that took effect at `declaredAt` (the recorded time of the declaration) came after
+    /// the grace window of `date` had closed. Declared ahead, on the day or inside the window is on time. Only a day the
+    /// configuration counts as a workday can be late: a holiday on a Saturday takes nothing out of any count.
+    public func declaredLate(_ date: LocalDate, at declaredAt: Date, in zone: TimeZone) -> Bool {
+        workdays.contains(date.weekday) && Self.milliseconds(declaredAt) > Self.milliseconds(graceEnd(of: date, in: zone))
+    }
+
+    /// Ledger times carry milliseconds. Comparing whole milliseconds keeps floating-point noise in a `Date` from
+    /// pushing the last moment of a window past its end.
+    private static func milliseconds(_ date: Date) -> Int64 {
+        Int64((date.timeIntervalSince1970 * 1000).rounded())
+    }
+
     /// Whether the grace window for `date` has closed by `now`, so an unsealed day is final.
     public func graceClosed(for date: LocalDate, at now: Date, in zone: TimeZone) -> Bool {
         now > graceEnd(of: date, in: zone)

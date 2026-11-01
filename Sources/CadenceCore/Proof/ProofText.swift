@@ -16,7 +16,9 @@ This is a Cadence work log export. To check it:
    dates. A match shows the log up to that point existed at the message's time.
 4. Treat origin "self" and "agent" items as self-reported: plausible, not proven.
    Items flagged after_seal were added after that day's wrap-up, and items flagged
-   edited were changed after it.
+   edited were changed after it. A day flagged declared_late was marked leave or
+   holiday after its grace window had closed. Plan tasks added after a wrap-up are
+   left out of plan_done and counted in its after_seal.
 5. This file is tamper-evident, not tamper-proof: its owner could have rebuilt the
    whole chain before the first witness. Witnesses narrow that window. export_digest
    catches accidental edits only, since anyone can recompute it.

@@ -1,3 +1,19 @@
+extension Journal {
+    /// 1 when a plan task was added after the first seal of its day, else 0 (docs/SPEC.md section 3, "After the seal").
+    /// It compares two places in the ledger: the task's `plan.added` (`created_seq`) and the event that is the day's
+    /// first seal (`days.seal_event` is its hash, and a day's first seal stands). Nothing is stored, so the answer
+    /// cannot differ between a live store, a rebuilt one and one made before this rule, and no writer can forget it.
+    /// A day with no seal has no boundary, so nothing on it is after the seal.
+    static let taskAfterSealSQL = """
+        (plan_tasks.created_seq > COALESCE(
+            (SELECT e.seq FROM days AS d JOIN events AS e ON e.hash = d.seal_event WHERE d.date = plan_tasks.day),
+            9223372036854775807))
+        """
+
+    /// The columns of a plan task read through `Readers.task`: the stored row plus the derived `after_seal`.
+    static let taskColumns = "plan_tasks.*, \(taskAfterSealSQL) AS after_seal"
+}
+
 /// Row to model mapping for the projection tables. Each reader builds the model's JSON shape from the
 /// columns and decodes it, so a row can never produce a value the ledger could not have held.
 enum Readers {
@@ -28,7 +44,10 @@ enum Readers {
         }
         object["ticket"] = ticket(row)
         object["linked_entries"] = try parsed(row.text("linked_entries"), as: "linked_entries")
-        return try PlanTask(json: .object(object))
+        var task = try PlanTask(json: .object(object))
+        // Only a query that selects `Journal.taskColumns` has the column; any other row reads as not after the seal.
+        task.afterSeal = row.bool("after_seal")
+        return task
     }
 
     static func day(_ row: SQLRow) throws(CadenceError) -> Day {

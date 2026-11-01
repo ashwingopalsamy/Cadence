@@ -64,6 +64,13 @@ public struct ClockSpread: Sendable, Equatable {
     }
 }
 
+/// What `plan_done` means, in one place so `cadence summary` and the proof say the same words (docs/SPEC.md sections 3
+/// and 12.1).
+enum PlanDoneText {
+    static let definition =
+        "Planned tasks on counted workdays marked done by the end of their day; tasks moved to another day count on that day; tasks added after their day's wrap-up are left out of both numbers and counted in after_seal"
+}
+
 /// The numbers for a range (docs/SPEC.md sections 5, 9.5, 11 and 12.1). A metric with no data is nil, which
 /// prints as "-" and encodes as null: unknown is not zero. Findings are phase 4 and not computed here.
 public struct Summary: Sendable, Equatable {
@@ -81,6 +88,9 @@ public struct Summary: Sendable, Equatable {
 
     public var planDone: Int?
     public var planTotal: Int?
+    /// Tasks on counted workdays that were added after their day's wrap-up and are left out of both numbers above.
+    /// Nil when no workday in the range is counted yet.
+    public var planAfterSeal: Int? = nil
     /// Slipped tasks by reason; nil when the range has no plan.
     public var slipsByReason: [String: Int]?
 
@@ -120,7 +130,7 @@ public struct Summary: Sendable, Equatable {
 
     static let definitions: [String: String] = [
         "sealed_workdays": "Workdays wrapped up by 23:59 the next day, counted from the day the ledger began; leave and holidays excluded, days still inside that window not counted yet, and workdays before the ledger began reported as before_ledger",
-        "plan_done": "Planned tasks on counted workdays marked done by the end of their day; tasks moved to another day count on that day",
+        "plan_done": PlanDoneText.definition,
         "merged_prs": "Merged PRs authored, from the GitHub collector; assigned and self-initiated by ticket, the rest have no ticket",
         "reviews": "Review entries, one per PR per day",
         "ai_days": "Counted workdays with an AI coding session or usage record, from the first day any AI source recorded",
@@ -152,8 +162,8 @@ public struct Summary: Sendable, Equatable {
                 "before_ledger": .int(Int64(beforeLedger)), "definition": .string(d["sealed_workdays"] ?? ""),
             ],
             "plan_done": [
-                "value": Self.number(planDone), "of": Self.number(planTotal), "definition": .string(d["plan_done"] ?? ""),
-                "slipped_by_reason": Self.counts(slipsByReason),
+                "value": Self.number(planDone), "of": Self.number(planTotal), "after_seal": Self.number(planAfterSeal),
+                "definition": .string(d["plan_done"] ?? ""), "slipped_by_reason": Self.counts(slipsByReason),
             ],
             "merged_prs": [
                 "value": Self.number(mergedPRs), "assigned": Self.number(assignedPRs),
@@ -268,10 +278,16 @@ extension Journal {
         let countableSet = Set(countable)
 
         // Plan.
+        // A task added after its day's wrap-up is not part of what was planned, so it is in neither number.
         let taskRows = try rows(
-            "SELECT day, status, reason, resolved_at FROM plan_tasks WHERE day >= ? AND day <= ? AND status != 'moved'",
+            """
+            SELECT day, status, reason, resolved_at, \(Self.taskAfterSealSQL) AS after_seal FROM plan_tasks
+            WHERE day >= ? AND day <= ? AND status != 'moved'
+            """,
             [low, high])
-        let counted = taskRows.filter { countableSet.contains($0.text("day") ?? "") }
+        let onCountedDays = taskRows.filter { countableSet.contains($0.text("day") ?? "") }
+        let counted = onCountedDays.filter { !$0.bool("after_seal") }
+        let leftOut = onCountedDays.count - counted.count
         let done = counted.filter { row in
             guard row.text("status") == "done", let day = row.text("day").flatMap({ LocalDate($0) }),
                 let at = row.text("resolved_at").flatMap({ Timestamp.parse($0) })
@@ -345,6 +361,7 @@ extension Journal {
             sealedWorkdays: countable.isEmpty ? nil : sealedInGrace, countedWorkdays: countable.count,
             beforeLedger: beforeLedger,
             planDone: counted.isEmpty ? nil : done.count, planTotal: counted.isEmpty ? nil : counted.count,
+            planAfterSeal: countable.isEmpty ? nil : leftOut,
             slipsByReason: counted.isEmpty ? nil : slips,
             mergedPRs: prsKnown ? merged.count : nil,
             assignedPRs: prsKnown ? merged.filter { $0.text("ticket_class") == TicketClass.assigned.rawValue }.count : nil,

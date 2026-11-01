@@ -7,7 +7,7 @@ public enum DayRendering {
             ["start": .string(span.start), "end": .string(span.end), "source": .string(span.source.rawValue)]
         }
         return [
-            "day": view.day.json, "tasks": .array(view.tasks.map(\.json)), "entries": .array(view.entries.map(\.json)),
+            "day": view.day.json, "tasks": .array(view.tasks.map(\.viewJSON)), "entries": .array(view.entries.map(\.json)),
             "presence": .array(presence),
         ]
     }
