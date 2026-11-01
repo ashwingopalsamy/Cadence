@@ -13,6 +13,9 @@ struct CLIRun {
     }
 }
 
+/// Finds the test bundle on platforms where `Bundle.main` is the test runner.
+private final class BundleToken {}
+
 struct CLIHome {
     let home: URL
 
@@ -37,14 +40,21 @@ struct CLIHome {
     var configFile: URL { home.appendingPathComponent("config.json") }
 
     /// The binary SwiftPM built next to the test bundle, for example `.build/debug/cadence`.
+    /// On macOS `swift test` runs the bundle inside Xcode's `xctest` helper, so `Bundle.main` is the toolchain and
+    /// the products folder has to come from the test bundle itself, or from the package's `.build` folder.
     static func binary() throws -> URL {
         var candidates: [URL] = []
+        let testBundle = Bundle(for: BundleToken.self).bundleURL
+        candidates.append(testBundle.deletingLastPathComponent().appendingPathComponent("cadence"))
         let bundle = Bundle.main.bundleURL
         candidates.append(bundle.deletingLastPathComponent().appendingPathComponent("cadence"))
         candidates.append(bundle.appendingPathComponent("Contents/MacOS/../../../cadence").standardized)
         if let first = ProcessInfo.processInfo.arguments.first {
             candidates.append(URL(fileURLWithPath: first).deletingLastPathComponent().appendingPathComponent("cadence"))
         }
+        // Tests/CadenceCLITests/CLIHarness.swift -> the package root.
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        candidates.append(root.appendingPathComponent(".build/debug/cadence"))
         for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate.path) {
             return candidate
         }

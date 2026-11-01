@@ -276,13 +276,21 @@ public final class SQLiteDatabase {
     public var lastInsertRowID: Int64 { sqlite3_last_insert_rowid(handle) }
 
     /// Copies the database into a new file (`VACUUM INTO`), used for backups.
-    /// The copy is created empty with mode 0600 first, so backups are as private as the store.
+    /// The destination must not exist: newer SQLite builds, such as the one in macOS, refuse even an empty file.
+    /// SQLite creates it, so the umask is narrowed to 077 for the copy, which makes it mode 0600 from its first
+    /// byte. The umask is process-wide; a file another thread creates meanwhile only comes out stricter.
     public func vacuum(into destination: String) throws(SQLiteError) {
-        let fd = open(destination, O_RDWR | O_CREAT | O_EXCL, 0o600)
-        guard fd >= 0 else { throw SQLiteError(code: SQLITE_CANTOPEN, message: "cannot create \(destination)") }
-        close(fd)
-        do {
+        var existing = stat()
+        guard lstat(destination, &existing) != 0 else {
+            throw SQLiteError(code: SQLITE_CANTOPEN, message: "cannot create \(destination): it already exists")
+        }
+        let previous = umask(0o077)
+        defer { umask(previous) }
+        do throws(SQLiteError) {
             try run("VACUUM INTO ?", [.text(destination)])
+            guard chmod(destination, 0o600) == 0 else {
+                throw SQLiteError(code: SQLITE_CANTOPEN, message: "cannot make \(destination) private")
+            }
         } catch {
             unlink(destination)
             throw error

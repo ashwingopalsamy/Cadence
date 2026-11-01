@@ -486,7 +486,7 @@ import Testing
         q.cursor = cursor1
         let two = try f.journal.query(q)
         #expect(two.entries.count == 200)
-        q.cursor = try #require(two.next)
+        q.cursor = two.next
         let three = try f.journal.query(q)
         #expect(three.entries.count == 50)
         #expect(three.next == nil)

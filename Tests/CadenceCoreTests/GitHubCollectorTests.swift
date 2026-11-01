@@ -298,7 +298,8 @@ import Testing
         #expect(first.counts["skipped"] == 0 && first.counts["warnings"] == 0, "\(first.problems)")
 
         func entry(_ ref: String) throws -> Entry {
-            let id = try #require(try store.db.query("SELECT id FROM entries WHERE source_ref = ?", [.text(ref)]).first?.text("id"))
+            let rows = try store.db.query("SELECT id FROM entries WHERE source_ref = ?", [.text(ref)])
+            guard let id = rows.first?.text("id") else { throw CadenceError.notFound("no entry with source_ref \(ref)") }
             return try journal.entry(id)
         }
         let merged = try entry("github:PR_acme001:merged")

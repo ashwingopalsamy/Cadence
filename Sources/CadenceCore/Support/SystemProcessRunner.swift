@@ -159,7 +159,11 @@ public struct SystemProcessRunner: ProcessRunner {
         }
         posix_spawn_file_actions_adddup2(&actions, out, 1)
         posix_spawn_file_actions_adddup2(&actions, err, 2)
-        posix_spawn_file_actions_addchdir_np(&actions, request.workingDirectory.path)
+        #if canImport(Darwin)
+            posix_spawn_file_actions_addchdir(&actions, request.workingDirectory.path)
+        #else
+            posix_spawn_file_actions_addchdir_np(&actions, request.workingDirectory.path)
+        #endif
 
         // Its own process group, and SIGPIPE back to the default this process ignores.
         var defaults = sigset_t()

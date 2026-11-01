@@ -130,7 +130,7 @@ import Testing
             try DemoSeed.seed(into: journal, clock: clock)
             Issue.record("seeding a non-empty store should be refused")
         } catch {
-            #expect((error as? CadenceError)?.exitCode == 2)
+            #expect(error.exitCode == 2)
         }
     }
 }

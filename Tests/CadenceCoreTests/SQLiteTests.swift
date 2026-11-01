@@ -34,7 +34,7 @@ import Testing
     @Test func transactionsCommitAndRollBack() throws {
         let db = try SQLiteDatabase(path: Self.tempPath())
         try db.execute("CREATE TABLE t (i INTEGER)")
-        try db.transaction(.immediate) { try db.run("INSERT INTO t VALUES (1)") }
+        _ = try db.transaction(.immediate) { try db.run("INSERT INTO t VALUES (1)") }
         struct Boom: Error {}
         #expect(throws: Boom.self) {
             try db.transaction(.immediate) {

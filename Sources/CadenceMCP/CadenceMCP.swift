@@ -314,7 +314,7 @@ public final class MCPServer: @unchecked Sendable {
     }
 
     private func initialize(_ params: [String: JSONValue]) -> Result<[String: JSONValue], Failure> {
-        guard let requested = params["protocolVersion"]?.stringValue else {
+        guard params["protocolVersion"]?.stringValue != nil else {
             return .failure(Failure(code: RPCError.invalidParams, message: "initialize needs protocolVersion"))
         }
         // Only the session revision has a handshake; any other request is offered that one instead. A client that

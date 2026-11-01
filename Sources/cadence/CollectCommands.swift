@@ -79,7 +79,7 @@ enum CollectText {
     }
 
     static func line(_ outcome: CollectJobOutcome) -> [String] {
-        guard let job = outcome.job else { return ["job \(outcome.file): not a valid job, \(outcome.removed ? "removed" : "left in place")"] }
+        guard outcome.job != nil else { return ["job \(outcome.file): not a valid job, \(outcome.removed ? "removed" : "left in place")"] }
         let lines = outcome.steps.map(line)
         return outcome.removed ? lines : lines + ["job \(outcome.file): kept, another run is in progress"]
     }

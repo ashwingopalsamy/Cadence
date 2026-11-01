@@ -116,10 +116,8 @@ public enum HookRunner {
         if let line = HookSpool.line(event: event, input: input, now: now) {
             do {
                 try HookSpool.append(line, spool: spool, now: now)
-            } catch let error as CadenceError {
-                result.warning = error.message
             } catch {
-                result.warning = "cannot write the spool"
+                result.warning = error.message
             }
         } else {
             result.warning = "ignored a hook call without a usable session id"
