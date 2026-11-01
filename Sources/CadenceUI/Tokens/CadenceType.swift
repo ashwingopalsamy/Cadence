@@ -49,6 +49,17 @@ public struct TypeToken: Sendable, Identifiable {
 public enum CadenceType {
     public static let geistMonoFamily = "Geist Mono"
 
+    /// The only weight the figure roles use (section 6.3).
+    public static let geistMonoFile = "GeistMono-Medium.ttf"
+
+    /// Registers the bundled font for this process. Call once at launch, before any view renders.
+    /// Without it the figure roles fall back to the system mono.
+    @discardableResult
+    public static func registerFonts(in directory: URL) -> Bool {
+        let file = directory.appendingPathComponent(geistMonoFile) as CFURL
+        return CTFontManagerRegisterFontsForURL(file, .process, nil)
+    }
+
     public static var isGeistMonoAvailable: Bool {
         NSFontManager.shared.availableMembers(ofFontFamily: geistMonoFamily) != nil
     }
@@ -68,11 +79,12 @@ extension View {
     /// Applies a type token, holding its line height exactly.
     public func cadenceType(_ token: TypeToken) -> some View {
         let font = token.nsFont
-        let leading = max(0, token.lineHeight - (font.ascender - font.descender + font.leading))
+        // Negative when the face is taller than its token, as Geist Mono is at the hero size.
+        let leading = token.lineHeight - (font.ascender - font.descender + font.leading)
         return self
             .font(token.font)
             .tracking(token.tracking * token.size)
-            .lineSpacing(leading)
+            .lineSpacing(max(0, leading))
             .padding(.vertical, leading / 2)
     }
 }

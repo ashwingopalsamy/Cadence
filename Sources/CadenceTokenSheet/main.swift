@@ -10,6 +10,12 @@ guard arguments.count == 3, ["light", "dark"].contains(arguments[1]) else {
     exit(2)
 }
 
+// `make token-sheet` runs from the repository root.
+guard CadenceType.registerFonts(in: URL(fileURLWithPath: "App/Resources/Fonts")) else {
+    FileHandle.standardError.write(Data("could not register App/Resources/Fonts\n".utf8))
+    exit(1)
+}
+
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
 
