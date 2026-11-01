@@ -779,7 +779,7 @@ Collector agent| No| Only through the commands it executes| Every 15 min, at log
 
 ### 8.3 Sandbox, entitlements, signing
 
-Resources/Cadence.entitlements
+App/Cadence.entitlements
 
 
 ```
@@ -1609,7 +1609,7 @@ Tests/
   Vectors/                c14n.json · chains/ · envelopes/ · maps/ · proofs/valid.json · proofs/tampered.json
 App/
   Info.plist · Cadence.entitlements · Agent.plist.in
-  Resources/              AppIcon.icns · Sounds/*.caf · Localizable.xcstrings
+  Resources/              AppIcon.icns · Fonts/ · Sounds/*.caf · Localizable.xcstrings
 integrations/claude-code/ hooks.json · skills/cadence/SKILL.md · README.md
 examples/                 config.example.json · collectors/oncall.sh · collectors/oncall.py · maps/sample-*.json
 tools/                    verify_proof.py · guard.sh · check_entitlements.sh · make_sounds.swift · seed_demo.swift · spike/
@@ -1685,7 +1685,7 @@ Contents/
   Library/LaunchAgents/
     in.ashwingopalsamy.cadence.agent.plist   BundleProgram Contents/Helpers/cadence, arguments collect run --due,
                                              StartInterval 900, RunAtLoad, WatchPaths …/Cadence/jobs (absolute, filled at build)
-  Resources/                         AppIcon.icns · Sounds/ · Localizable strings
+  Resources/                         AppIcon.icns · Fonts/ · Sounds/ · Localizable strings
 ~/.local/bin/cadence  →  ~/Applications/Cadence.app/Contents/Helpers/cadence   (symlink)
 ```
 

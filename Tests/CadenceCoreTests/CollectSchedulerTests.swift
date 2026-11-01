@@ -451,10 +451,10 @@ import Testing
 
     @Test func theLaunchAgentTemplateIsAPlistWithTheSpecKeys() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let url = root.appendingPathComponent("scripts/launchd/in.ashwingopalsamy.cadence.agent.plist.template")
+        let url = root.appendingPathComponent("App/Agent.plist.in")
         let data = try Data(contentsOf: url)
         let plist = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
-        #expect(plist["Label"] as? String == "in.ashwingopalsamy.cadence.agent")
+        #expect(plist["Label"] as? String == "@BUNDLE_ID@.agent")
         #expect(plist["BundleProgram"] as? String == "Contents/Helpers/cadence")
         #expect((plist["ProgramArguments"] as? [String])?.suffix(3) == ["collect", "run", "--due"])
         #expect(plist["StartInterval"] as? Int == 900)

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>in.ashwingopalsamy.cadence.agent</string>
+  <string>@BUNDLE_ID@.agent</string>
   <key>BundleProgram</key>
   <string>Contents/Helpers/cadence</string>
   <key>ProgramArguments</key>

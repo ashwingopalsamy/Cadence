@@ -101,23 +101,23 @@ demo:
 ifeq ($(IS_MAC),1)
 
 app:
-	@if [ -x scripts/bundle.sh ]; then BUNDLE_PREFIX=$(BUNDLE_PREFIX) scripts/bundle.sh; else echo "SKIP app: scripts/bundle.sh arrives in T3.2"; fi
+	@BUNDLE_PREFIX=$(BUNDLE_PREFIX) scripts/bundle.sh
 
 
-entitlements:
-	@if [ -x tools/check_entitlements.sh ] && [ -d $(BUILD_DIR)/Cadence.app ]; then tools/check_entitlements.sh $(BUILD_DIR)/Cadence.app; \
-	else echo "SKIP entitlements: needs build/Cadence.app and tools/check_entitlements.sh (T3.2)"; fi
+entitlements: app
+	@tools/tests/check_entitlements_test.sh $(BUILD_DIR)/Cadence.app
+	@tools/check_entitlements.sh $(BUILD_DIR)/Cadence.app
 
 
-install:
-	@if [ -x scripts/install.sh ]; then scripts/install.sh; else echo "SKIP install: scripts/install.sh arrives in T3.2"; fi
+install: app
+	@scripts/install.sh
 
 
 uninstall:
-	@if [ -x scripts/uninstall.sh ]; then scripts/uninstall.sh; else echo "SKIP uninstall: scripts/uninstall.sh arrives in T3.2"; fi
+	@scripts/uninstall.sh
 
 
-run:
+run: app
 	@mkdir -p "$(DEV_HOME)"
 	@if [ -d $(BUILD_DIR)/Cadence.app ]; then CADENCE_HOME="$(DEV_HOME)" $(BUILD_DIR)/Cadence.app/Contents/MacOS/Cadence; \
 	else echo "SKIP run: build the app first with make app (T3.2)"; fi
