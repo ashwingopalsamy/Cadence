@@ -34,6 +34,12 @@ public final class SQLiteStore: Store {
         self.projector = projector
         self.hashing = hashing
         if !readOnly {
+            // Every writer tells the others after its commit (docs/SPEC.md section 8.2). An in-memory store has
+            // no other process to tell.
+            if path != ":memory:" {
+                let poster = DarwinStoreChangePoster()
+                db.afterCommit = { poster.postStoreChanged() }
+            }
             try Migrator.migrate(db)
         }
     }

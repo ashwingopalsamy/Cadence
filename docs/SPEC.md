@@ -777,6 +777,8 @@ Collector agent| No| Only through the commands it executes| Every 15 min, at log
   * Rejected: a socket owned by the app (fails when the app is not running), an XPC Mach service (strong, but not testable on Linux and more moving parts; revisit only if contention appears), localhost HTTP (a listener, ruled out).
 
 
+The store-changed signal is the Darwin notification `in.ashwingopalsamy.cadence.store-changed`, posted after every commit that changed rows. The name stays fixed under `BUNDLE_PREFIX`, so any build hears the CLI.
+
 ### 8.3 Sandbox, entitlements, signing
 
 App/Cadence.entitlements
@@ -1703,7 +1705,7 @@ Target| Does
 `make check`| The gate before every push; see 14.6
 `make app`| Release build, then `build/Cadence.app` via `bundle.sh`, signed ad-hoc
 `make install` · `make uninstall`| Copies the app to `~/Applications`, links `~/.local/bin/cadence`, opens the app once. Uninstall unregisters the login item and agent and leaves your data
-`make run`| Runs the app from `build/` against `CADENCE_HOME=build/dev-home`, never your real store
+`make run`| Runs the app from `build/` with `CADENCE_HOME` set to a dev home inside the app's own sandbox container (`~/Library/Containers/<bundle id>/Data/Library/Application Support/Cadence-dev`), never your real store. The sandbox denies a folder under `build/`, and if `CADENCE_HOME` is unreachable the app shows its error state and never falls back to the real store
 `make demo`| Seeds `build/demo-home` with deterministic ACME data for screenshots and snapshots
 `make snapshots`| Renders key views to PNG with `ImageRenderer` in light and dark at 1x and 2x
 `make spike`| Platform checks S1 to S9; prints PASS, FAIL or MANUAL with instructions
@@ -1944,7 +1946,7 @@ Local-only macOS work log. docs/SPEC.md is the source of truth; read the relevan
 - make test        core, ingest and MCP tests (also run on Linux)
 - make check       the gate before every push: build, tests, proof vectors, guard; on macOS also app, entitlements, snapshots
 - make app         build/Cadence.app, ad-hoc signed
-- make run         the app against build/dev-home, never the real store
+- make run         the app against a dev home in its sandbox container, never the real store
 - make install     ~/Applications/Cadence.app and ~/.local/bin/cadence
 - make spike       platform checks S1 to S9
 

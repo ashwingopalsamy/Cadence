@@ -44,6 +44,28 @@ if let resources = Bundle.main.resourceURL {
     CadenceType.registerFonts(in: resources.appendingPathComponent("Fonts"))
 }
 
+// The store the app reads. Inside the sandbox `NSHomeDirectory()` is the container, so the real home comes from
+// the password database (docs/SPEC.md section 8.3). `CADENCE_HOME`, when set, is the store: a folder the sandbox
+// denies shows the error state, and nothing falls back to the real store.
+let storeLocation = StoreLocation.resolve(
+    environment: ProcessInfo.processInfo.environment, realHome: StoreLocation.realHome())
+let dayModel = DayModel(loader: DayStoreLoader(location: storeLocation, clock: SystemClock()))
+
+// The observer's first check is the initial load, and each write after it reloads the day: a store-changed
+// notification wakes it, with `PRAGMA data_version` polling as the fallback (docs/SPEC.md sections 8.2 and 8.7).
+// The Pocket tells it when it is on screen with `setVisible`, which moves the poll from 30 s to 2 s.
+let storeObserver: StoreObserver?
+if let databasePath = storeLocation.databasePath {
+    storeObserver = StoreObserver(
+        source: StoreVersionProbe(path: databasePath), clock: SystemClock(),
+        onChange: { Task { @MainActor in dayModel.reload() } })
+    storeObserver?.start()
+} else {
+    // No place to watch; the one read shows why.
+    storeObserver = nil
+    dayModel.reload()
+}
+
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 app.run()

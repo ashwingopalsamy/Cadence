@@ -10,9 +10,12 @@ PYTHON       ?= python3
 UNAME        := $(shell uname -s)
 CONFIG       ?= debug
 BUILD_DIR    := build
-DEV_HOME     := $(abspath $(BUILD_DIR)/dev-home)
 DEMO_HOME    := $(abspath $(BUILD_DIR)/demo-home)
 BUNDLE_PREFIX ?= in.ashwingopalsamy.cadence
+# The sandbox denies a folder in build/, so `make run` keeps its dev home inside the app's own container, where the
+# app may read and write (docs/SPEC.md section 14.4). The app creates the container on first launch; nothing here
+# writes to it. A CLI seeding the dev home needs the same CADENCE_HOME.
+DEV_HOME     := $(HOME)/Library/Containers/$(BUNDLE_PREFIX)/Data/Library/Application Support/Cadence-dev
 PROOF_DIR    := Tests/Vectors/proofs
 
 ifeq ($(UNAME),Darwin)
@@ -118,7 +121,7 @@ uninstall:
 
 
 run: app
-	@mkdir -p "$(DEV_HOME)"
+	@echo "run: dev home is $(DEV_HOME)"
 	@if [ -d $(BUILD_DIR)/Cadence.app ]; then CADENCE_HOME="$(DEV_HOME)" $(BUILD_DIR)/Cadence.app/Contents/MacOS/Cadence; \
 	else echo "SKIP run: build the app first with make app (T3.2)"; fi
 

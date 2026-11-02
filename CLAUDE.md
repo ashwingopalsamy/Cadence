@@ -15,7 +15,7 @@ Local-only macOS work log. docs/SPEC.md is the source of truth; read the relevan
 - make test        core, ingest and MCP tests (also run on Linux)
 - make check       the gate before every push: build, tests, proof vectors, guard; on macOS also app, entitlements, snapshots
 - make app         build/Cadence.app, ad-hoc signed
-- make run         the app against build/dev-home, never the real store
+- make run         the app against a dev home in its sandbox container, never the real store
 - make install     ~/Applications/Cadence.app and ~/.local/bin/cadence
 - make spike       platform checks S1 to S9
 - make guard       forbidden terms, data files and secrets; installs the git hooks

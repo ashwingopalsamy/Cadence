@@ -79,6 +79,12 @@ public final class SQLiteDatabase {
     private var transactionDepth = 0
     private var outerKind: TransactionKind = .deferred
 
+    /// Runs once after an outermost transaction that changed rows has committed, and never for a rollback,
+    /// a failed commit, a nested savepoint or a read. It is the single commit point of the store, so the
+    /// store-changed notification (docs/SPEC.md section 8.2) is posted from here and nowhere else. It runs
+    /// after the write lock is released, so a listener woken by it can read at once.
+    public var afterCommit: (@Sendable () -> Void)?
+
     /// Opens (and for read-write, creates) the database at `path`.
     public init(path: String, readOnly: Bool = false, busyTimeoutMilliseconds: Int32 = 3000) throws(SQLiteError) {
         self.path = path
@@ -243,18 +249,25 @@ public final class SQLiteDatabase {
         transactionDepth = 1
         outerKind = kind
         defer { transactionDepth = 0 }
+        // Rows inserted, updated or deleted so far on this connection, triggers included. A read, or a write
+        // that changed nothing (an idempotent no-op), leaves it as it was and tells nobody.
+        let changesBefore = sqlite3_total_changes(handle)
+        let result: T
         do {
-            let result = try body()
+            result = try body()
             // SQLite can roll a transaction back on its own (disk full, interrupt); never pretend to commit.
             guard sqlite3_get_autocommit(handle) == 0 else {
                 throw SQLiteError(code: SQLITE_ABORT, message: "the transaction was rolled back by SQLite")
             }
             try execute("COMMIT")
-            return result
         } catch {
             try? execute("ROLLBACK")
             throw error
         }
+        // The commit is complete: a listener that opens a transaction of its own starts clean.
+        transactionDepth = 0
+        if sqlite3_total_changes(handle) != changesBefore { afterCommit?() }
+        return result
     }
 
     public var isInTransaction: Bool { transactionDepth > 0 }
