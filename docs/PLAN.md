@@ -150,7 +150,7 @@ Every task has a tier. The tier is a floor, not a ceiling: on any doubt, move a 
 | [x] T3.1 | Run spikes S1 to S8 and record the results; the planner picks the fallbacks | planner | §8.7 | `SPIKES.md` is complete |
 | [x] T3.2 ★ | App shell: accessory app, single instance, `bundle.sh`, Info.plist, entitlements, inside-out ad-hoc signing, `make app`, `install`, `uninstall` | planner | §8.3, §14.3 | Entitlement and symbol check passes; installs without admin |
 | [x] T3.3 | Design tokens in Swift: colours for both themes, type, spacing, motion, the SF Symbols map | builder | §6 | Snapshot of the token sheet |
-| [ ] T3.4 | Status item and dot renderer: template image, all 11 states, arc fraction, animations, VoiceOver strings | builder | §4.1, §5.7 | Snapshots of every state; VoiceOver labels tested |
+| [x] T3.4 | Status item and dot renderer: template image, all 11 states, arc fraction, animations, VoiceOver strings | builder | §4.1, §5.7 | Snapshots of every state; VoiceOver labels tested |
 | [x] T3.5 | Store observer: Darwin notification with `PRAGMA data_version` polling as fallback; view models | builder | §8.2 | A CLI write updates the UI within 1 s |
 | [ ] T3.6 | DayRing component: segments, top gap, family beads with shapes, sealed hairline, centre | builder | §5.2 | Snapshots match the spec ring |
 | [ ] T3.7 | Pocket: non-activating panel, glass, contents, keyboard, Esc | builder | §4.2 | Opens in under 100 ms |
