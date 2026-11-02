@@ -44,6 +44,29 @@ public enum CadenceMotion {
     public static let valueOut = MotionToken(name: "value out", usedFor: "Number leaving", duration: valueChangeOut)
     public static let valueIn = MotionToken(name: "value in", usedFor: "Number arriving", duration: valueChangeIn)
 
+    /// The ease curve at `t` in 0...1, for motion drawn frame by frame. Solves the bezier's x for t, then reads its y.
+    public static func easeProgress(_ t: Double) -> Double {
+        guard t > 0 else { return 0 }
+        guard t < 1 else { return 1 }
+        func axis(_ u: Double, _ a: Double, _ b: Double) -> Double {
+            3 * (1 - u) * (1 - u) * u * a + 3 * (1 - u) * u * u * b + u * u * u
+        }
+        var (low, high) = (0.0, 1.0)
+        for _ in 0..<24 {
+            let middle = (low + high) / 2
+            if axis(middle, ease.x1, ease.x2) < t { low = middle } else { high = middle }
+        }
+        return axis((low + high) / 2, ease.y1, ease.y2)
+    }
+
+    /// The spring token at `elapsed` seconds, for motion drawn frame by frame. It passes 1 once and settles on it.
+    public static func springProgress(elapsed: TimeInterval) -> Double {
+        let natural = 2 * Double.pi / springResponse
+        let damped = natural * (1 - springDamping * springDamping).squareRoot()
+        let decay = exp(-springDamping * natural * elapsed)
+        return 1 - decay * (cos(damped * elapsed) + springDamping * natural / damped * sin(damped * elapsed))
+    }
+
     /// The animation to use, or nil under Reduce Motion.
     public static func resolved(_ animation: Animation, reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : animation

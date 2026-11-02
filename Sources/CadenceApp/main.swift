@@ -68,4 +68,17 @@ if let databasePath = storeLocation.databasePath {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
+let statusItem = StatusItemController(model: dayModel)
+
+// Nothing writes at the day boundary, so the dot also rereads on a slow timer and when the Mac wakes.
+let dayRefresh = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+    Task { @MainActor in dayModel.reload() }
+}
+dayRefresh.tolerance = 60
+let wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+    forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+) { _ in
+    Task { @MainActor in dayModel.reload() }
+}
+
 app.run()

@@ -1,12 +1,12 @@
 // Developer tool: shows the token sheet in one theme and captures the window with screencapture.
-// Usage: CadenceTokenSheet light|dark <output.png>
+// Usage: CadenceTokenSheet light|dark <output.png> [dots]
 import AppKit
 import CadenceUI
 import SwiftUI
 
 let arguments = CommandLine.arguments
-guard arguments.count == 3, ["light", "dark"].contains(arguments[1]) else {
-    FileHandle.standardError.write(Data("usage: CadenceTokenSheet light|dark <output.png>\n".utf8))
+guard (3...4).contains(arguments.count), ["light", "dark"].contains(arguments[1]) else {
+    FileHandle.standardError.write(Data("usage: CadenceTokenSheet light|dark <output.png> [dots]\n".utf8))
     exit(2)
 }
 
@@ -19,7 +19,12 @@ guard CadenceType.registerFonts(in: URL(fileURLWithPath: "App/Resources/Fonts"))
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
 
-let hosting = NSHostingView(rootView: TokenSheet())
+@MainActor func host(_ view: some View & Sendable) -> NSView {
+    let hosting = NSHostingView(rootView: view)
+    hosting.safeAreaRegions = []
+    return hosting
+}
+let hosting = arguments.count == 4 ? host(DotSheet()) : host(TokenSheet())
 let window = NSWindow(contentRect: .zero, styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
 window.titlebarAppearsTransparent = true
 window.titleVisibility = .hidden
@@ -44,7 +49,18 @@ _ = Task { @MainActor in
         capture.waitUntilExit()
         status = capture.terminationStatus
     }
-    print("\(arguments[2]) \(Int(window.frame.width))x\(Int(window.frame.height)) status \(status)")
+    // A locked Mac has no window to capture, so the view is drawn offscreen and the output says so.
+    var how = "screencapture"
+    if status != 0, let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        if let png = bitmap.representation(using: .png, properties: [:]),
+            (try? png.write(to: URL(fileURLWithPath: arguments[2]))) != nil
+        {
+            how = "offscreen"
+            status = 0
+        }
+    }
+    print("\(arguments[2]) \(Int(window.frame.width))x\(Int(window.frame.height)) \(how) status \(status)")
     exit(status)
 }
 

@@ -158,14 +158,16 @@ snapshots-check:
 
 endif
 
-# Renders the design tokens in both themes (T3.3). Not part of make check: it opens a window.
+# Renders the design tokens and the dot states in both themes. Not part of make check: it opens a window.
 token-sheet:
 	@if [ -z "$(IS_MAC)" ]; then echo "SKIP token-sheet: needs macOS"; exit 0; fi; \
 	$(SWIFT) build -c $(CONFIG) --product CadenceTokenSheet; \
 	bin="$$($(SWIFT) build -c $(CONFIG) --show-bin-path)/CadenceTokenSheet"; \
 	mkdir -p docs/snapshots; \
 	"$$bin" light docs/snapshots/token-sheet-light.png; \
-	"$$bin" dark docs/snapshots/token-sheet-dark.png
+	"$$bin" dark docs/snapshots/token-sheet-dark.png; \
+	"$$bin" light docs/snapshots/dot-states-light.png dots; \
+	"$$bin" dark docs/snapshots/dot-states-dark.png dots
 
 spike:
 	bash tools/spike/run.sh
