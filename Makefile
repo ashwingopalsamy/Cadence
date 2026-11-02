@@ -167,7 +167,9 @@ token-sheet:
 	"$$bin" light docs/snapshots/token-sheet-light.png; \
 	"$$bin" dark docs/snapshots/token-sheet-dark.png; \
 	"$$bin" light docs/snapshots/dot-states-light.png dots; \
-	"$$bin" dark docs/snapshots/dot-states-dark.png dots
+	"$$bin" dark docs/snapshots/dot-states-dark.png dots; \
+	"$$bin" light docs/snapshots/day-ring-light.png ring; \
+	"$$bin" dark docs/snapshots/day-ring-dark.png ring
 
 spike:
 	bash tools/spike/run.sh

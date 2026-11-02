@@ -1,12 +1,12 @@
 // Developer tool: shows the token sheet in one theme and captures the window with screencapture.
-// Usage: CadenceTokenSheet light|dark <output.png> [dots]
+// Usage: CadenceTokenSheet light|dark <output.png> [dots|ring]
 import AppKit
 import CadenceUI
 import SwiftUI
 
 let arguments = CommandLine.arguments
 guard (3...4).contains(arguments.count), ["light", "dark"].contains(arguments[1]) else {
-    FileHandle.standardError.write(Data("usage: CadenceTokenSheet light|dark <output.png> [dots]\n".utf8))
+    FileHandle.standardError.write(Data("usage: CadenceTokenSheet light|dark <output.png> [dots|ring]\n".utf8))
     exit(2)
 }
 
@@ -24,7 +24,8 @@ app.setActivationPolicy(.regular)
     hosting.safeAreaRegions = []
     return hosting
 }
-let hosting = arguments.count == 4 ? host(DotSheet()) : host(TokenSheet())
+let sheet = arguments.count == 4 ? arguments[3] : "tokens"
+let hosting = sheet == "dots" ? host(DotSheet()) : sheet == "ring" ? host(RingSheet()) : host(TokenSheet())
 let window = NSWindow(contentRect: .zero, styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
 window.titlebarAppearsTransparent = true
 window.titleVisibility = .hidden
