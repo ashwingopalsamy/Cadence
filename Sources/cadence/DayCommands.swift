@@ -61,7 +61,8 @@ struct DayHistory: ParsableCommand {
             let journal = try context.openJournal()
             let day = requested ?? journal.today()
             let items = try journal.dayHistory(day)
-            let zone = journal.zone
+            // Each time in the zone the day was recorded in, which travel can make differ from the profile zone.
+            let zone = TimeZone(identifier: try journal.dayView(day).day.tz) ?? journal.zone
             var lines = ["\(day)"]
             var seen = false
             var json: [JSONValue] = []

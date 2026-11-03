@@ -14,7 +14,7 @@ public struct PlanTask: Sendable, Equatable, JSONRepresentable {
     public var linkedEntries: [String]
     public var plannedAt: String
     public var resolvedAt: String?
-    /// True when the task was added after its day's first seal (docs/SPEC.md section 3). Read from the order of the
+    /// True when the task was added after its day's current seal (docs/SPEC.md section 3). Read from the order of the
     /// ledger, never stored and never part of a payload: `json` leaves it out, `viewJSON` adds it.
     public var afterSeal: Bool
 

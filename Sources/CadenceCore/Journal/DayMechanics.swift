@@ -215,11 +215,20 @@ extension Journal {
         return items
     }
 
+    /// When the seal that stood at `reference` was made, read from the day's events: nil when the day was not sealed
+    /// then, or had been reopened since its last seal. The same reading as `dayHistory`, stopped at `reference`.
+    func sealInForce(_ date: LocalDate, at reference: Date) throws(CadenceError) -> Date? {
+        guard let last = try dayHistory(date).last(where: { $0.at <= reference }), last.kind == .sealed else { return nil }
+        return last.at
+    }
+
     // MARK: - Streak
 
     /// Consecutive workdays that are sealed, as of `asOf` (default today). One query for the days, one for
-    /// the declarations, then a pure walk (`DayRules.streak`). A day counts when it is sealed now and the seal had
-    /// been made by the end of `asOf`; a reopened day does not count until it is sealed again.
+    /// the declarations, then a pure walk (`DayRules.streak`). A day counts when it was sealed at the end of `asOf`.
+    /// For a day that was never reopened that is its seal, if made by then. A day that was reopened is read from its
+    /// events instead (`sealInForce`), so one sealed on the 1st and sealed again on the 20th still counts as of the
+    /// 5th, and one reopened on the 8th reads as open from then until it is sealed again.
     public func streak(asOf: LocalDate? = nil) throws(CadenceError) -> Streak {
         let today = self.today()
         let asOf = asOf ?? today
@@ -230,12 +239,20 @@ extension Journal {
             ? clock.now() : Timestamp.resolve(asOf.adding(days: 1), hour: 0, minute: 0, in: zone).addingTimeInterval(-0.001)
         // The walk starts on the day the ledger began, as summary and proof do; earlier days never count.
         guard let first = try ledgerStart() else { return Streak() }
+        var reopened = Set<String>()
+        for row in try rows("SELECT DISTINCT subject FROM events WHERE type = 'day.reopened'") {
+            if let subject = row.text("subject"), subject.hasPrefix("day:") { reopened.insert(String(subject.dropFirst(4))) }
+        }
         var sealed: DayRules.SealedDays = [:]
         for row in try rows("SELECT date, tz, sealed_at FROM days ORDER BY date") {
-            guard let date = row.text("date").flatMap({ LocalDate($0) }), date >= first else { continue }
-            if let at = row.text("sealed_at").flatMap({ Timestamp.parse($0) }), at <= reference {
-                sealed[date] = (at, row.text("tz").flatMap { TimeZone(identifier: $0) } ?? zone)
+            guard let key = row.text("date"), let date = LocalDate(key), date >= first else { continue }
+            let at: Date?
+            if reopened.contains(key) {
+                at = try sealInForce(date, at: reference)
+            } else {
+                at = row.text("sealed_at").flatMap { Timestamp.parse($0) }.flatMap { $0 <= reference ? $0 : nil }
             }
+            if let at { sealed[date] = (at, row.text("tz").flatMap { TimeZone(identifier: $0) } ?? zone) }
         }
         return DayRules(config: config).streak(
             sealed: sealed, declared: try declaredKinds(), first: first, asOf: asOf, now: reference, zone: zone)

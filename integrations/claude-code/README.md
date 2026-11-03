@@ -41,7 +41,7 @@ To do it by hand instead: register the server with the `claude mcp add` command 
 
 ## What Claude Code can and cannot do
 
-Claude Code can log, plan and read. The MCP server has no tool that accepts proposals, seals a day, deletes anything or edits presence (docs/SPEC.md section 9.2). The skill also tells Claude Code not to try those through the CLI. Entries for past days and everything from `log_entries` wait in your Inbox as proposals. `declare_day` never replaces a holiday or leave that you or a collector declared, and `plan_update` does not resolve a task that is already resolved.
+Claude Code can log, plan and read. The MCP server has no tool that accepts proposals, seals or reopens a day, deletes anything or edits presence (docs/SPEC.md section 9.2). The skill also tells Claude Code not to try those through the CLI. Entries for past days and everything from `log_entries` wait in your Inbox as proposals. `declare_day` never replaces a holiday or leave that you or a collector declared, and `plan_update` does not resolve a task that is already resolved.
 
 ## Notes
 

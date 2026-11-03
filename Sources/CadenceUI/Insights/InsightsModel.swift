@@ -164,8 +164,8 @@ public struct InsightsStoreLoader: InsightsLoading {
         }
     }
 
-    /// Each day of the range as the calendar shows it, by the rules the summary counts with: a workday sealed within its
-    /// grace window is sealed, one whose window closed without a seal is not, one still inside it is open.
+    /// Each day of the range as the calendar shows it, by the rules the summary counts with: a workday that is sealed,
+    /// whenever the seal was made, is sealed; one whose window closed without a seal is not; one still inside it is open.
     static func days(
         _ journal: Journal, from: LocalDate, to: LocalDate, beforeLedger: Int, now: Date
     ) throws(CadenceError) -> [ConsistencyFigures.Day] {

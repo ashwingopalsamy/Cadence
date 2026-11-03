@@ -96,6 +96,34 @@ import Testing
         #expect(human.stdout == "No wrap-up history for \(today).\n")
     }
 
+    @Test func historyShowsEachTimeInTheZoneTheDayWasRecordedIn() throws {
+        defer { cli.remove() }
+        try cli.run(["config", "set", "profile.timezone", "Asia/Kolkata"])
+        let day = try cli.today().adding(days: -1).description
+        try cli.run(["log", "Fixed the flaky test", "--date", day])
+        try cli.run(["day", "seal", "--date", day])
+        try cli.run(["day", "reopen", "--date", day])
+        try cli.run(["day", "seal", "--date", day])
+        // The profile zone moves on; the day keeps the zone it was recorded in.
+        try cli.run(["config", "set", "profile.timezone", "Pacific/Auckland"])
+
+        let items = try #require(try cli.json(["day", "history", "--date", day])["history"]?.arrayValue)
+        let times = items.compactMap { $0["at"]?.stringValue }
+        #expect(items.compactMap { $0["kind"]?.stringValue } == ["sealed", "reopened", "sealed"])
+        #expect(times.count == 3 && times.allSatisfy { $0.hasSuffix("+05:30") })
+
+        let auckland = try #require(TimeZone(identifier: "Pacific/Auckland"))
+        let lines = try cli.run(["day", "history", "--date", day]).stdout.split(separator: "\n").map(String.init)
+        #expect(lines.count == 4 && lines[0] == day)
+        let prefixes = ["Sealed ", "Reopened ", "Sealed again "]
+        for (line, (prefix, time)) in zip(lines.dropFirst(), zip(prefixes, times)) {
+            #expect(line == prefix + Format.clock(time))
+            // Not the clock of the profile zone it was shown in before.
+            let instant = try #require(Timestamp.parse(time))
+            #expect(Format.clock(Timestamp.local(instant, in: auckland)) != Format.clock(time))
+        }
+    }
+
     @Test func aSealMadeLongAfterTheGraceWindowStillCounts() throws {
         defer { cli.remove() }
         let today = try cli.today()

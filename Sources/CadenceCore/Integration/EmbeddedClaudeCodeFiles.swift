@@ -25,7 +25,7 @@ description: Log work to Cadence, the user's local work log. Use when the user f
 - One entry per outcome. Ask before logging more than five in a session.
 - For a pasted transcript: call log_entries with dry_run true, show the table, then call again with dry_run false. Entries go to the user's Inbox.
 - Never invent times, tickets or counts. If the date is unclear, ask.
-- Accepting, sealing, deleting and presence belong to the user. Do not try them through the CLI either.
+- Accepting, sealing, reopening a day, deleting and presence belong to the user. Do not try them through the CLI either.
 
 """#
 }

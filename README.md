@@ -89,7 +89,7 @@ cadence export proof --from 2026-10-01 --to 2026-10-31 -o acme.cadence-proof.jso
 
 ## Claude Code integration
 
-Claude Code can log, plan and read your day. It cannot accept its own proposals, seal a day, delete, change config or touch presence. (docs/SPEC.md sections 9 and 9.4)
+Claude Code can log, plan and read your day. It cannot accept its own proposals, seal or reopen a day, delete, change config or touch presence. (docs/SPEC.md sections 9 and 9.4)
 
 - **MCP server.** `cadence mcp` lets Claude Code log entries, plan and read over stdio. It has no listener of any kind. Register it with the `claude mcp add` command above. (docs/SPEC.md sections 1, 9.1 and 9.2)
 - **Hooks.** SessionStart and SessionEnd hooks append one line to Cadence's spool in a few milliseconds and exit. Tokens arrive later from the transcripts collector. The hooks block is merged into `~/.claude/settings.json` by `cadence setup claude-code --apply`. (docs/SPEC.md sections 3, 9.1 and 9.3)

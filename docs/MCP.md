@@ -4,7 +4,7 @@
 
 This page converts docs/SPEC.md sections 9.2 and 9.3. If the two disagree, the spec wins.
 
-Claude Code gets your powers minus the ones that would make the log less honest. It can log, plan and read. It cannot accept its own proposals, seal a day, delete, change config or touch presence. (docs/SPEC.md section 9)
+Claude Code gets your powers minus the ones that would make the log less honest. It can log, plan and read. It cannot accept its own proposals, seal or reopen a day, delete, change config or touch presence. (docs/SPEC.md section 9)
 
 ## Protocol revisions (docs/SPEC.md section 9.2)
 

@@ -6,7 +6,7 @@ import SwiftUI
 
 public struct ConsistencyFigures: ChartFigures {
     public enum State: Sendable, Equatable {
-        /// Sealed within its grace window.
+        /// Sealed, whenever the seal was made.
         case sealed
         /// Its grace window closed without a seal: the gap.
         case notSealed

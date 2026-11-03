@@ -203,10 +203,10 @@ On 2026-11-02 The Coach design was approved and replaced SPEC §4 to §6. T3.3, 
 | [x] T4.14 | Soak: a scripted multi-day run with an injected clock across boundaries, sleep, a time-zone change and thousands of CLI writes | builder | §3, §8 | No crash, no drift; projections still rebuild byte for byte |
 | [x] T4.15 | Budgets measured against a 12-month demo store: panel under 100 ms, idle CPU, memory | builder | §8.6 | Every budget met |
 | [x] T4.10 | Phase 4 audit and accessibility pass: VoiceOver, Reduce Motion, contrast, keyboard | auditor | §5, §6.7 | No open gaps |
-| [ ] T4.16 | Keyboard focus rings on the Today, Recap and Log views | builder | §6.7 | UI tests and snapshots |
-| [ ] T4.17 | App icon in the bundle: `scripts/bundle.sh` and `App/` | builder | §6.7 | `make app` builds the bundle with the icon |
-| [ ] T4.18 ★ | Reopen a sealed day and seal it again with history: `day.reopened`, any seal counts for the streak, summary and proof, `cadence day reopen` and `history` | planner | §3, §7.3, §12 | Reopen and reseal tested; projections rebuild byte for byte; proof vector passes the verifier |
-| [ ] T4.19 | Reopen in the app: a Reopen action on a sealed day and its history ("Sealed 13:15, reopened 14:02, sealed again 15:30") | builder | §3, §4.6 | UI tests and snapshots |
+| [x] T4.16 | Focus rings only on the focused control, and the 1:1 date opens a calendar popover | designer | §6.7 | No ring without keyboard focus; arrows still step days |
+| [ ] T4.17 | Log a review or merge by hand: a kind chip in the log fields, and links shown and clickable | builder | §4.2, §4.6 | Parser, link edit and UI tests |
+| [ ] T4.18 ★ | Reopen a sealed day and seal it again, with history, in the ledger, CLI and app | planner | §3, §7.3, §12 | Reopen and reseal tested; projections rebuild byte for byte; proof vectors pass |
+| [x] T4.19 | App icon from App/Cadence.icon, compiled by actool in the bundle script | mechanic | §14.4 | `make app` shows the icon |
 
 ## Phase 5 · Open-source ready · v1.0
 

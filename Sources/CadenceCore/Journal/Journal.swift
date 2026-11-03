@@ -301,7 +301,7 @@ public final class Journal {
             let task = PlanTask(
                 id: self.ids.next(), day: day.description, position: highest + 1, title: cleaned, ticket: ticket,
                 estimateMin: estimateMin, origin: origin, plannedAt: plannedAt,
-                // Added to a day that already has its first seal: after the wrap-up, as an entry would be.
+                // Added to a day that already has its current seal: after the wrap-up, as an entry would be.
                 afterSeal: try self.isSealed(day.description))
             try self.append([EventPayload.planAdded(task).draft(actor: actor)])
             return task

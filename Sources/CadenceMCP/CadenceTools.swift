@@ -2,9 +2,9 @@ import CadenceCore
 import Foundation
 
 /// The nine tools (docs/SPEC.md section 9.2), in the order `tools/list` returns them. Claude Code can log,
-/// plan and read; it cannot accept its own proposals, seal a day, delete, change config or touch presence, so
-/// no tool does any of that. Every write goes through the same `Journal` functions the CLI uses, with actor
-/// `mcp` and origin `agent`.
+/// plan and read; it cannot accept its own proposals, seal or reopen a day, delete, change config or touch
+/// presence, so no tool does any of that. Every write goes through the same `Journal` functions the CLI uses,
+/// with actor `mcp` and origin `agent`.
 extension CadenceMCP {
     public static let toolNames = [
         "log_entry", "log_entries", "plan_add", "plan_update", "declare_day", "get_day", "query", "summary", "standup",
