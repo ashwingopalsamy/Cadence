@@ -86,7 +86,7 @@ def verify(p):
     body = {k: v for k, v in p.items() if k != "export_digest"}
     if sha(body) != p.get("export_digest"):
         fails.append("export_digest does not match the file: it was edited after export")
-    prev, last_at, by_hash, by_subject, by_code = "0" * 64, "", {}, {}, {}
+    prev, last_at, by_hash, by_subject, by_code, current = "0" * 64, "", {}, {}, {}, {}
     for i, e in enumerate(p["chain"]["events"], start=1):
         tag = "event %s" % e.get("seq")
         if e["seq"] != i:
@@ -103,12 +103,18 @@ def verify(p):
         by_hash[e["hash"]] = e
         by_subject.setdefault(e["subject"], []).append(e)
         by_code.setdefault(e["hash"][:16], []).append(e)
+        # A day's current seal is its first day.sealed after its last day.reopened.
+        if e["type"] == "day.sealed" and current.get(e["subject"]) is None:
+            current[e["subject"]] = e["seq"]
+        elif e["type"] == "day.reopened":
+            current[e["subject"]] = None
     lo, hi = p["range"]["from"], p["range"]["to"]
     counts = {"merged_prs": 0, "reviews": 0}
     for d in p["days"]:
         date = d["date"]
         if not lo <= date <= hi:
             fails.append("%s: day is outside the range" % date)
+        cur = current.get("day:" + date)
         if d.get("seal_ev") or d.get("sealed_at"):
             s = by_hash.get(d.get("seal_ev"))
             if s is None:
@@ -117,6 +123,10 @@ def verify(p):
                 fails.append("%s: seal_ev is not this day's seal" % date)
             elif not d.get("sealed_at") or instant(d["sealed_at"]) != instant(s["at"]):
                 fails.append("%s: sealed_at does not match the seal event" % date)
+            elif s["seq"] != cur:
+                fails.append("%s: seal_ev is not this day's current seal" % date)
+        elif cur is not None:
+            fails.append("%s: the day's seal is hidden" % date)
         for it in d["items"]:
             check_item(it, date, by_hash, by_subject, fails)
             if it["kind"] == "pr.merged" and it["origin"] == "collected":

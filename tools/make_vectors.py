@@ -424,6 +424,12 @@ def main(argv):
     t = copy.deepcopy(reopened)
     t["days"][0]["sealed_at"] = "2026-10-01T17:24:10+05:30"
     files["proofs/tampered-reopen-sealed-at.json"] = redigest(t)
+    # The day cites its first seal and that seal's time, both true of the chain, but the reopening superseded it.
+    t = copy.deepcopy(reopened)
+    first_seal = next(e for e in t["chain"]["events"] if e["type"] == "day.sealed")
+    t["days"][0]["seal_ev"] = first_seal["hash"]
+    t["days"][0]["sealed_at"] = "2026-10-01T17:24:10+05:30"
+    files["proofs/tampered-reopen-superseded-seal.json"] = redigest(t)
     files["c14n.json"] = c14n_vectors()
     files["chains/basic.json"] = chain_vectors()
     stale = []

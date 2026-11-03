@@ -61,6 +61,8 @@ The file carries these steps in its `how_to_verify` field.
 5. This file is tamper-evident, not tamper-proof: its owner could have rebuilt the whole chain before the first witness. Witnesses narrow that window. `export_digest` catches accidental edits only, since anyone can recompute it.
 6. Private notes and items marked private are in the chain as hashes only. The summary counts them as `private_events`. Hash-only events still show their type, subject and recorded time.
 
+The verifier also requires that a day's `seal_ev` is that day's current seal, the first `day.sealed` after its last `day.reopened`, read from the chain's event types and subjects, which hash-only events keep. A day that cites a seal a reopening superseded fails, and so does a day with a current seal that shows none.
+
 From the CLI (docs/SPEC.md section 9.5):
 
 - `cadence export proof --from --to [-o FILE]` writes a proof file.
@@ -70,7 +72,7 @@ From the CLI (docs/SPEC.md section 9.5):
 
 `tools/verify_proof.py` is the verifier. It is about 130 lines of Python 3 that use only the standard library. Each proof file embeds the same script as `verifier_py`, so a file can be checked without this repository. The repository tests the script against a valid and a tampered proof vector (docs/SPEC.md section 14.6).
 
-It recomputes the export digest, the sequence and links of each event, each payload digest and event hash, every item against its events, every seal, the merged PR and review counts, and every witness. It warns when recorded times go backwards.
+It recomputes the export digest, the sequence and links of each event, each payload digest and event hash, every item against its events, every seal (the cited event must be the day's current seal), the merged PR and review counts, and every witness. It warns when recorded times go backwards.
 
 From a checkout of the repository:
 

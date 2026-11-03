@@ -131,6 +131,7 @@ public enum ProofVerifier {
         var byHash: [JSONValue: Event] = [:]
         var bySubject: [JSONValue: [Event]] = [:]
         var byCode: [JSONValue: [Event]] = [:]
+        var current: [String: JSONValue] = [:]  // "day:DATE" -> seq of its first day.sealed after its last day.reopened
         for (n, ev) in try iter(get(get(p, "chain"), "events")).enumerated() {
             guard case .object(let e) = ev else { throw Unreadable(kind: "AttributeError", message: "event is not an object") }
             let tag = "event " + str(e["seq"] ?? .null)
@@ -151,6 +152,13 @@ public enum ProofVerifier {
             byHash[.string(hash)] = e
             bySubject[subject, default: []].append(e)
             byCode[.string(try prefix16(.string(hash))), default: []].append(e)
+            if case .string(let day) = subject {
+                if eq(e["type"] ?? .null, "day.sealed") {
+                    if isNone(current[day]) { current[day] = try get(ev, "seq") }
+                } else if eq(e["type"] ?? .null, "day.reopened") {
+                    current[day] = nil
+                }
+            }
         }
         let range = try get(p, "range")
         let lo = try get(range, "from"), hi = try get(range, "to")
@@ -159,21 +167,22 @@ public enum ProofVerifier {
             let date = try get(d, "date")
             let inside = try le(lo, date) ? le(date, hi) : false
             if !inside { fails.append("\(str(date)): day is outside the range") }
+            guard case .string(let dateText) = date else { throw Unreadable(kind: "TypeError", message: "can only concatenate str to str") }
+            let cur = current["day:" + dateText] ?? .null
             if truthy(d["seal_ev"]) || truthy(d["sealed_at"]) {
                 if let s = byHash[try hashable(d["seal_ev"] ?? .null)] {
-                    var bad = !eq(s["type"] ?? .null, "day.sealed")
-                    if !bad {
-                        guard case .string(let ds) = date else { throw Unreadable(kind: "TypeError", message: "can only concatenate str to str") }
-                        bad = !eq(s["subject"] ?? .null, .string("day:" + ds))
-                    }
-                    if bad {
-                        fails.append("\(str(date)): seal_ev is not this day's seal")
+                    if !eq(s["type"] ?? .null, "day.sealed") || !eq(s["subject"] ?? .null, .string("day:" + dateText)) {
+                        fails.append("\(dateText): seal_ev is not this day's seal")
                     } else if try !sealedAtMatches(d, s) {
-                        fails.append("\(str(date)): sealed_at does not match the seal event")
+                        fails.append("\(dateText): sealed_at does not match the seal event")
+                    } else if !eq(s["seq"] ?? .null, cur) {
+                        fails.append("\(dateText): seal_ev is not this day's current seal")
                     }
                 } else {
-                    fails.append("\(str(date)): references an event that is not in the chain")
+                    fails.append("\(dateText): references an event that is not in the chain")
                 }
+            } else if !isNone(cur) {
+                fails.append("\(dateText): the day's seal is hidden")
             }
             for it in try iter(get(d, "items")) {
                 try checkItem(it, date, byHash, bySubject, &fails)
@@ -312,6 +321,12 @@ public enum ProofVerifier {
         case .array: "list"
         case .object: "dict"
         }
+    }
+
+    /// Python `v is None`, for a dictionary lookup that may be missing.
+    private static func isNone(_ v: JSONValue?) -> Bool {
+        if case .null? = v { return true }
+        return v == nil
     }
 
     private static func truthy(_ v: JSONValue?) -> Bool {
