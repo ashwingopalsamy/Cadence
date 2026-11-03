@@ -204,8 +204,8 @@ On 2026-11-02 The Coach design was approved and replaced SPEC §4 to §6. T3.3, 
 | [x] T4.15 | Budgets measured against a 12-month demo store: panel under 100 ms, idle CPU, memory | builder | §8.6 | Every budget met |
 | [x] T4.10 | Phase 4 audit and accessibility pass: VoiceOver, Reduce Motion, contrast, keyboard | auditor | §5, §6.7 | No open gaps |
 | [x] T4.16 | Focus rings only on the focused control, and the 1:1 date opens a calendar popover | designer | §6.7 | No ring without keyboard focus; arrows still step days |
-| [ ] T4.17 | Log a review or merge by hand: a kind chip in the log fields, and links shown and clickable | builder | §4.2, §4.6 | Parser, link edit and UI tests |
-| [ ] T4.18 ★ | Reopen a sealed day and seal it again, with history, in the ledger, CLI and app | planner | §3, §7.3, §12 | Reopen and reseal tested; projections rebuild byte for byte; proof vectors pass |
+| [x] T4.17 | Log a review or merge by hand: a kind chip in the log fields, and links shown and clickable | builder | §4.2, §4.6 | Parser, link edit and UI tests |
+| [x] T4.18 ★ | Reopen a sealed day and seal it again, with history, in the ledger, CLI and app | planner | §3, §7.3, §12 | Reopen and reseal tested; projections rebuild byte for byte; proof vectors pass |
 | [x] T4.19 | App icon from App/Cadence.icon, compiled by actool in the bundle script | mechanic | §14.4 | `make app` shows the icon |
 
 ## Phase 5 · Open-source ready · v1.0
