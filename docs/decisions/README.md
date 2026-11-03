@@ -198,3 +198,7 @@ Sections 5.4 and 5.5 give the recap sentences and two rules (no "best since", no
 - The narrower widths are recorded at 1x only; full width keeps 1x and 2x. The 23 states at three widths in two themes are 138 files at 1x and would be 276 at both scales, and a layout does not depend on pixel density.
 - File names follow the existing ones: `<state>-<width>-<light|dark>@1x.png`, with width `full`, `900`, `680` or `compact`. In rhythm at 680 and compact keep their names and lose their 2x pair.
 - T4.1's line in docs/PLAN.md already says "at three widths and compact", so it is unchanged.
+
+## Planner decisions for the app icon, T4.19 (2026-11-03)
+
+- The app icon is App/Cadence.icon, an Icon Composer document compiled by actool in scripts/bundle.sh into Assets.car and Cadence.icns.

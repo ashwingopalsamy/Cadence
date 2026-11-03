@@ -20,7 +20,6 @@ cp "$bin/CadenceApp" "$contents/MacOS/Cadence"
 cp "$bin/cadence" "$contents/Helpers/cadence"
 sed "s|@BUNDLE_ID@|$prefix|g" App/Info.plist > "$contents/Info.plist"
 sed -e "s|@BUNDLE_ID@|$prefix|g" -e "s|@JOBS_PATH@|$jobs_path|g" App/Agent.plist.in > "$agent_dir/$prefix.agent.plist"
-plutil -lint -s "$contents/Info.plist" "$agent_dir/$prefix.agent.plist"
 # rsync skips the .gitkeep placeholders, which would otherwise ship as sealed resources, and the String Catalog source,
 # which ships compiled instead.
 rsync -a --exclude '.*' --exclude '*.xcstrings' App/Resources/ "$contents/Resources/"
@@ -31,6 +30,19 @@ if xcrun --find xcstringstool >/dev/null 2>&1; then
 else
   echo "bundle: SKIP String Catalog: xcstringstool not found (it comes with Xcode); strings fall back to their English keys"
 fi
+
+if xcrun --find actool >/dev/null 2>&1; then
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  xcrun actool App/Cadence.icon --compile "$contents/Resources" --app-icon Cadence --platform macosx --minimum-deployment-target 26.0 --output-partial-info-plist "$tmp/icon-info.plist" --output-format human-readable-text --notices --warnings --errors
+  icon_name="$(plutil -extract CFBundleIconName raw -o - "$tmp/icon-info.plist")"
+  icon_file="$(plutil -extract CFBundleIconFile raw -o - "$tmp/icon-info.plist")"
+  plutil -replace CFBundleIconName -string "$icon_name" "$contents/Info.plist"
+  plutil -replace CFBundleIconFile -string "$icon_file" "$contents/Info.plist"
+else
+  echo "SKIP icon: actool needs Xcode"
+fi
+plutil -lint -s "$contents/Info.plist" "$agent_dir/$prefix.agent.plist"
 
 codesign --force --sign - --options runtime --identifier "$prefix.cadence" "$contents/Helpers/cadence"
 codesign --force --sign - --options runtime --entitlements App/Cadence.entitlements "$app"
