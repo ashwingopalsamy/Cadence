@@ -206,6 +206,7 @@ public struct LogScreen: View {
         return FlowLayout(spacing: CadenceSpace.s4) {
             Button(LogContent.all) { handlers.clearChips() }
                 .buttonStyle(FilterChipStyle(isOn: filter.family == nil && filter.origin == nil))
+                .focusEffectDisabled()
                 .accessibilityAddTraits(filter.family == nil && filter.origin == nil ? .isSelected : [])
             ForEach(LogFilter.families, id: \.self) { family in
                 let on = filter.family == family
@@ -218,6 +219,7 @@ public struct LogScreen: View {
                     }
                 }
                 .buttonStyle(FilterChipStyle(isOn: on))
+                .focusEffectDisabled()
                 .accessibilityLabel(EntryWords.family(family))
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
@@ -231,6 +233,7 @@ public struct LogScreen: View {
                 let on = filter.origin == origin
                 Button(EntryWords.originChip(origin)) { handlers.origin(on ? nil : origin) }
                     .buttonStyle(FilterChipStyle(isOn: on))
+                    .focusEffectDisabled()
                     .accessibilityAddTraits(on ? .isSelected : [])
             }
         }

@@ -14,8 +14,6 @@ public struct StoryView: View {
     @State private var copied = false
     @State private var width: CGFloat = 0
     @FocusState private var focused: Bool
-    /// The story takes focus quietly when it opens; once focus has left and come back, the ring shows.
-    @State private var focusReturned = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `discreet` hides Tempo and turns delivered titles into "Item 1" (section 6.7).
@@ -64,31 +62,20 @@ public struct StoryView: View {
         .background(frame.deep.bg.color)
         .environment(\.colorScheme, frame.deep.isNight ? .dark : .light)
         .clipShape(RoundedRectangle(cornerRadius: CadenceRadius.card, style: .continuous))
-        // The ring sits just outside the frame, on `canvas`, so it reads on every deep ground.
-        .overlay {
-            RoundedRectangle(cornerRadius: CadenceRadius.card + RecapTokens.focusGap, style: .continuous)
-                .strokeBorder(focused && focusReturned ? CadenceColor.focus.color : Color.clear, lineWidth: RecapTokens.focusRing)
-                .padding(-RecapTokens.focusGap)
-                .allowsHitTesting(false)
-        }
         .cadenceAnimation(CadenceMotion.world.animation, value: index)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .focusable()
-        .focused($focused)
-        .focusEffectDisabled()
-        .onChange(of: focused) { _, now in if !now { focusReturned = true } }
-        .onKeyPress(.leftArrow) {
-            back()
-            return .handled
+        // The key target is a sibling of the buttons, so only a button that itself has focus draws a ring.
+        .background {
+            Color.clear
+                .focusable()
+                .focused($focused)
+                .focusEffectDisabled()
+                .onKeyPress(.leftArrow) { back(); return .handled }
+                .onKeyPress(.rightArrow) { next(); return .handled }
+                .onKeyPress(.escape) { onClose(); return .handled }
+                .accessibilityHidden(true)
         }
-        .onKeyPress(.rightArrow) {
-            next()
-            return .handled
-        }
-        .onKeyPress(.escape) {
-            onClose()
-            return .handled
-        }
+        .onKeyPress(.escape) { onClose(); return .handled }
         .onAppear { focused = true }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(recap.name), frame \(index + 1) of \(recap.frames.count)")

@@ -84,6 +84,7 @@ struct TwinToggle: View {
                 .background(Capsule().fill(ground))
         }
         .buttonStyle(RowButtonStyle(capsule: true))
+        .focusEffectDisabled()
         .accessibilityLabel(showsTable ? String(localized: "Show the chart") : String(localized: "Show the table"))
     }
 }
@@ -194,6 +195,7 @@ struct TaskRowView: View {
             .frame(minHeight: CadenceSize.taskRow)
         }
         .buttonStyle(RowButtonStyle())
+        .focusEffectDisabled()
         .disabled(!editable || status != .open)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title): \(TaskWords.status(status))\(note.map { ", \($0)" } ?? "")")
@@ -342,6 +344,7 @@ struct LogField: View {
                             .fill(CadenceColor.ink.color.opacity(TodayGeometry.fieldButtonTint)))
             }
             .buttonStyle(RowButtonStyle())
+            .focusEffectDisabled()
             .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.leading, CadenceSpace.s12)

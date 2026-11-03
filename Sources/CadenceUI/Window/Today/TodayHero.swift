@@ -4,17 +4,11 @@
 import CadenceCore
 import SwiftUI
 
-extension EnvironmentValues {
-    /// The Today page has the keyboard (arrows step the days), so the hero shows the focus ring.
-    @Entry var pageFocusVisible = false
-}
-
 struct TodayHero: View {
     var input: TodayInput
     var width: TodayWidth
     var onBackToToday: () -> Void = {}
     var onCheckSources: () -> Void
-    @Environment(\.pageFocusVisible) private var focusVisible
 
     var body: some View {
         let world = input.world
@@ -35,13 +29,6 @@ struct TodayHero: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: CadenceRadius.card, style: .continuous))
-        // The ring sits just outside the card, on `canvas`, so it reads on every colour world.
-        .overlay {
-            RoundedRectangle(cornerRadius: CadenceRadius.card + TodayGeometry.focusGap, style: .continuous)
-                .strokeBorder(focusVisible ? CadenceColor.focus.color : Color.clear, lineWidth: TodayGeometry.focusRing)
-                .padding(-TodayGeometry.focusGap)
-                .allowsHitTesting(false)
-        }
         .foregroundStyle(world.ink.color)
         .tint(world.ink.color)
         .cadenceAnimation(CadenceMotion.world.animation, value: world.name)
@@ -100,6 +87,7 @@ struct TodayHero: View {
                 .background(Capsule().fill(input.world.ink.color.opacity(TodayGeometry.onWorldTint)))
         }
         .buttonStyle(RowButtonStyle(capsule: true))
+        .focusEffectDisabled()
         .fixedSize()
         .help(String(localized: "Back to today (esc)"))
     }

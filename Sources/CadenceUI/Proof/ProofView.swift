@@ -416,13 +416,13 @@ private struct CustomRange: View {
     }
 
     private func picker(_ label: String, _ day: LocalDate, _ set: @escaping (LocalDate) -> Void) -> some View {
-        DatePicker(
-            label,
-            selection: Binding(get: { Self.instant(day) }, set: { set(Self.day($0)) }),
-            in: ...Self.instant(today ?? day),
-            displayedComponents: .date
-        )
-        .datePickerStyle(.field)
+        HStack(spacing: CadenceSpace.s4) {
+            Text(label)
+            DayPopoverButton(
+                label: label,
+                date: Binding(get: { Self.instant(day) }, set: { set(Self.day($0)) }),
+                through: Self.instant(today ?? day), calendar: Self.calendar)
+        }
         .cadenceType(ProofType.control)
         .foregroundStyle(CadenceColor.ink2.color)
     }

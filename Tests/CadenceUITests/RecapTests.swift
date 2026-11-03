@@ -219,3 +219,14 @@ import Testing
         #expect(failure.kind == .missing)
     }
 }
+
+/// T4.16: the 1:1 date button reads as a short date in the current locale.
+@Suite struct DayPopoverTextTests {
+    @Test func readsAsDayMonthYear() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let day = calendar.date(from: DateComponents(year: 2026, month: 10, day: 20, hour: 12))!
+        let text = DayPopoverButton.text(day, locale: Locale(identifier: "en_GB"), calendar: calendar)
+        #expect(text == "20 Oct 2026")
+    }
+}

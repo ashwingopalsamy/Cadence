@@ -55,11 +55,13 @@ struct ActionButtons: View {
                     }
                     .menuStyle(.button)
                     .buttonStyle(CapsuleButtonStyle(quiet: true))
+                    .focusEffectDisabled()
                     .menuIndicator(.hidden)
                     .fixedSize()
                 } else {
                     Button(action.title) { perform(action) }
                         .buttonStyle(CapsuleButtonStyle(quiet: action.isQuiet))
+                        .focusEffectDisabled()
                         .keyboardShortcut(index == actions.count - 1 ? .defaultAction : nil)
                 }
             }
@@ -100,6 +102,7 @@ struct PlanCard: View {
                 if input.pendingTask != nil {
                     Button("Undo") { actions.undo() }
                         .buttonStyle(CapsuleButtonStyle(quiet: true, height: CadenceSize.controlSecondary))
+                        .focusEffectDisabled()
                         .keyboardShortcut("z", modifiers: .command)
                 }
                 Spacer(minLength: 0)
@@ -250,6 +253,7 @@ struct FoundCard: View {
                 Spacer(minLength: 0)
                 Button("See everything") { actions.seeEverything() }
                     .buttonStyle(RowButtonStyle())
+                    .focusEffectDisabled()
                     .cadenceType(CadenceType.comparison)
                     .fontWeight(.semibold)
                     .foregroundStyle(CadenceColor.ink2.color)
@@ -414,8 +418,10 @@ struct FailureCard: View {
                 Spacer(minLength: 0)
                 Button(copy.secondary.title) { perform(copy.secondary) }
                     .buttonStyle(CapsuleButtonStyle(quiet: true))
+                    .focusEffectDisabled()
                 Button(copy.primary.title) { perform(copy.primary) }
                     .buttonStyle(CapsuleButtonStyle(quiet: false))
+                    .focusEffectDisabled()
                     .keyboardShortcut(.defaultAction)
             }
         }

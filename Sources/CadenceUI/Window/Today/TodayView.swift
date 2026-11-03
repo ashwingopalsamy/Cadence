@@ -129,8 +129,6 @@ public struct TodayView: View {
     let firstRun: FirstRunModel?
     let days: DayBrowser?
     @FocusState private var focused: Bool
-    /// The page takes focus quietly when it opens; once focus has left and come back, the hero shows the ring.
-    @State private var focusReturned = false
 
     public init(app: AppState, contentWidth: CGFloat, actions: TodayActions, firstRun: FirstRunModel? = nil, days: DayBrowser? = nil) {
         self.app = app
@@ -142,22 +140,28 @@ public struct TodayView: View {
 
     public var body: some View {
         page
-            .focusable()
-            .focused($focused)
-            .focusEffectDisabled()
-            .environment(\.pageFocusVisible, focused && focusReturned)
-            .onChange(of: focused) { _, now in if !now { focusReturned = true } }
-            .onKeyPress(.leftArrow) { step(-1) }
-            .onKeyPress(.rightArrow) { step(1) }
-            .onKeyPress(.escape) {
-                guard let days, days.shown(today: app.today) != nil else { return .ignored }
-                days.backToToday()
-                return .handled
+            // The arrow-key target is a sibling of the controls, so only a control that itself has focus draws a ring.
+            .background {
+                Color.clear
+                    .focusable()
+                    .focused($focused)
+                    .focusEffectDisabled()
+                    .onKeyPress(.leftArrow) { step(-1) }
+                    .onKeyPress(.rightArrow) { step(1) }
+                    .onKeyPress(.escape) { back() }
+                    .accessibilityHidden(true)
             }
+            .onKeyPress(.escape) { back() }
             // The earlier day is read again whenever the live day is, which follows every change to the store.
             .onChange(of: app.model.reads) { days?.refresh() }
             .onChange(of: app.today) { _, today in days?.follow(today: today) }
             .onAppear { focused = true }
+    }
+
+    private func back() -> KeyPress.Result {
+        guard let days, days.shown(today: app.today) != nil else { return .ignored }
+        days.backToToday()
+        return .handled
     }
 
     /// Steps only once the store has been read and setup is finished.

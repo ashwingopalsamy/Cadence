@@ -132,12 +132,10 @@ public struct RecapView: View {
         let recap = hub.oneOnOne
         return VStack(alignment: .leading, spacing: CadenceSpace.s2) {
             kick(String(localized: "Since your last 1:1"))
-            DatePicker(
-                "On", selection: dateBinding(hub), in: ...Self.date(hub.today), displayedComponents: .date
+            DayPopoverButton(
+                label: String(localized: "Date of your last 1:1"), date: dateBinding(hub), through: Self.date(hub.today)
             )
-            .datePickerStyle(.field)
             .cadenceType(RecapTokens.row)
-            .accessibilityLabel("Date of your last 1:1")
             .padding(.vertical, CadenceSpace.s8)
             note(recap.note)
             Spacer(minLength: CadenceSpace.s8)
@@ -289,5 +287,41 @@ struct OnWorldStyle: ButtonStyle {
             .frame(height: CadenceSize.controlSecondary)
             .background(Capsule().fill(.foreground).opacity(configuration.isPressed ? RecapTokens.wash * 2 : RecapTokens.wash))
             .contentShape(Capsule())
+    }
+}
+
+/// A quiet button labelled with a date; it opens a popover with the graphical calendar. Escape closes the popover.
+struct DayPopoverButton: View {
+    let label: String
+    @Binding var date: Date
+    let through: Date
+    var calendar: Calendar = .current
+    @State private var open = false
+    @Environment(\.locale) private var locale
+
+    /// The date as the button reads it, such as "20 Oct 2026", in the given locale.
+    static func text(_ date: Date, locale: Locale, calendar: Calendar = .current) -> String {
+        var calendar = calendar
+        calendar.locale = locale
+        return date.formatted(Date.FormatStyle(locale: locale, calendar: calendar).day().month(.abbreviated).year())
+    }
+
+    var body: some View {
+        let text = Self.text(date, locale: locale, calendar: calendar)
+        Button { open.toggle() } label: {
+            HStack(spacing: CadenceSpace.s4) {
+                Text(text)
+                Image(systemName: "calendar").imageScale(.small)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "\(label), \(text)"))
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            DatePicker(label, selection: $date, in: ...through, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .padding(CadenceSpace.s12)
+        }
     }
 }
