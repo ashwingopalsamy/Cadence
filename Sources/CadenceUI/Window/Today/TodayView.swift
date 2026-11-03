@@ -22,7 +22,7 @@ public struct TodayContent: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: TodayGeometry.gap) {
-            TodayHero(input: input, width: width, onBackToToday: actions.backToToday) {
+            TodayHero(input: input, width: width, onBackToToday: actions.backToToday, onReopen: actions.reopen) {
                 actions.openSettings(String(localized: "Sources"))
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -31,9 +31,9 @@ public struct TodayContent: View {
                 FirstRunPlaceholder()
             case .storeProblem(let copy):
                 FailureCard(copy: copy, perform: actions.failure)
-            // An earlier day is read only, so it has no log field.
+            // An earlier day is read only, so it has no log field, until it is reopened.
             case .dayOff:
-                if input.past == nil {
+                if input.canLog {
                     pair(7, WeekCard(input: input, width: width), 5, offLog)
                 } else {
                     WeekCard(input: input, width: width)
@@ -41,7 +41,7 @@ public struct TodayContent: View {
             case .unplanned:
                 yesterday
                 UnplannedCard(input: input, width: width, actions: actions)
-                if input.past == nil {
+                if input.canLog {
                     Hint(String(localized: "Merges, reviews and sessions appear here as they happen."))
                         .frame(maxWidth: .infinity)
                         .multilineTextAlignment(.center)
@@ -49,7 +49,7 @@ public struct TodayContent: View {
             case .full:
                 yesterday
                 pair(5, PlanCard(input: input, width: width, actions: actions), 7, metrics)
-                if input.past == nil {
+                if input.canLog {
                     pair(7, FoundCard(input: input, width: width, actions: actions), 5, logCard)
                 } else {
                     FoundCard(input: input, width: width, actions: actions)

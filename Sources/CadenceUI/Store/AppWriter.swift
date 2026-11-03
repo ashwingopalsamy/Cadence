@@ -10,6 +10,8 @@ public enum WriteAction: Sendable {
     /// Move to tomorrow: slipped here with its reason, carried to the next workday.
     case move(task: String, reason: String)
     case seal(day: LocalDate?)
+    /// Opens a sealed day again, so it can be changed and sealed again. The ledger keeps every earlier seal.
+    case reopen(day: LocalDate?)
     case declare(day: LocalDate, kind: DayKind, label: String?)
     case setStatus(entry: String, status: EntryStatus)
     /// A new title, kind or list of links for an entry; the history keeps the old one.
@@ -23,6 +25,7 @@ public enum WriteResult: Sendable, Equatable {
     case entry(Entry)
     case task(PlanTask)
     case sealed(SealResult)
+    case reopened(ReopenResult)
     case standup(text: String, code: String)
 }
 
@@ -212,6 +215,8 @@ public actor AppWriter {
             return .task(try journal.planMove(taskID: task, reason: reason, actor: .app).task)
         case .seal(let day):
             return .sealed(try journal.seal(day, actor: .app))
+        case .reopen(let day):
+            return .reopened(try journal.reopen(day: day, actor: .app))
         case .declare(let day, let kind, let label):
             try journal.declare(day, kind: kind, label: label, actor: .app)
             return .none
@@ -297,6 +302,7 @@ extension WriteAction {
         case .planCommit: .writePlanCommit
         case .resolve, .move: .writeResolve
         case .seal: .writeSeal
+        case .reopen: .writeReopen
         case .declare: .writeDeclare
         case .setStatus, .editEntry: .writeSetStatus
         case .standup: .writeStandup

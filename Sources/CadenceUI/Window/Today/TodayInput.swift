@@ -29,22 +29,29 @@ public struct TodayInput: Sendable, Equatable {
     public var discreet: Bool
     /// Tempo is on in Settings. Discreet mode hides it as well.
     public var tempoEnabled: Bool
-    /// An earlier day, shown read only. Nil is the live day.
+    /// An earlier day, shown read only until it is reopened. Nil is the live day.
     public var past: Past?
+    /// The day's seals and reopenings, oldest first (section 3).
+    public var history: [DayHistoryItem]
 
     /// An earlier day stepped back to with `←` (section 4.8).
     public struct Past: Sendable, Equatable {
         /// The day is still inside its grace window, so it keeps "Wrap up Wednesday".
         public var graceOpen: Bool
+        /// The day was reopened and is not sealed again, so it can be changed like the live day.
+        public var reopened: Bool
 
-        public init(graceOpen: Bool = false) { self.graceOpen = graceOpen }
+        public init(graceOpen: Bool = false, reopened: Bool = false) {
+            self.graceOpen = graceOpen
+            self.reopened = reopened
+        }
     }
 
     public init(
         day: DayStory.Input, zone: TimeZone, now: Date, locale: Locale = .current, firstActivity: Date? = nil,
         lastActivity: Date? = nil, plan: [PlanTask] = [], carried: [PlanTask] = [], found: [Entry] = [],
         rhythm: Rhythm? = nil, failure: StoreFailure.Kind? = nil, week: WeekSeals? = nil, pendingTask: String? = nil,
-        discreet: Bool = false, tempoEnabled: Bool = true, past: Past? = nil
+        discreet: Bool = false, tempoEnabled: Bool = true, past: Past? = nil, history: [DayHistoryItem] = []
     ) {
         self.day = day
         self.zone = zone
@@ -62,6 +69,7 @@ public struct TodayInput: Sendable, Equatable {
         self.discreet = discreet
         self.tempoEnabled = tempoEnabled
         self.past = past
+        self.history = history
     }
 
     /// The one story every surface tells.
@@ -112,14 +120,17 @@ extension TodayInput {
         }
         // Only the live day knows whether the last workday is still inside its grace window.
         let previous = app.context?.previous
-        let past = shown.map { _ in Past(graceOpen: previous?.graceOpen == true && previous?.date == day.date) }
+        let reopened = context?.isReopened == true
+        let past = shown.map { _ in
+            Past(graceOpen: previous?.graceOpen == true && previous?.date == day.date, reopened: reopened)
+        }
         self.init(
             day: day, zone: zone, now: now, firstActivity: state?.startedAt,
             lastActivity: context?.view.day.lastActivity.flatMap { Timestamp.parse($0) }, plan: context?.plan ?? [],
             carried: context?.carried ?? [], found: context?.found ?? [], rhythm: context?.rhythm, failure: failure,
             week: context.map { WeekSeals(sealed: $0.weekSealed, workdays: $0.weekWorkdays) },
-            pendingTask: shown == nil ? app.pendingTick?.task : nil, discreet: app.discreet, tempoEnabled: app.tempoEnabled,
-            past: past)
+            pendingTask: shown == nil || reopened ? app.pendingTick?.task : nil, discreet: app.discreet,
+            tempoEnabled: app.tempoEnabled, past: past, history: context?.history ?? [])
     }
 }
 
@@ -305,8 +316,10 @@ extension TodayInput {
         case .firstRun, .storeProblem, .dayOff: return []
         case .unplanned, .full: break
         }
-        // An earlier day is read only. Inside its grace window it can still be wrapped up.
+        // An earlier day is read only, until it is reopened: then it is wrapped up like any open day. Inside its grace
+        // window it can still be wrapped up.
         if let past {
+            if past.reopened && day.sealedAt == nil { return [.wrapUp] }
             return past.graceOpen && day.sealedAt == nil ? [.wrapUpYesterday(TodayFormat.weekday(day.date))] : []
         }
         if day.sealedAt != nil { return [.seeRecap] }
@@ -327,9 +340,29 @@ extension TodayInput {
     /// What VoiceOver reads for the hero.
     public var heroVoice: String {
         let story = story
-        guard past == nil else { return String(localized: "Showing \(kicker). \(story.headline) \(story.sentence)") }
-        return "\(kicker). \(story.headline) \(story.sentence)"
+        guard past == nil else { return String(localized: "Showing \(kicker). \(story.headline) \(heroSentence)") }
+        return "\(kicker). \(story.headline) \(heroSentence)"
     }
+
+    /// The hero's second line: when the day was sealed and reopened once it has been more than once, or that it is open
+    /// again after a reopening; otherwise the story's own sentence. No new day state: the story is as it was.
+    public var heroSentence: String { historyLine ?? story.sentence }
+
+    /// "Sealed 13:15, reopened 14:02, sealed again 15:30", or "Reopened at 14:02. Wrap up again when you're done." Nil for
+    /// a day sealed once or never.
+    public var historyLine: String? { DayHistoryLine.text(history, zone: zone) }
+
+    /// The quiet button on a sealed day, live or earlier.
+    public static let reopenTitle = String(localized: "Reopen day")
+
+    /// The day is sealed, so it offers to be reopened.
+    public var canReopen: Bool { day.sealedAt != nil && failure == nil }
+
+    /// The page takes a line for the day: the live day always, an earlier day once it is reopened.
+    public var canLog: Bool { past == nil || past?.reopened == true }
+
+    /// The plan can be ticked: the day is open, and is the live day or a reopened one.
+    public var isEditable: Bool { day.sealedAt == nil && canLog }
 
     /// Found today, or the weekday's name on an earlier day.
     public var foundLabel: String {

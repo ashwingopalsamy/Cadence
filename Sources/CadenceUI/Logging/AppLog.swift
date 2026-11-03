@@ -16,6 +16,7 @@ public enum LogOperation: String, Sendable, CaseIterable {
     case writePlanCommit = "write.planCommit"
     case writeResolve = "write.resolve"
     case writeSeal = "write.seal"
+    case writeReopen = "write.reopen"
     case writeDeclare = "write.declare"
     case writeSetStatus = "write.setStatus"
     case writeStandup = "write.standup"

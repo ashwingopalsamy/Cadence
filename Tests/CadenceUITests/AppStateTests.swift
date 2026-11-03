@@ -268,6 +268,70 @@ import Testing
         #expect(try journal.entry(entry.id).links.isEmpty)
     }
 
+    // MARK: reopening a sealed day (T4.18)
+
+    @Test func reopeningASealedDayUnsealsItAndSealingAgainSealsIt() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        #expect(await app.seal(standup: false) != nil)
+        await Self.settle(app)
+        #expect(app.state?.isSealed == true)
+        #expect(app.context?.history.map(\.kind) == [.sealed])
+
+        #expect(await app.reopen(day: app.today))
+        await Self.settle(app)
+        #expect(app.state?.isSealed == false)
+        #expect(app.context?.history.map(\.kind) == [.sealed, .reopened])
+        #expect(app.issue == nil)
+
+        #expect(await app.seal(standup: false) != nil)
+        await Self.settle(app)
+        #expect(app.state?.isSealed == true)
+        #expect(app.context?.history.map(\.kind) == [.sealed, .reopened, .sealed])
+    }
+
+    @Test func reopeningADayThatIsNotSealedIsRefusedAndShownInTheBanner() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        #expect(!(await app.reopen(day: app.today)))
+        #expect(app.issue?.kind == .invalid)
+        #expect(app.issue?.detail.contains("not wrapped up") == true)
+        // The next write that works clears it.
+        #expect(await app.log("Reviewed the RFC") != nil)
+        #expect(app.issue == nil)
+    }
+
+    @Test func anEarlierDayIsReopenedByDate() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let yesterday = app.today.adding(days: -1)
+        let journal = try home.journal()
+        _ = try journal.seal(yesterday, actor: .cli)
+        #expect(await app.reopen(day: yesterday))
+        #expect(try journal.dayHistory(yesterday).map(\.kind) == [.sealed, .reopened])
+        #expect(try journal.dayView(yesterday).day.sealedAt == nil)
+        // Today was not touched.
+        #expect(try journal.dayHistory(app.today).isEmpty)
+        // A day in the future cannot be reopened.
+        #expect(!(await app.reopen(day: app.today.adding(days: 1))))
+    }
+
+    @Test func aTickOnAnotherDaysTaskIsAnnouncedAgainstThatDaysPlan() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let heard = Heard()
+        app.announce = { heard.lines.append($0) }
+        let task = PlanTask(id: "t1", day: "2026-09-20", position: 1, title: "Write the notes", origin: .selfReported, plannedAt: "2026-09-20T10:00:00+05:30")
+        let other = PlanTask(id: "t2", day: "2026-09-20", position: 2, title: "Review the RFC", origin: .selfReported, plannedAt: "2026-09-20T10:00:00+05:30")
+        app.tick(task, among: [task, other])
+        #expect(heard.lines == ["Done, 1 of 2"])
+        app.undoTick()
+    }
+
     @Test func discreetModeHidesTitlesAndTempo() async throws {
         let home = Home()
         defer { home.remove() }

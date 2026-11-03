@@ -82,11 +82,14 @@ public struct LogScreen: View {
         /// A link being added to the open entry, while its field shows.
         public var linkEdit: LinkEdit?
         public var linkProblem: String?
+        /// The seals and reopenings of the listed days that were reopened, by day, for their headers.
+        public var histories: [String: [DayHistoryItem]]
 
         public init(
             entries: [Entry], today: LocalDate, zone: TimeZone, filter: LogFilter = LogFilter(), searchText: String? = nil,
             phase: LogModel.Phase = .loaded, hasMore: Bool = false, opened: LogModel.Opened? = nil, edit: TitleEdit? = nil,
-            kindProblem: String? = nil, saving: Bool = false, linkEdit: LinkEdit? = nil, linkProblem: String? = nil
+            kindProblem: String? = nil, saving: Bool = false, linkEdit: LinkEdit? = nil, linkProblem: String? = nil,
+            histories: [String: [DayHistoryItem]] = [:]
         ) {
             self.entries = entries
             self.today = today
@@ -101,6 +104,7 @@ public struct LogScreen: View {
             self.saving = saving
             self.linkEdit = linkEdit
             self.linkProblem = linkProblem
+            self.histories = histories
         }
 
         @MainActor init(_ model: LogModel) {
@@ -108,7 +112,7 @@ public struct LogScreen: View {
                 entries: model.entries, today: model.today ?? LogPage.latestDay, zone: model.zone, filter: model.filter,
                 searchText: model.searchText, phase: model.phase, hasMore: model.hasMore, opened: model.opened,
                 edit: model.edit, kindProblem: model.kindProblem, saving: model.saving, linkEdit: model.linkEdit,
-                linkProblem: model.linkProblem)
+                linkProblem: model.linkProblem, histories: model.histories)
         }
     }
 
@@ -135,7 +139,11 @@ public struct LogScreen: View {
         self.handlers = handlers
     }
 
-    private var content: LogContent { LogContent(entries: state.entries, today: state.today, discreet: discreet, locale: locale) }
+    private var content: LogContent {
+        LogContent(
+            entries: state.entries, today: state.today, discreet: discreet, locale: locale, histories: state.histories,
+            zone: state.zone)
+    }
 
     private var detail: LogDetail? {
         state.opened.map { LogDetail(entry: $0.entry, events: $0.events, zone: state.zone, index: $0.index, discreet: discreet, locale: locale) }
@@ -279,12 +287,21 @@ public struct LogScreen: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(content.days.enumerated()), id: \.element.id) { offset, day in
-                        Text(day.title)
-                            .cadenceType(ListType.dayHead)
-                            .foregroundStyle(CadenceColor.ink.color)
-                            .padding(.top, offset == 0 ? 0 : CadenceSpace.s12)
-                            .padding(.bottom, CadenceSpace.s4)
-                            .accessibilityAddTraits(.isHeader)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(day.title)
+                                .cadenceType(ListType.dayHead)
+                                .foregroundStyle(CadenceColor.ink.color)
+                                .accessibilityAddTraits(.isHeader)
+                            // A day that was reopened says when it was sealed and reopened.
+                            if let history = day.history {
+                                Text(history)
+                                    .cadenceType(CadenceType.comparison)
+                                    .foregroundStyle(CadenceColor.ink3.color)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.top, offset == 0 ? 0 : CadenceSpace.s12)
+                        .padding(.bottom, CadenceSpace.s4)
                         LogDayRows(rows: day.rows, opened: state.opened?.entry.id, open: handlers.open)
                     }
                     if state.hasMore {

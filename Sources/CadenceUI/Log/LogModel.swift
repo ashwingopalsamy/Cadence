@@ -39,6 +39,8 @@ public final class LogModel {
     public private(set) var today: LocalDate?
     public private(set) var zone: TimeZone = .current
     public private(set) var hasMore = false
+    /// The seals and reopenings of the listed days that were reopened, by day, for their headers.
+    public private(set) var histories: [String: [DayHistoryItem]] = [:]
     public private(set) var loadingMore = false
     /// The filter the list shows.
     public private(set) var filter = LogFilter()
@@ -136,14 +138,17 @@ public final class LogModel {
                 zone = page.zone
                 before = page.before
                 hasMore = page.before != nil
+                histories = page.histories
                 phase = .loaded
             case .failure(let failure) where failure.kind == .missing:
                 // No store yet is an empty log, not a failure.
                 entries = []
+                histories = [:]
                 hasMore = false
                 phase = .loaded
             case .failure(let failure):
                 entries = []
+                histories = [:]
                 hasMore = false
                 phase = .failed(failure)
             }
@@ -166,6 +171,7 @@ public final class LogModel {
             loadingMore = false
             if case .success(let page) = result {
                 entries += page.entries
+                histories.merge(page.histories) { _, new in new }
                 self.before = page.before
                 hasMore = page.before != nil
             }

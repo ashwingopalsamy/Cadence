@@ -158,6 +158,8 @@ public struct DayContext: Sendable, Equatable {
     public var weekSealed: Int = 0
     /// What the morning plan may suggest (section 4.4).
     public var suggestions: [PlanSuggestionItem] = []
+    /// The day's seals and reopenings, oldest first, read with the day (section 3).
+    public var history: [DayHistoryItem] = []
 
     public var resolved: Int { plan.filter { $0.status.isResolved }.count }
     public var done: Int { plan.filter { $0.status == .done }.count }
@@ -232,6 +234,7 @@ extension Journal {
             streak: try? streak(), wrapReminders: reminders, zone: try zone(of: day).identifier,
             weekWorkdays: week.workdays, weekSealed: week.sealed)
         context.boundaryMinutes = config.dayBoundary.hour * 60 + config.dayBoundary.minute
+        context.history = try dayHistory(day)
         if !committed { context.suggestions = (try? planSuggestions(for: day)) ?? [] }
         return context
     }

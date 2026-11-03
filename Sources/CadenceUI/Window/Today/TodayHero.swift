@@ -8,6 +8,7 @@ struct TodayHero: View {
     var input: TodayInput
     var width: TodayWidth
     var onBackToToday: () -> Void = {}
+    var onReopen: () -> Void = {}
     var onCheckSources: () -> Void
 
     var body: some View {
@@ -44,6 +45,7 @@ struct TodayHero: View {
                     .cadenceType(CadenceType.label)
                     .lineLimit(width == .compact ? nil : 1)
                 if input.past != nil { backToToday }
+                if input.canReopen { reopenDay }
             }
             // The pill is taller than the label slot and overhangs it, so the hero keeps its height.
             .frame(minHeight: CadenceSize.labelSlot, maxHeight: width == .compact ? nil : CadenceSize.labelSlot, alignment: .leading)
@@ -52,7 +54,7 @@ struct TodayHero: View {
                 .lineLimit(width == .compact ? nil : 1)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, TodayGeometry.headlineMargin)
-            sentence(story.sentence)
+            sentence(input.heroSentence)
                 .cadenceType(CadenceType.sentence)
                 .lineLimit(width == .compact ? nil : 2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -74,6 +76,7 @@ struct TodayHero: View {
         .accessibilityActions {
             if input.showsCheckSources { Button("Check Sources", action: onCheckSources) }
             if input.past != nil { Button("Back to today", action: onBackToToday) }
+            if input.canReopen { Button(TodayInput.reopenTitle, action: onReopen) }
         }
     }
 
@@ -90,6 +93,21 @@ struct TodayHero: View {
         .focusEffectDisabled()
         .fixedSize()
         .help(String(localized: "Back to today (esc)"))
+    }
+
+    /// On a sealed day, live or earlier: the quiet pill that opens it again. The ledger keeps every seal it made.
+    private var reopenDay: some View {
+        Button(action: onReopen) {
+            Text(TodayInput.reopenTitle)
+                .cadenceType(CadenceType.label)
+                .padding(.horizontal, CadenceSpace.s8)
+                .frame(height: CadenceSize.chip)
+                .background(Capsule().fill(input.world.ink.color.opacity(TodayGeometry.onWorldTint)))
+        }
+        .buttonStyle(RowButtonStyle(capsule: true))
+        .focusEffectDisabled()
+        .fixedSize()
+        .help(String(localized: "Open this day again to change it. Every seal stays in its history."))
     }
 
     /// The sentence, ending with "Check Sources" when a source is behind.

@@ -359,6 +359,39 @@ import Testing
         #expect(detail.versions.map(\.what) == ["You logged it", "You changed the title"])
     }
 
+    // MARK: reopened days (T4.18)
+
+    @Test func aDayWithAReopeningSaysItsHistoryInItsHeader() throws {
+        let home = Home()
+        defer { home.remove() }
+        let journal = try home.journal()
+        let sealedTwice = Self.today.adding(days: -2)
+        let sealedOnce = Self.today.adding(days: -1)
+        for day in [sealedTwice, sealedOnce, Self.today] {
+            _ = try journal.log(LogRequest(text: "Reviewed the RFC", date: day), actor: .cli, origin: .selfReported)
+        }
+        _ = try journal.seal(sealedTwice, actor: .cli)
+        _ = try journal.reopen(day: sealedTwice, actor: .app)
+        _ = try journal.seal(sealedTwice, actor: .app)
+        _ = try journal.seal(sealedOnce, actor: .cli)
+        // Today was sealed and reopened, and is open again.
+        _ = try journal.seal(Self.today, actor: .cli)
+        _ = try journal.reopen(day: Self.today, actor: .app)
+
+        let page = try LogPage.read(journal, filter: LogFilter(), before: nil)
+        #expect(Set(page.histories.keys) == [sealedTwice.description, Self.today.description], "a day sealed once has nothing to add")
+        let content = LogContent(
+            entries: page.entries, today: page.today, discreet: false, locale: Self.gb, histories: page.histories, zone: page.zone)
+        #expect(content.days.map(\.title) == ["Today", "Sun 20 Sep", "Sat 19 Sep"])
+        // Every write lands at the fixed clock's minute.
+        let time = Timestamp.clockTime(DayStoreLoaderTests.FixedClock().now(), in: page.zone)
+        #expect(content.days[0].history == "Reopened at \(time). Wrap up again when you're done.")
+        #expect(content.days[1].history == nil)
+        #expect(content.days[2].history == "Sealed \(time), reopened \(time), sealed again \(time)")
+        // Without the histories a header is as it was.
+        #expect(LogContent(entries: page.entries, today: page.today, discreet: false, locale: Self.gb).days.allSatisfy { $0.history == nil })
+    }
+
     // MARK: links (T4.17)
 
     static let pr = Link(kind: .pr, url: "https://git.example.com/acme/api/pull/88")

@@ -123,7 +123,8 @@ let windowController = WindowController(
     app: appState,
     actions: WindowActions(
         openPlan: { surfaces.openPlanSheet() }, openWrapUp: { surfaces.openWrapUp() },
-        wrapUpYesterday: { surfaces.wrapUpPrevious() }, openRecap: { surfaces.openRecap() },
+        wrapUpYesterday: { surfaces.wrapUpPrevious() }, wrapUpDay: { surfaces.wrapUpDay($0) },
+        openRecap: { surfaces.openRecap() },
         failure: { action in
             FailureActions.perform(action, app: appState, location: storeLocation) { pane in
                 windowController.open(section: .settings)
@@ -170,6 +171,10 @@ surfaces.wrapUpPrevious = {
     // "Wrap up Wednesday" opens Wednesday's wrap-up, whatever today's state is.
     guard let previous = appState.context?.previous, previous.graceOpen else { return }
     sheetsController.showWrapUp(previous: previous.date)
+}
+surfaces.wrapUpDay = { date in
+    // An earlier day that was reopened is wrapped up again by the same sheet, read afresh.
+    sheetsController.showWrapUp(previous: date)
 }
 // --- end sheets ---
 

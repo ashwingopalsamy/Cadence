@@ -47,12 +47,15 @@ public struct LogPage: Sendable, Equatable {
     public var today: LocalDate
     /// The profile's zone, for the times in an entry's history.
     public var zone: TimeZone
+    /// The seals and reopenings of the days on the page that were reopened, by day. A day sealed once or never is not here.
+    public var histories: [String: [DayHistoryItem]]
 
-    public init(entries: [Entry], before: LocalDate?, today: LocalDate, zone: TimeZone) {
+    public init(entries: [Entry], before: LocalDate?, today: LocalDate, zone: TimeZone, histories: [String: [DayHistoryItem]] = [:]) {
         self.entries = entries
         self.before = before
         self.today = today
         self.zone = zone
+        self.histories = histories
     }
 
     /// A page holds at least this many entries, unless there are fewer.
@@ -88,6 +91,14 @@ public struct LogPage: Sendable, Equatable {
             found += window.reversed()
             end = from.adding(days: -1)
         }
-        return LogPage(entries: found, before: end >= oldest ? end.adding(days: 1) : nil, today: today, zone: journal.zone)
+        var histories: [String: [DayHistoryItem]] = [:]
+        for day in Set(found.map(\.day)) {
+            guard let date = LocalDate(day) else { continue }
+            let history = try journal.dayHistory(date)
+            if history.contains(where: { $0.kind == .reopened }) { histories[day] = history }
+        }
+        return LogPage(
+            entries: found, before: end >= oldest ? end.adding(days: 1) : nil, today: today, zone: journal.zone,
+            histories: histories)
     }
 }

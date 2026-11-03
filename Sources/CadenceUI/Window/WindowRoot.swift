@@ -92,6 +92,8 @@ public struct WindowActions {
     public var openWrapUp: @MainActor () -> Void
     /// The wrap-up sheet for the last workday, still open in its grace window.
     public var wrapUpYesterday: @MainActor () -> Void
+    /// The wrap-up sheet for an earlier day that was reopened.
+    public var wrapUpDay: @MainActor (LocalDate) -> Void
     /// The last full week's recap, which Today offers once the day is sealed.
     public var openRecap: @MainActor () -> Void
     /// A failure card's action other than Try again and Quit Cadence, which the window handles itself.
@@ -99,12 +101,13 @@ public struct WindowActions {
 
     public init(
         openPlan: @escaping @MainActor () -> Void, openWrapUp: @escaping @MainActor () -> Void,
-        wrapUpYesterday: @escaping @MainActor () -> Void, openRecap: @escaping @MainActor () -> Void,
-        failure: @escaping @MainActor (FailureCopy.Action) -> Void
+        wrapUpYesterday: @escaping @MainActor () -> Void, wrapUpDay: @escaping @MainActor (LocalDate) -> Void = { _ in },
+        openRecap: @escaping @MainActor () -> Void, failure: @escaping @MainActor (FailureCopy.Action) -> Void
     ) {
         self.openPlan = openPlan
         self.openWrapUp = openWrapUp
         self.wrapUpYesterday = wrapUpYesterday
+        self.wrapUpDay = wrapUpDay
         self.openRecap = openRecap
         self.failure = failure
     }
@@ -242,15 +245,24 @@ public struct WindowRoot: View {
         let navigation = navigation
         let actions = actions
         return TodayActions(
-            tick: { app.tick($0) },
+            // A task on a reopened earlier day is announced against that day's plan.
+            tick: { app.tick($0, among: navigation.days.shownPlan(today: app.today)) },
             undo: { app.undoTick() },
-            log: { text, kind in Task { await app.log(text, kind: kind) } },
+            // A reopened earlier day takes the line onto itself; otherwise it is today's.
+            log: { text, kind in
+                let day = navigation.days.reopenedDay(today: app.today)
+                Task { await app.log(text, kind: kind, day: day) }
+            },
             captureContext: { app.captureContext },
             perform: { action in
+                // An earlier day shown, reopened, is wrapped up by its own sheet; today's and yesterday's are as they were.
+                let shown = navigation.days.reopenedDay(today: app.today)
                 switch action {
                 case .planYourDay, .planToday: actions.openPlan()
-                case .wrapUp: actions.openWrapUp()
-                case .wrapUpYesterday: actions.wrapUpYesterday()
+                case .wrapUp:
+                    if let shown { actions.wrapUpDay(shown) } else { actions.openWrapUp() }
+                case .wrapUpYesterday:
+                    if let shown { actions.wrapUpDay(shown) } else { actions.wrapUpYesterday() }
                 case .seeRecap: actions.openRecap()
                 case .notWorking: Task { await app.declare(.leave) }
                 case .dayOff(let off): Task { await app.declare(off) }
@@ -260,6 +272,11 @@ public struct WindowRoot: View {
             openSettings: { navigation.openSettings(pane: $0) },
             seeEverything: { navigation.open(.log) },
             backToToday: { navigation.days.backToToday() },
+            // The sealed day on the page: an earlier one reached with the arrow keys, or today's.
+            reopen: { [days = navigation.days] in
+                let day = days.shown(today: app.today) ?? app.today
+                Task { await app.reopen(day: day) }
+            },
             failure: { action in
                 switch action {
                 case .tryAgain: app.model.reload()

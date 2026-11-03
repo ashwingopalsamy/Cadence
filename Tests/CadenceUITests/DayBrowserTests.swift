@@ -130,6 +130,166 @@ import Testing
         #expect(input.actions.isEmpty, "a sealed day has nothing left to wrap up")
     }
 
+    // MARK: Reopening (T4.18)
+
+    /// A clock the test sets, so a seal and a reopening land at the minute it says.
+    final class StepClock: CadenceCore.Clock, @unchecked Sendable {
+        private let lock = NSLock()
+        private var current: Date
+
+        init(_ start: Date) { current = start }
+
+        func now() -> Date { lock.withLock { current } }
+        func set(_ date: Date) { lock.withLock { current = date } }
+    }
+
+    /// The history a real ledger gives 29 Oct 2026, written with seals and reopenings at the given Kolkata times, so the
+    /// line is read from what `Journal.dayHistory` returns and nothing is made up.
+    static func history(_ items: [(DayHistoryItem.Kind, String)]) throws -> [DayHistoryItem] {
+        let home = Home()
+        defer { home.remove() }
+        let config = Config.defaults(timezone: "Asia/Kolkata")
+        let clock = StepClock(TodaySpecimen.at("08:00"))
+        let ids = ULIDGenerator(clock: clock, random: SeededRandomSource(seed: 7))
+        let store = try SQLiteStore(path: home.roots.database.path, clock: clock, ids: ids, projector: LedgerProjector())
+        let journal = try Journal(store: store, config: config, clock: clock, ids: ids)
+        for (kind, time) in items {
+            clock.set(TodaySpecimen.at(time))
+            switch kind {
+            case .sealed: _ = try journal.seal(TodayTests.date, actor: .app)
+            case .reopened: _ = try journal.reopen(day: TodayTests.date, actor: .app)
+            }
+        }
+        return try journal.dayHistory(TodayTests.date)
+    }
+
+    @Test func aSealedDayOffersReopenAndAnOpenOneDoesNot() {
+        var input = TodayTests.input(.sealed)
+        #expect(input.canReopen)
+        input.past = TodayInput.Past()
+        #expect(input.canReopen, "an earlier day reached with the arrow keys can be reopened too")
+        #expect(input.actions.isEmpty, "and stays read only until it is")
+        #expect(!TodayTests.input(.planned).canReopen)
+        #expect(!TodayTests.input(.storeProblem).canReopen)
+        var past = TodayTests.input(.planned)
+        past.past = TodayInput.Past()
+        #expect(!past.canReopen)
+    }
+
+    @Test func aReopenedEarlierDayCanBeChangedAndWrappedUp() {
+        var input = TodayTests.input(.planned)
+        input.past = TodayInput.Past(graceOpen: false, reopened: true)
+        #expect(input.actions == [.wrapUp])
+        #expect(input.actions.first?.title == "Wrap up")
+        #expect(input.isEditable && input.canLog, "ticks and a log field, as on the live day")
+        #expect(!input.canReopen)
+        // Inside its grace window it is wrapped up as any open day is, by the same sheet.
+        input.past = TodayInput.Past(graceOpen: true, reopened: true)
+        #expect(input.actions == [.wrapUp])
+        // An earlier day that was never reopened stays read only, open or not.
+        input.past = TodayInput.Past(graceOpen: false)
+        #expect(!input.isEditable && !input.canLog)
+        #expect(input.actions.isEmpty)
+        // The live day is editable until it is sealed, and takes a line after the seal as it always did.
+        input.past = nil
+        #expect(input.isEditable && input.canLog)
+        input.day.sealedAt = "18:12"
+        #expect(!input.isEditable && input.canLog)
+    }
+
+    @Test func theHistoryLineSaysEachSealAndReopening() throws {
+        var input = TodayTests.input(.sealed)
+        // One seal is the day as it always was: the story's own sentence.
+        input.history = try Self.history([(.sealed, "13:15")])
+        #expect(input.historyLine == nil)
+        #expect(input.heroSentence == input.story.sentence)
+        input.history = try Self.history([(.sealed, "13:15"), (.reopened, "14:02"), (.sealed, "15:30")])
+        #expect(input.historyLine == "Sealed 13:15, reopened 14:02, sealed again 15:30")
+        #expect(input.heroSentence == "Sealed 13:15, reopened 14:02, sealed again 15:30")
+        #expect(input.heroVoice.hasSuffix("Sealed 13:15, reopened 14:02, sealed again 15:30"))
+        input.history = try Self.history([(.sealed, "13:15"), (.reopened, "14:02"), (.sealed, "15:30"), (.reopened, "16:00"), (.sealed, "17:10")])
+        #expect(input.historyLine == "Sealed 13:15, reopened 14:02, sealed again 15:30, reopened 16:00, sealed again 17:10")
+        // Only the last five say their time, so the line fits the hero.
+        input.history = try Self.history([
+            (.sealed, "09:00"), (.reopened, "09:30"), (.sealed, "10:00"), (.reopened, "10:30"), (.sealed, "11:00"), (.reopened, "11:30"),
+            (.sealed, "12:00"),
+        ])
+        #expect(input.historyLine == "Sealed 10:00, reopened 10:30, sealed again 11:00, reopened 11:30, sealed again 12:00")
+    }
+
+    @Test func aReopenedDayThatIsNotSealedAgainSaysSoAndWhatToDo() throws {
+        var input = TodayTests.input(.planned)
+        input.history = try Self.history([(.sealed, "13:15"), (.reopened, "14:02")])
+        #expect(input.historyLine == "Reopened at 14:02. Wrap up again when you're done.")
+        #expect(input.heroSentence == "Reopened at 14:02. Wrap up again when you're done.")
+        // The latest reopening names the time.
+        input.history = try Self.history([(.sealed, "13:15"), (.reopened, "14:02"), (.sealed, "15:30"), (.reopened, "16:00")])
+        #expect(input.historyLine == "Reopened at 16:00. Wrap up again when you're done.")
+        // A day with no history has none to say.
+        input.history = []
+        #expect(input.historyLine == nil)
+    }
+
+    @Test func theHistoryLineAndTheButtonKeepTheCopyRules() throws {
+        var input = TodayTests.input(.sealed)
+        var lines = [TodayInput.reopenTitle]
+        input.history = try Self.history([(.sealed, "13:15"), (.reopened, "14:02"), (.sealed, "15:30")])
+        lines.append(input.historyLine ?? "")
+        input.history = try Self.history([(.sealed, "13:15"), (.reopened, "14:02")])
+        lines.append(input.historyLine ?? "")
+        #expect(TodayInput.reopenTitle == "Reopen day")
+        for line in lines {
+            #expect(!line.isEmpty && CopyRules.allows(line), "\(line)")
+        }
+    }
+
+    @Test func anEarlierDayIsReopenedWrittenAndReadAgainFromTheStore() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await AppStateTests.make(home)
+        // The clock's day is a Monday, so three days back is the Friday before: a workday, as the plan card needs.
+        let yesterday = app.today.adding(days: -3)
+        let journal = try home.journal()
+        _ = try journal.log(LogRequest(text: "Reviewed the RFC", date: yesterday), actor: .cli, origin: .selfReported)
+        _ = try journal.seal(yesterday, actor: .cli)
+
+        let days = DayBrowser(reader: StoreReader(location: .found(home.roots), clock: DayStoreLoaderTests.FixedClock()))
+        days.step(by: -3, today: app.today)
+        #expect(await until { days.reads == 1 })
+        var input = try #require(TodayInput(app: app, days: days))
+        #expect(input.day.date == yesterday && input.canReopen)
+        #expect(input.past?.reopened == false && !input.isEditable)
+        #expect(days.reopenedDay(today: app.today) == nil)
+        #expect(input.historyLine == nil)
+
+        #expect(await app.reopen(day: yesterday))
+        days.refresh()
+        #expect(await until { days.reads == 2 })
+        input = try #require(TodayInput(app: app, days: days))
+        #expect(input.past?.reopened == true && input.isEditable && !input.canReopen)
+        #expect(input.actions == [.wrapUp])
+        #expect(input.historyLine?.hasPrefix("Reopened at ") == true)
+        #expect(days.reopenedDay(today: app.today) == yesterday)
+        #expect(days.shownPlan(today: app.today) == input.plan)
+
+        // A line logged on it lands on that day, not marked as after a wrap-up.
+        let entry = try #require(await app.log("Reviewed the other RFC", day: days.reopenedDay(today: app.today)))
+        #expect(entry.day == yesterday.description && !entry.afterSeal)
+        days.refresh()
+        #expect(await until { days.reads == 3 })
+        input = try #require(TodayInput(app: app, days: days))
+        #expect(input.found.map(\.title).contains("Reviewed the other RFC"))
+
+        // Sealed again, it is read only once more and its history says both seals.
+        _ = try journal.seal(yesterday, actor: .app)
+        days.refresh()
+        #expect(await until { days.reads == 4 })
+        input = try #require(TodayInput(app: app, days: days))
+        #expect(input.canReopen && !input.isEditable && input.actions.isEmpty)
+        #expect(input.history.map(\.kind) == [.sealed, .reopened, .sealed])
+        #expect(days.reopenedDay(today: app.today) == nil)
+    }
+
     @Test func anEarlierDayNeverShowsTheYesterdayCard() {
         var input = TodayTests.input(.yesterdayOpen)
         #expect(input.yesterday != nil)

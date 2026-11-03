@@ -178,6 +178,8 @@ public struct LogContent: Sendable, Equatable {
         public var id: String
         public var title: String
         public var rows: [Row]
+        /// When the day was sealed and reopened, for a day that was reopened. Nil otherwise.
+        public var history: String?
     }
 
     public var days: [Day]
@@ -194,13 +196,17 @@ public struct LogContent: Sendable, Equatable {
 
     /// `entries` newest first. In discreet mode titles become "Item 1", "Item 2" within each day and tickets are hidden
     /// (docs/SPEC.md section 6.7).
-    public init(entries: [Entry], today: LocalDate, discreet: Bool, locale: Locale = .current) {
+    public init(
+        entries: [Entry], today: LocalDate, discreet: Bool, locale: Locale = .current,
+        histories: [String: [DayHistoryItem]] = [:], zone: TimeZone = .current
+    ) {
         let clock = ClockFormat(locale: locale)
         var days: [Day] = []
         for entry in entries {
             if days.last?.id != entry.day {
                 let title = LocalDate(entry.day).map { EntryWords.day($0, today: today, locale: locale) } ?? entry.day
-                days.append(Day(id: entry.day, title: title, rows: []))
+                let history = histories[entry.day].flatMap { DayHistoryLine.text($0, zone: zone) }
+                days.append(Day(id: entry.day, title: title, rows: [], history: history))
             }
             let index = days[days.count - 1].rows.count
             days[days.count - 1].rows.append(Self.row(entry, index: index, discreet: discreet, clock: clock))

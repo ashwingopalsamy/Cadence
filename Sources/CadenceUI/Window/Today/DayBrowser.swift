@@ -36,6 +36,24 @@ public final class DayBrowser {
         anchor == today ? shown : nil
     }
 
+    /// The context of the earlier day shown, as last read. Nil for the live day, while nothing has been read for the day,
+    /// and when the read failed.
+    func context(today: LocalDate) -> DayContext? {
+        guard let day = shown(today: today), case .loaded(let state) = load, state.day == day else { return nil }
+        return state.context
+    }
+
+    /// The earlier day shown, when it has been reopened and is not sealed again: it can be changed, so a line logged in
+    /// Today goes onto it. Nil for the live day and for an earlier day that is sealed or was never reopened.
+    public func reopenedDay(today: LocalDate) -> LocalDate? {
+        context(today: today)?.isReopened == true ? shown(today: today) : nil
+    }
+
+    /// The plan of the earlier day shown, for what VoiceOver says when one of its tasks is ticked.
+    public func shownPlan(today: LocalDate) -> [PlanTask]? {
+        context(today: today)?.plan
+    }
+
     /// One day back for a negative `by`, forward for a positive one. Reaching today returns to the live day.
     public func step(by days: Int, today: LocalDate) {
         guard canStep else { return }

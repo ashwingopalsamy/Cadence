@@ -97,7 +97,7 @@ struct FamilyDot: View {
             .accessibilityHidden(true)
     }
 
-    static func edged(_ scheme: ColorScheme, _ contrast: ColorSchemeContrast) -> Bool {
+    nonisolated static func edged(_ scheme: ColorScheme, _ contrast: ColorSchemeContrast) -> Bool {
         scheme == .light || contrast == .increased
     }
 }

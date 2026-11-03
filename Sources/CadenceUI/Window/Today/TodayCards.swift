@@ -19,6 +19,8 @@ public struct TodayActions {
     public var seeEverything: @MainActor () -> Void
     /// "Back to today" leaves an earlier day for the live one.
     public var backToToday: @MainActor () -> Void
+    /// "Reopen day" opens the sealed day shown, live or earlier, so it can be changed and sealed again.
+    public var reopen: @MainActor () -> Void
     public var failure: @MainActor (FailureCopy.Action) -> Void
 
     public init(
@@ -27,7 +29,8 @@ public struct TodayActions {
         captureContext: @escaping @MainActor () -> CaptureContext = { CaptureAdapter.context(zone: .current, boundary: .standard, now: Date()) },
         perform: @escaping @MainActor (TodayAction) -> Void = { _ in },
         openSettings: @escaping @MainActor (String) -> Void = { _ in }, seeEverything: @escaping @MainActor () -> Void = {},
-        backToToday: @escaping @MainActor () -> Void = {}, failure: @escaping @MainActor (FailureCopy.Action) -> Void = { _ in }
+        backToToday: @escaping @MainActor () -> Void = {}, reopen: @escaping @MainActor () -> Void = {},
+        failure: @escaping @MainActor (FailureCopy.Action) -> Void = { _ in }
     ) {
         self.tick = tick
         self.undo = undo
@@ -37,6 +40,7 @@ public struct TodayActions {
         self.openSettings = openSettings
         self.seeEverything = seeEverything
         self.backToToday = backToToday
+        self.reopen = reopen
         self.failure = failure
     }
 
@@ -98,7 +102,7 @@ struct PlanCard: View {
                     TaskRowView(
                         title: input.title(task.title, index: index, word: String(localized: "Task")), ticket: input.ticket(task),
                         status: input.status(of: task), note: input.plan.isEmpty ? String(localized: "Carried") : input.reason(task),
-                        editable: input.day.sealedAt == nil && !input.plan.isEmpty && input.past == nil, width: width
+                        editable: input.isEditable && !input.plan.isEmpty, width: width
                     ) { actions.tick(task) }
                 }
             }
@@ -356,10 +360,10 @@ struct UnplannedCard: View {
             let row = width == .compact
                 ? AnyLayout(VStackLayout(alignment: .trailing, spacing: CadenceSpace.s8))
                 : AnyLayout(HStackLayout(alignment: .top, spacing: CadenceSpace.s8))
-            // An earlier day is read only: nothing is logged into it from here.
-            if input.past == nil || !input.actions.isEmpty {
+            // An earlier day is read only until it is reopened: nothing is logged into it from here.
+            if input.canLog || !input.actions.isEmpty {
                 row {
-                    if input.past == nil {
+                    if input.canLog {
                         LogField(placeholder: input.logPlaceholder, context: actions.captureContext, discreet: input.discreet, onLog: actions.log)
                     }
                     ActionButtons(actions: input.actions, perform: actions.perform)

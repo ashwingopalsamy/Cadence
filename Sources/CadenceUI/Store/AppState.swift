@@ -85,7 +85,10 @@ public final class AppState {
 
     /// Ticks an open task. It reads as done at once and is written when the Undo window passes, when the
     /// panel closes, or when the app quits. Ticking another task first writes the one waiting.
-    public func tick(_ task: PlanTask) {
+    ///
+    /// `plan` is the plan the task belongs to, for what VoiceOver says ("Done, 2 of 3"): today's unless the task is on a
+    /// reopened earlier day.
+    public func tick(_ task: PlanTask, among plan: [PlanTask]? = nil) {
         guard task.status == .open, pendingTick?.task != task.id else { return }
         // The waiting tick is written under its own id before the new one takes its place, so neither is lost.
         let waiting = pendingTick
@@ -95,7 +98,7 @@ public final class AppState {
         pendingTick = PendingTick(task: task.id, since: clock.now())
         // Said once per tick, here, so Today and the panel never say it twice. The tick that was waiting is done too,
         // though the read that shows it has not come back yet.
-        let plan = context?.plan ?? []
+        let plan = plan ?? context?.plan ?? []
         let done = plan.filter { $0.status == .done || $0.id == task.id || $0.id == waiting?.task }.count
         announce(Self.tickAnnouncement(done: done, planned: plan.count))
         pendingTask?.cancel()
@@ -186,6 +189,14 @@ public final class AppState {
         if standup, case .standup(let body, _)? = await perform(.standup(day: day)) { text = body }
         guard case .sealed(let result)? = await perform(.seal(day: day)) else { return nil }
         return (result, text)
+    }
+
+    /// Opens a sealed day again, whichever day it is, so it can be changed and sealed again (section 3). The ledger keeps
+    /// every earlier seal. A refusal (the day is not sealed) goes to the banner like any other.
+    @discardableResult
+    public func reopen(day: LocalDate? = nil) async -> Bool {
+        await flushPendingTick()
+        return await perform(.reopen(day: day)) != nil
     }
 
     /// Not working today (section 4.2): leave, sick (leave labelled "sick") or holiday.

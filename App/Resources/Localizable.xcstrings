@@ -1984,6 +1984,9 @@
     "Open recap" : {
 
     },
+    "Open this day again to change it. Every seal stays in its history." : {
+
+    },
     "Opened" : {
 
     },
@@ -2167,6 +2170,15 @@
     "Remove %@" : {
 
     },
+    "Reopen day" : {
+
+    },
+    "Reopened %@" : {
+
+    },
+    "Reopened at %@. Wrap up again when you're done." : {
+
+    },
     "Restore from a backup" : {
 
     },
@@ -2253,6 +2265,9 @@
 
     },
     "Sealed" : {
+
+    },
+    "Sealed %@" : {
 
     },
     "Sealed at %@, %@ logged." : {
@@ -3208,6 +3223,9 @@
     "release" : {
 
     },
+    "reopened %@" : {
+
+    },
     "restored it" : {
 
     },
@@ -3218,6 +3236,9 @@
 
     },
     "reviews" : {
+
+    },
+    "sealed again %@" : {
 
     },
     "sealed workdays" : {
