@@ -70,7 +70,7 @@ From the CLI (docs/SPEC.md section 9.5):
 
 ## The verifier (docs/SPEC.md section 12.3)
 
-`tools/verify_proof.py` is the verifier. It is about 130 lines of Python 3 that use only the standard library. Each proof file embeds the same script as `verifier_py`, so a file can be checked without this repository. The repository tests the script against a valid and a tampered proof vector (docs/SPEC.md section 14.6).
+`tools/verify_proof.py` is the verifier. It is 147 lines of Python 3 that use only the standard library. Each proof file embeds the same script as `verifier_py`, so a file can be checked without this repository. The repository tests the script against a valid and a tampered proof vector (docs/SPEC.md section 14.6).
 
 It recomputes the export digest, the sequence and links of each event, each payload digest and event hash, every item against its events, every seal (the cited event must be the day's current seal), the merged PR and review counts, and every witness. It warns when recorded times go backwards.
 

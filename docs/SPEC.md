@@ -328,7 +328,7 @@ If a capture looks like an entry a collector already found (same ticket, same ki
 Token| Recognised by| Becomes
 ---|---|---
 Ticket| Config regex, default `\b[A-Z][A-Z0-9]{1,9}-\d{3,8}\b`, searched anywhere and in the first 12 characters of PR titles| Ticket chip, class **assigned** , or **self-initiated** when the number matches `^0+$`
-PR or ticket URL| `…/pull/<n>`, `…/browse/<KEY>`| Link chip; resolved to a title when a collector has seen it
+PR or ticket URL| `…/pull/<n>`, `…/browse/<KEY>`| Link chip; resolved to a title when a collector has seen it. An https link leaves the title and becomes a link chip, and a line that is only that link is titled by the link's name (e.g. "PR #88 in acme/api").
 Kind verb| Lexicon, first match wins: reviewed, approved, code review, PR review, reviewing → review (a bare "review" is not enough) · merged, shipped, released → delivery · opened a PR, PR opened → PR opened · fixed, implemented, built, refactored, finished → work done · raised, proposed, brought up → discussion · challenged, pushed back → decision challenged · led, ran, facilitated, demoed → meeting led · attended, joined, sync, 1:1 → meeting · helped, paired, mentored, unblocked → mentoring · paged, incident, hotfix, mitigated → incident · prototyped, kicked off, automated, initiative → initiative · wrote, drafted, RFC, ADR → doc| Kind chip with its work colour and name; falls back to note
 Time| `@10:30`, `at 3pm`, `yesterday`, `mon`, `27 oct`| Occurred time or day; past days are marked backfilled
 Duration| `~2h`, `45m`, `for 1h30`| Duration chip
@@ -1577,9 +1577,11 @@ This is a Cadence work log export. To check it:
 
 ### 12.3 The verifier
 
-verify.py: about 130 lines, standard library only, tested against 21 tampered files
+verify.py: 147 lines, standard library only, tested against 23 tampered files
 
 tools/verify_proof.py, also embedded as verifier_py
+
+A sealed day must cite its current seal, the first `day.sealed` after the last `day.reopened`, read from the chain's event types and subjects, which hash-only events keep; any other seal fails, and so does a day that shows no seal while the chain holds one.
 
 
 ```python
@@ -1641,7 +1643,7 @@ def verify(p):
     body = {k: v for k, v in p.items() if k != "export_digest"}
     if sha(body) != p.get("export_digest"):
         fails.append("export_digest does not match the file: it was edited after export")
-    prev, last_at, by_hash, by_subject, by_code = "0" * 64, "", {}, {}, {}
+    prev, last_at, by_hash, by_subject, by_code, current = "0" * 64, "", {}, {}, {}, {}
     for i, e in enumerate(p["chain"]["events"], start=1):
         tag = "event %s" % e.get("seq")
         if e["seq"] != i:
@@ -1658,12 +1660,18 @@ def verify(p):
         by_hash[e["hash"]] = e
         by_subject.setdefault(e["subject"], []).append(e)
         by_code.setdefault(e["hash"][:16], []).append(e)
+        # A day's current seal is its first day.sealed after its last day.reopened.
+        if e["type"] == "day.sealed" and current.get(e["subject"]) is None:
+            current[e["subject"]] = e["seq"]
+        elif e["type"] == "day.reopened":
+            current[e["subject"]] = None
     lo, hi = p["range"]["from"], p["range"]["to"]
     counts = {"merged_prs": 0, "reviews": 0}
     for d in p["days"]:
         date = d["date"]
         if not lo <= date <= hi:
             fails.append("%s: day is outside the range" % date)
+        cur = current.get("day:" + date)
         if d.get("seal_ev") or d.get("sealed_at"):
             s = by_hash.get(d.get("seal_ev"))
             if s is None:
@@ -1672,6 +1680,10 @@ def verify(p):
                 fails.append("%s: seal_ev is not this day's seal" % date)
             elif not d.get("sealed_at") or instant(d["sealed_at"]) != instant(s["at"]):
                 fails.append("%s: sealed_at does not match the seal event" % date)
+            elif s["seq"] != cur:
+                fails.append("%s: seal_ev is not this day's current seal" % date)
+        elif cur is not None:
+            fails.append("%s: the day's seal is hidden" % date)
         for it in d["items"]:
             check_item(it, date, by_hash, by_subject, fails)
             if it["kind"] == "pr.merged" and it["origin"] == "collected":
