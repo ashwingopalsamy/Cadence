@@ -248,9 +248,19 @@ struct FoundRowView: View {
     var late: Bool
     var origin: Origin
     var width: TodayWidth
+    /// The entry's first link, as a glyph that opens it. Nil when it has none.
+    var link: LinkTarget?
     @Environment(\.accessibilityDifferentiateWithoutColor) private var withoutColour
 
     var body: some View {
+        HStack(spacing: CadenceSpace.s8) {
+            row
+            if let link { LinkGlyphButton(target: link) }
+        }
+        .frame(minHeight: CadenceSize.foundRow)
+    }
+
+    private var row: some View {
         HStack(spacing: CadenceSpace.s8) {
             Text(time)
                 .cadenceType(CadenceType.figure)
@@ -287,7 +297,6 @@ struct FoundRowView: View {
                     .help(Self.originHelp(origin))
             }
         }
-        .frame(minHeight: CadenceSize.foundRow)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             "\(time), \(Self.familyName(family)), \(title)\(late ? String(localized: ", after wrap-up") : ""), \(Self.originHelp(origin).lowercased())")
@@ -317,13 +326,20 @@ struct FoundRowView: View {
     }
 }
 
-/// One line is enough: the log field (section 4.6).
+/// One line is enough: the log field (section 4.6). Once there are words, a chip says the kind the line will save as,
+/// "Note" when nothing matched, and another names a link in it. A pick on the kind chip stays until the field is cleared.
 struct LogField: View {
     var placeholder: String
-    var onLog: (String) -> Void
+    /// The parser's context, to read the line as it is typed.
+    var context: () -> CaptureContext
+    var discreet = false
+    /// The line, and the kind if the person picked one.
+    var onLog: (String, EntryKind?) -> Void
     @State private var text = ""
+    @State private var picked: EntryKind?
 
     var body: some View {
+        let line = typed
         HStack(spacing: CadenceSpace.s8) {
             TextField("Log something", text: $text, prompt: Text(placeholder).foregroundStyle(CadenceColor.ink3.color))
                 .textFieldStyle(.plain)
@@ -332,6 +348,10 @@ struct LogField: View {
                 .labelsHidden()
                 .onSubmit(submit)
                 .accessibilityLabel("Log something")
+            if let line {
+                LogKindChip(line: line) { picked = $0 }
+                LogLinkChip(line: line)
+            }
             Button(action: submit) {
                 Text("Log")
                     .cadenceType(CadenceType.body)
@@ -351,13 +371,23 @@ struct LogField: View {
         .padding(.trailing, CadenceSpace.s4)
         .frame(height: CadenceSize.controlPrimary)
         .background(RoundedRectangle(cornerRadius: CadenceRadius.control, style: .continuous).fill(CadenceColor.track.color))
+        // Clearing the field lets the words choose the kind again.
+        .onChange(of: text) { if blank { picked = nil } }
+    }
+
+    private var blank: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// What the line will save as. Nil while the field is empty, so an empty field is as it was.
+    private var typed: LogLine? {
+        blank ? nil : LogLine(text: text, picked: picked, context: context(), discreet: discreet)
     }
 
     private func submit() {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return }
-        onLog(line)
+        onLog(line, picked)
         text = ""
+        picked = nil
     }
 }
 

@@ -244,7 +244,8 @@ public struct WindowRoot: View {
         return TodayActions(
             tick: { app.tick($0) },
             undo: { app.undoTick() },
-            log: { text in Task { await app.log(text) } },
+            log: { text, kind in Task { await app.log(text, kind: kind) } },
+            captureContext: { app.captureContext },
             perform: { action in
                 switch action {
                 case .planYourDay, .planToday: actions.openPlan()

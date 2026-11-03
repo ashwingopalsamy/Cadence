@@ -8,7 +8,10 @@ import SwiftUI
 public struct TodayActions {
     public var tick: @MainActor (PlanTask) -> Void
     public var undo: @MainActor () -> Void
-    public var log: @MainActor (String) -> Void
+    /// A line from the log field, and the kind if the person picked one on its chip.
+    public var log: @MainActor (String, EntryKind?) -> Void
+    /// The parser's context, for the log field to read a line as it is typed.
+    public var captureContext: @MainActor () -> CaptureContext
     public var perform: @MainActor (TodayAction) -> Void
     /// "Check Sources" opens Settings on that pane.
     public var openSettings: @MainActor (String) -> Void
@@ -20,13 +23,16 @@ public struct TodayActions {
 
     public init(
         tick: @escaping @MainActor (PlanTask) -> Void = { _ in }, undo: @escaping @MainActor () -> Void = {},
-        log: @escaping @MainActor (String) -> Void = { _ in }, perform: @escaping @MainActor (TodayAction) -> Void = { _ in },
+        log: @escaping @MainActor (String, EntryKind?) -> Void = { _, _ in },
+        captureContext: @escaping @MainActor () -> CaptureContext = { CaptureAdapter.context(zone: .current, boundary: .standard, now: Date()) },
+        perform: @escaping @MainActor (TodayAction) -> Void = { _ in },
         openSettings: @escaping @MainActor (String) -> Void = { _ in }, seeEverything: @escaping @MainActor () -> Void = {},
         backToToday: @escaping @MainActor () -> Void = {}, failure: @escaping @MainActor (FailureCopy.Action) -> Void = { _ in }
     ) {
         self.tick = tick
         self.undo = undo
         self.log = log
+        self.captureContext = captureContext
         self.perform = perform
         self.openSettings = openSettings
         self.seeEverything = seeEverything
@@ -270,7 +276,7 @@ struct FoundCard: View {
                         FoundRowView(
                             time: input.time(of: entry), family: entry.family,
                             title: input.title(entry.title, index: index), late: entry.afterSeal, origin: entry.origin,
-                            width: width)
+                            width: width, link: input.link(of: entry))
                     }
                 }
             }
@@ -286,6 +292,7 @@ struct LogCard: View {
     var sentence: String
     var placeholder: String
     var hint: String?
+    var discreet = false
     var actions: TodayActions
 
     var body: some View {
@@ -296,7 +303,7 @@ struct LogCard: View {
                 .foregroundStyle(CadenceColor.ink.color)
                 .padding(.top, CadenceSpace.s4)
                 .padding(.bottom, CadenceSpace.s8)
-            LogField(placeholder: placeholder, onLog: actions.log)
+            LogField(placeholder: placeholder, context: actions.captureContext, discreet: discreet, onLog: actions.log)
             if let hint { Hint(hint).padding(.top, CadenceSpace.s8) }
         }
         .todayCard()
@@ -352,7 +359,9 @@ struct UnplannedCard: View {
             // An earlier day is read only: nothing is logged into it from here.
             if input.past == nil || !input.actions.isEmpty {
                 row {
-                    if input.past == nil { LogField(placeholder: input.logPlaceholder, onLog: actions.log) }
+                    if input.past == nil {
+                        LogField(placeholder: input.logPlaceholder, context: actions.captureContext, discreet: input.discreet, onLog: actions.log)
+                    }
                     ActionButtons(actions: input.actions, perform: actions.perform)
                 }
                 .padding(.top, CadenceSpace.s12)

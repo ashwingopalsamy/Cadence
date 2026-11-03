@@ -12,8 +12,8 @@ public enum WriteAction: Sendable {
     case seal(day: LocalDate?)
     case declare(day: LocalDate, kind: DayKind, label: String?)
     case setStatus(entry: String, status: EntryStatus)
-    /// A new title or kind for an entry; the history keeps the old one.
-    case editEntry(entry: String, title: String?, kind: EntryKind?)
+    /// A new title, kind or list of links for an entry; the history keeps the old one.
+    case editEntry(entry: String, title: String?, kind: EntryKind?, links: [Link]? = nil)
     case standup(day: LocalDate?)
 }
 
@@ -215,8 +215,8 @@ public actor AppWriter {
         case .declare(let day, let kind, let label):
             try journal.declare(day, kind: kind, label: label, actor: .app)
             return .none
-        case .editEntry(let entry, let title, let kind):
-            return .entry(try journal.entryEdit(entryID: entry, title: title, kind: kind, actor: .app))
+        case .editEntry(let entry, let title, let kind, let links):
+            return .entry(try journal.entryEdit(entryID: entry, title: title, kind: kind, links: links, actor: .app))
         case .setStatus(let entry, let status):
             return .entry(try journal.setStatus(entryID: entry, to: status, note: nil, actor: .app))
         case .standup(let day):

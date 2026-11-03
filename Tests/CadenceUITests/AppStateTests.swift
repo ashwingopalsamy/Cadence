@@ -203,6 +203,71 @@ import Testing
         #expect(app.unsavedText == nil && app.issue == nil)
     }
 
+    // MARK: a line with a picked kind and links (T4.17)
+
+    @Test func aPickedKindIsSavedInPlaceOfTheOneTheWordsSay() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        // Nothing in the words names a kind, so without a pick this is a note, hidden from the counts.
+        let plain = try #require(await app.log("Went through the retry fix"))
+        #expect(plain.kind == .note && plain.export == .digest)
+        let picked = try #require(await app.log("Went through the retry fix", kind: .reviewGiven))
+        #expect(picked.kind == .reviewGiven && picked.family == .review && picked.export == .include)
+        #expect(picked.origin == .selfReported)
+        // The code review phrase saves as a review without a pick.
+        #expect(try #require(await app.log("Code review of the retry fix")).kind == .reviewGiven)
+    }
+
+    @Test func aLinkInTheLineLeavesTheTitleAndIsSavedWithTheEntry() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let pr = "https://git.example.com/acme/api/pull/88"
+        let reviewed = try #require(await app.log("Reviewed \(pr)"))
+        #expect(reviewed.title == "Reviewed" && reviewed.kind == .reviewGiven)
+        #expect(reviewed.links == [Link(kind: .pr, url: pr)])
+        let only = try #require(await app.log(pr))
+        #expect(only.title == "PR #88 in acme/api" && only.links.count == 1)
+    }
+
+    @Test func linksGivenToLogAreCheckedByTheSameRule() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let kept = try #require(await app.log("Reviewed the RFC", links: [Link(kind: .other, url: "https://docs.example.com/rfc")]))
+        #expect(kept.links.map(\.url) == ["https://docs.example.com/rfc"])
+        // A link the ledger refuses saves nothing, and the words stay for Copy my text.
+        #expect(await app.log("Reviewed the other RFC", links: [Link(kind: .other, url: "http://docs.example.com/rfc")]) == nil)
+        #expect(app.issue?.kind == .invalid)
+        #expect(app.unsavedText == "Reviewed the other RFC")
+    }
+
+    @Test func aLineLogsOntoTheDayItIsFor() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let day = app.today.adding(days: -1)
+        let entry = try #require(await app.log("Reviewed the RFC", day: day))
+        #expect(entry.day == day.description && entry.backfilled)
+        #expect(try #require(await app.log("Reviewed the other RFC")).day == app.today.description)
+    }
+
+    @Test func editingAnEntrysLinksAddsAVersion() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let entry = try #require(await app.log("Reviewed the RFC"))
+        let pr = Link(kind: .pr, url: "https://git.example.com/acme/api/pull/88")
+        #expect(await app.editEntry(entry.id, links: [pr]))
+        #expect(await app.editEntry(entry.id, links: []))
+        #expect(!(await app.editEntry(entry.id, links: [Link(kind: .other, url: "ftp://example.com/x")])))
+        #expect(app.issue?.kind == .invalid)
+        let journal = try home.journal()
+        #expect(try journal.history(subject: "entry:\(entry.id)").map(\.type) == ["entry.created", "entry.updated", "entry.updated"])
+        #expect(try journal.entry(entry.id).links.isEmpty)
+    }
+
     @Test func discreetModeHidesTitlesAndTempo() async throws {
         let home = Home()
         defer { home.remove() }

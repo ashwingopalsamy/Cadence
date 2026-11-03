@@ -76,6 +76,39 @@ import Testing
         #expect(try journal.preview(request, origin: .selfReported).kind == .note)
     }
 
+    // The parser leaves a link out of the title and names a line that is only a link (docs/PLAN.md T4.17), and the bar
+    // follows: the link chip is named by Core, and what the bar saves is what the CLI saves.
+    @Test func aLinkChipIsNamedByCoreAndTheLinkLeavesTheSavedTitle() throws {
+        let line = "Reviewed https://example.com/acme/api/pull/412 @10:30"
+        #expect(Self.chips(line).first { $0.role == .link }?.value == "PR #412")
+        #expect(CaptureAdapter.chips(for: CaptureDraft(text: line), context: Self.context(), discreet: true).first { $0.role == .link }?.value == "hidden")
+        let home = Home()
+        defer { home.remove() }
+        let journal = try home.journal()
+        let saved = try journal.preview(try #require(CaptureAdapter.request(for: CaptureDraft(text: line))), origin: .selfReported)
+        #expect(saved.title == "Reviewed" && saved.kind == .reviewGiven)
+        #expect(saved.links.map(\.url) == ["https://example.com/acme/api/pull/412"])
+        let only = try journal.preview(
+            try #require(CaptureAdapter.request(for: CaptureDraft(text: "https://example.com/acme/api/pull/412"))), origin: .selfReported)
+        #expect(only.title == "PR #412 in acme/api" && only.links.count == 1)
+    }
+
+    @Test func removingTheLinkChipTakesTheAddressOutOfTheLine() throws {
+        let draft = CaptureDraft(text: "Reviewed https://example.com/acme/api/pull/412 @10:30")
+        let link = try #require(CaptureAdapter.chips(for: draft, context: Self.context()).first { $0.role == .link })
+        let next = CaptureAdapter.removing(link, from: draft)
+        #expect(next.text == "Reviewed @10:30")
+        #expect(!CaptureAdapter.chips(for: next, context: Self.context()).contains { $0.role == .link })
+    }
+
+    @Test func theNewReviewAndOpenedPhrasesShowInTheKindChip() {
+        for line in ["Code review of the retry fix", "PR review for ACME-482913", "Reviewing the settlement doc"] {
+            #expect(Self.chips(line).first?.value == "Review", "\(line)")
+        }
+        #expect(Self.chips("Opened a PR for the retry fix").first?.value == "PR opened")
+        #expect(Self.chips("Quick review").first?.value == "Note", "a bare review is not a lexicon word")
+    }
+
     @Test func ticketsSayAssignedOrSelfStarted() {
         #expect(Self.chips("Fixed ACME-4821")[1].detail == "assigned")
         #expect(Self.chips("Prototyped replay tool ACME-000000")[1].detail == "self-started")

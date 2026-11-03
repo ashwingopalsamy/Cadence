@@ -359,6 +359,132 @@ import Testing
         #expect(detail.versions.map(\.what) == ["You logged it", "You changed the title"])
     }
 
+    // MARK: links (T4.17)
+
+    static let pr = Link(kind: .pr, url: "https://git.example.com/acme/api/pull/88")
+    static let doc = Link(kind: .other, url: "https://docs.example.com/retry")
+
+    @Test func aRowAndItsDetailCarryTheEntrysLinks() throws {
+        let home = Home()
+        defer { home.remove() }
+        let journal = try home.journal()
+        let entry = try journal.log(
+            LogRequest(text: "Reviewed the retry fix", kind: .reviewGiven, links: [Self.pr, Self.doc]), actor: .cli, origin: .selfReported)
+        let plain = try journal.log(LogRequest(text: "Wrote the ACME runbook"), actor: .cli, origin: .selfReported)
+        let content = LogContent(entries: [plain, entry], today: Self.today, discreet: false, locale: Self.gb)
+        let rows = content.days.flatMap(\.rows)
+        #expect(rows.map(\.link?.name) == [nil, "PR #88"])
+        #expect(rows.last?.link?.url == URL(string: Self.pr.url))
+        #expect(rows.last?.link?.openVoice == "Open PR #88")
+
+        let detail = LogDetail(entry: entry, events: try journal.history(subject: "entry:\(entry.id)"), zone: .gmt, discreet: false, locale: Self.gb)
+        #expect(detail.links.map(\.name) == ["PR #88", "docs.example.com"])
+        #expect(detail.links.map(\.link) == [Self.pr, Self.doc])
+    }
+
+    @Test func discreetModeNamesLinksByPlace() throws {
+        let home = Home()
+        defer { home.remove() }
+        let journal = try home.journal()
+        let entry = try journal.log(
+            LogRequest(text: "Reviewed the retry fix", kind: .reviewGiven, links: [Self.pr, Self.doc]), actor: .cli, origin: .selfReported)
+        let content = LogContent(entries: [entry], today: Self.today, discreet: true, locale: Self.gb)
+        #expect(content.days[0].rows[0].link?.name == "Link 1")
+        let detail = LogDetail(entry: entry, events: try journal.history(subject: "entry:\(entry.id)"), zone: .gmt, discreet: true, locale: Self.gb)
+        #expect(detail.links.map(\.name) == ["Link 1", "Link 2"])
+    }
+
+    @Test func aLinkIsAddedFromTheDetailAndShowsInItsHistory() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let journal = try home.journal()
+        let entry = try journal.log(LogRequest(text: "Reviewed the retry fix", kind: .reviewGiven), actor: .cli, origin: .selfReported)
+        let (model, app) = try await opened(home, entry)
+        model.beginAddLink()
+        #expect(model.linkEdit == LinkEdit(entry: entry.id, draft: ""))
+        model.setLinkDraft("  https://git.example.com/acme/api/pull/88  ")
+        #expect(await model.saveLink(through: app))
+        #expect(model.linkEdit == nil)
+        #expect(await until { model.opened?.entry.links == [Self.pr] })
+        let opened = try #require(model.opened)
+        let detail = LogDetail(entry: opened.entry, events: opened.events, zone: .gmt, discreet: false, locale: Self.gb)
+        #expect(detail.links.map(\.name) == ["PR #88"])
+        #expect(detail.versions.map(\.what) == ["You logged it", "You changed the links"])
+        // The same link again changes nothing and writes nothing.
+        model.beginAddLink()
+        model.setLinkDraft(Self.pr.url)
+        #expect(await model.saveLink(through: app))
+        #expect(try journal.history(subject: "entry:\(entry.id)").count == 2)
+    }
+
+    @Test func aRefusedLinkKeepsTheFieldAndSaysWhyInline() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let journal = try home.journal()
+        let entry = try journal.log(LogRequest(text: "Reviewed the retry fix", kind: .reviewGiven), actor: .cli, origin: .selfReported)
+        let (model, app) = try await opened(home, entry)
+        model.beginAddLink()
+        // Nothing typed, and not a web address: refused without asking the store.
+        model.setLinkDraft("  ")
+        #expect(!(await model.saveLink(through: app)))
+        #expect(model.linkEdit?.problem == LinkEdit.empty)
+        model.setLinkDraft("docs.example.com/retry")
+        #expect(!(await model.saveLink(through: app)))
+        #expect(model.linkEdit?.problem == LinkEdit.notWeb)
+        // The ledger's own rule: http is refused unless the config allows its host. The reason is the rule's.
+        model.setLinkDraft("http://docs.example.com/retry")
+        #expect(!(await model.saveLink(through: app)))
+        #expect(model.linkEdit?.draft == "http://docs.example.com/retry")
+        #expect(model.linkEdit?.problem == "Only https links are accepted. Nothing was changed.")
+        #expect(app.issue == nil, "the reason is shown beside the field, not as a banner too")
+        // Typing again clears the reason; Esc leaves the entry as it was.
+        model.setLinkDraft("https://docs.example.com/retry")
+        #expect(model.linkEdit?.problem == nil)
+        model.cancelAddLink()
+        #expect(model.linkEdit == nil)
+        #expect(try journal.history(subject: "entry:\(entry.id)").count == 1)
+    }
+
+    @Test func aSixthLinkIsRefusedWithTheRulesReason() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let journal = try home.journal()
+        let links = (1...5).map { Link(kind: .other, url: "https://example.com/p/\($0)") }
+        let entry = try journal.log(LogRequest(text: "Wrote the notes", links: links), actor: .cli, origin: .selfReported)
+        let (model, app) = try await opened(home, entry)
+        model.beginAddLink()
+        model.setLinkDraft("https://example.com/p/6")
+        #expect(!(await model.saveLink(through: app)))
+        #expect(model.linkEdit?.problem == "At most 5 per entry. Nothing was changed.")
+    }
+
+    @Test func aLinkIsRemovedAsANewVersion() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let journal = try home.journal()
+        let entry = try journal.log(
+            LogRequest(text: "Reviewed the retry fix", kind: .reviewGiven, links: [Self.pr, Self.doc]), actor: .cli, origin: .selfReported)
+        let (model, app) = try await opened(home, entry)
+        #expect(await model.removeLink(Self.pr, through: app))
+        #expect(await until { model.opened?.entry.links == [Self.doc] })
+        #expect(try journal.history(subject: "entry:\(entry.id)").map(\.type) == ["entry.created", "entry.updated"])
+        #expect(model.linkProblem == nil)
+        // The entry in the list follows.
+        #expect(await until { model.entries.first?.links == [Self.doc] })
+    }
+
+    @Test func openingAnotherEntryLeavesAnUnsavedLink() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let journal = try home.journal()
+        let entry = try journal.log(LogRequest(text: "Reviewed the retry fix", kind: .reviewGiven), actor: .cli, origin: .selfReported)
+        let (model, _) = try await opened(home, entry)
+        model.beginAddLink()
+        model.setLinkDraft("https://docs.example.com/x")
+        model.open(nil)
+        #expect(model.linkEdit == nil)
+    }
+
     // MARK: search from another section (section 4.8)
 
     @Test func searchFromAnotherSectionOpensTheLogAndLeavesASearchPending() {

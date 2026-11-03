@@ -70,13 +70,13 @@ public struct TodayContent: View {
     private var offLog: some View {
         LogCard(
             label: String(localized: "If something came up"), sentence: String(localized: "Log it, and it is marked as a day-off entry."),
-            placeholder: input.logPlaceholder, hint: nil, actions: actions)
+            placeholder: input.logPlaceholder, hint: nil, discreet: input.discreet, actions: actions)
     }
 
     private var logCard: some View {
         LogCard(
             label: String(localized: "Log something"), sentence: String(localized: "One line is enough."), placeholder: input.logPlaceholder,
-            hint: String(localized: "From anywhere: press ⌃⌥L."), actions: actions)
+            hint: String(localized: "From anywhere: press ⌃⌥L."), discreet: input.discreet, actions: actions)
     }
 
     /// Delivery, Reviews, Day length and Beyond the plan, two to a row except when compact.

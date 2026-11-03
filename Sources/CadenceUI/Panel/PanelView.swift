@@ -89,7 +89,9 @@ public struct PanelView: View {
                 }
             },
             undo: { app.undoTick() },
-            log: { text in await app.log(text) != nil },
+            log: { text, kind in await app.log(text, kind: kind) != nil },
+            captureContext: { app.captureContext },
+            discreet: { app.discreet },
             action: { action in
                 close()
                 actions.run(action)
@@ -124,8 +126,11 @@ public struct PanelView: View {
 struct PanelHandlers {
     var tick: (String) -> Void = { _ in }
     var undo: () -> Void = {}
-    /// Returns true when the line was logged.
-    var log: (String) async -> Bool = { _ in false }
+    /// Returns true when the line was logged. The kind is the one the person picked on the field's chip, if any.
+    var log: (String, EntryKind?) async -> Bool = { _, _ in false }
+    /// The parser's context, to read a line as it is typed.
+    var captureContext: () -> CaptureContext = { CaptureAdapter.context(zone: .current, boundary: .standard, now: Date()) }
+    var discreet: () -> Bool = { false }
     var action: (PanelAction) -> Void = { _ in }
     var note: (PanelContent.Note.Button) -> Void = { _ in }
     var workingAfterAll: () -> Void = {}
@@ -150,6 +155,8 @@ public struct PanelCard: View {
     let solid: Bool
 
     @State private var text = ""
+    /// The kind picked on the field's chip. It stays until the field is cleared.
+    @State private var picked: EntryKind?
     @State private var logged = false
     @FocusState private var focus: PanelFocus?
 
@@ -189,6 +196,9 @@ public struct PanelCard: View {
         .onChange(of: opens) {
             logged = false
             focus = content.logEnabled ? .log : nil
+        }
+        .onChange(of: text) {
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { picked = nil }
         }
     }
 
@@ -342,8 +352,14 @@ public struct PanelCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel("Log field off. \(PanelContent.logOffPlaceholder)")
             }
-            // While logging is off, the key it no longer answers fades.
-            KeyHint(keys: "\u{2303}\u{2325}L").opacity(content.logEnabled ? 1 : PanelMetrics.disabled)
+            if content.logEnabled, let line = typed {
+                // Once there are words, the kind the line will save as and the link in it take the key hint's place.
+                LogKindChip(line: line) { picked = $0 }
+                LogLinkChip(line: line)
+            } else {
+                // While logging is off, the key it no longer answers fades.
+                KeyHint(keys: "\u{2303}\u{2325}L").opacity(content.logEnabled ? 1 : PanelMetrics.disabled)
+            }
         }
         .padding(.leading, CadenceSpace.s12)
         .padding(.trailing, CadenceSpace.s4)
@@ -353,6 +369,12 @@ public struct PanelCard: View {
 
     private var placeholder: String {
         logged ? PanelContent.loggedPlaceholder : PanelContent.logPlaceholder
+    }
+
+    /// What the line will save as. Nil while the field is empty, so an empty field is as it was.
+    private var typed: LogLine? {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil : LogLine(text: text, picked: picked, context: handlers.captureContext(), discreet: handlers.discreet())
     }
 
     private func actionButton(_ action: PanelAction) -> some View {
@@ -443,10 +465,14 @@ public struct PanelCard: View {
 
     private func submit() {
         let line = text
+        let kind = picked
         guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         Task {
-            if await handlers.log(line) {
-                if text == line { text = "" }
+            if await handlers.log(line, kind) {
+                if text == line {
+                    text = ""
+                    picked = nil
+                }
                 logged = true
             }
         }

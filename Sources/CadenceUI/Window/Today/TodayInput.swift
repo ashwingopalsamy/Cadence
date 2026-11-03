@@ -365,6 +365,11 @@ extension TodayInput {
         found.filter { $0.family != .presence }.reversed()
     }
 
+    /// The first link of an entry the system can open, for its row's link button.
+    func link(of entry: Entry) -> LinkTarget? {
+        entry.linkTargets(discreet: discreet).first { $0.url != nil }
+    }
+
     /// The local time an entry happened, or "-".
     public func time(of entry: Entry) -> String {
         entry.occurredAt.flatMap { Timestamp.parse($0) }.map(clock) ?? "-"

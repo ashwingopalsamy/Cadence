@@ -49,6 +49,10 @@ public final class LogModel {
     public private(set) var edit: TitleEdit?
     /// Why the last kind change was refused. Nil while there is nothing to say.
     public private(set) var kindProblem: String?
+    /// A link being added to the open entry, while its field shows.
+    public private(set) var linkEdit: LinkEdit?
+    /// Why the last link could not be taken away. Nil while there is nothing to say.
+    public private(set) var linkProblem: String?
     /// An edit to the open entry is being written, so its controls wait.
     public private(set) var saving = false
     /// Counts finished reads, so a caller can wait for the read after its change.
@@ -176,6 +180,8 @@ public final class LogModel {
         if id != opened?.entry.id {
             edit = nil
             kindProblem = nil
+            linkEdit = nil
+            linkProblem = nil
         }
         wanted = id
         guard let id else {
@@ -205,6 +211,79 @@ public final class LogModel {
         guard let entry = opened?.entry else { return }
         kindProblem = nil
         edit = TitleEdit(entry: entry.id, draft: entry.title)
+    }
+
+    // MARK: links of the open entry
+
+    /// Add link: a field for the address.
+    public func beginAddLink() {
+        guard let entry = opened?.entry else { return }
+        linkProblem = nil
+        linkEdit = LinkEdit(entry: entry.id, draft: "")
+    }
+
+    /// Takes the field's text. A reason shown for the last refusal goes once you type.
+    public func setLinkDraft(_ text: String) {
+        linkEdit?.draft = text
+        linkEdit?.problem = nil
+    }
+
+    /// Esc: the entry stays as it was.
+    public func cancelAddLink() { linkEdit = nil }
+
+    /// Return or Add: writes the entry's links with the new one through `AppState`, which adds a version. Words that
+    /// are not a web address are refused here; the rest is the ledger's rule, and its reason is shown beside the field.
+    /// A link the entry already holds changes nothing.
+    @discardableResult
+    public func saveLink(through app: AppState) async -> Bool {
+        guard let linkEdit, !saving else { return false }
+        let id = linkEdit.entry
+        guard let address = linkEdit.cleaned else {
+            self.linkEdit?.problem = LinkEdit.empty
+            return false
+        }
+        guard LinkEdit.looksWeb(address) else {
+            self.linkEdit?.problem = LinkEdit.notWeb
+            return false
+        }
+        guard let entry = opened?.entry, entry.id == id else {
+            self.linkEdit = nil
+            return false
+        }
+        let link = Link.inferred(url: address)
+        guard !entry.links.contains(link) else {
+            self.linkEdit = nil
+            return true
+        }
+        saving = true
+        let written = await app.editEntry(id, links: entry.links + [link])
+        saving = false
+        if written {
+            if self.linkEdit?.entry == id { self.linkEdit = nil }
+            reload()
+        } else if self.linkEdit?.entry == id {
+            self.linkEdit?.problem = LinkEdit.refused(app.issue)
+            // The reason is beside the field, so a refusal of the rule is not a banner as well.
+            if app.issue?.kind == .invalid { app.dismissIssue() }
+        }
+        return written
+    }
+
+    /// Takes one link off the open entry, as a new version through `AppState`.
+    @discardableResult
+    public func removeLink(_ link: Link, through app: AppState) async -> Bool {
+        guard let entry = opened?.entry, !saving else { return false }
+        guard entry.links.contains(link) else { return true }
+        saving = true
+        let written = await app.editEntry(entry.id, links: entry.links.filter { $0 != link })
+        saving = false
+        if written {
+            linkProblem = nil
+            reload()
+        } else if opened?.entry.id == entry.id {
+            linkProblem = LinkEdit.refused(app.issue)
+        }
+        return written
     }
 
     /// Takes the field's text. A reason shown for the last refusal goes once you type.

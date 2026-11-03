@@ -117,7 +117,8 @@ import Testing
         ("paged", .incidentHandled), ("incident", .incidentHandled), ("hotfix", .incidentHandled),
         ("mitigated", .incidentHandled), ("prototyped", .initiativeStarted), ("kicked off", .initiativeStarted),
         ("automated", .initiativeStarted), ("initiative", .initiativeStarted), ("wrote", .docWritten),
-        ("drafted", .docWritten), ("RFC", .docWritten), ("ADR", .docWritten),
+        ("drafted", .docWritten), ("RFC", .docWritten), ("ADR", .docWritten), ("code review", .reviewGiven),
+        ("PR review", .reviewGiven), ("reviewing", .reviewGiven), ("opened a PR", .prOpened), ("PR opened", .prOpened),
     ])).map { Word(word: $0.0, kind: $0.1) }
 
     @Test(arguments: lexicon)
@@ -130,7 +131,7 @@ import Testing
     }
 
     @Test func wholeWordsOnly() throws {
-        for line in ["Reviewing things", "asynchronous work", "ranch visit", "builtin", "the led display"] {
+        for line in ["A review of things", "Preview things", "asynchronous work", "ranch visit", "builtin", "the led display"] {
             let p = try parse(line)
             if line == "the led display" {
                 #expect(p.kind == .meetingLed)
@@ -154,6 +155,29 @@ import Testing
     @Test func earliestWordWinsInsideTheDeliveryGroup() throws {
         #expect(try parse("Shipped the fix, PR merged").kind == .shipped)
         #expect(try parse("PR merged, then released").kind == .prMerged)
+    }
+
+    @Test func reviewAndOpenedPhrases() throws {
+        for line in ["Code review of the retry fix", "PR review for ACME-482913", "Reviewing the settlement doc", "Reviewing https://git.example.com/acme/api/pull/88"] {
+            let p = try parse(line)
+            #expect(p.kind == .reviewGiven, "\(line)")
+            #expect(p.kindMatched, "\(line)")
+        }
+        for line in ["Opened a PR for the retry fix", "PR opened for ACME-482913"] {
+            let p = try parse(line)
+            #expect(p.kind == .prOpened, "\(line)")
+            #expect(p.kindMatched, "\(line)")
+        }
+        // A bare "review" says too little: the line stays a note, so the person sees the miss.
+        for line in ["Quick review", "Review of the plan", "Did a review"] {
+            let p = try parse(line)
+            #expect(p.kind == .note, "\(line)")
+            #expect(!p.kindMatched, "\(line)")
+        }
+        // The later state wins: merged beats opened.
+        #expect(try parse("Opened a PR and merged it").kind == .prMerged)
+        // "pr review" is a phrase, not two words anywhere in the line.
+        #expect(try parse("PR then a review").kind == .note)
     }
 
     // MARK: Time
@@ -390,6 +414,61 @@ import Testing
         #expect(p.tokens.filter { $0.kind == .link }.count == 3)
         #expect(p.ticket?.key == "ACME-482913")
         #expect(p.kind == .prMerged)
+    }
+
+    // A URL that becomes a link leaves the title (docs/PLAN.md T4.17); the link chip and the row's link button carry it.
+    @Test func aLinkLeavesTheTitle() throws {
+        let pr = "https://git.example.com/acme/api/pull/88"
+        let p = try parse("Reviewed \(pr)")
+        #expect(p.title == "Reviewed")
+        #expect(p.links == [Link(kind: .pr, url: pr)])
+        #expect(p.kind == .reviewGiven)
+        // The token still sits where the URL is in the line, for the capture bar's chip.
+        let token = try #require(p.tokens.first { $0.kind == .link })
+        #expect(token.text == pr)
+        #expect(try parse("Merged the retry fix \(pr) @10:30 #team.").title == "Merged the retry fix")
+        #expect(try parse("Reviewed: \(pr)").title == "Reviewed")
+        #expect(try parse("Merged (\(pr))").title == "Merged")
+        #expect(try parse("Reviewed \(pr) and the notes").title == "Reviewed and the notes")
+    }
+
+    @Test func aLineThatIsOnlyALinkIsTitledByTheLinksName() throws {
+        let pr = try parse("https://git.example.com/acme/api/pull/88")
+        #expect(pr.title == "PR #88 in acme/api")
+        #expect(pr.links.count == 1 && pr.kind == .note)
+        #expect(try parse("  https://git.example.com/acme/api/pull/88/files?diff=split#top  ").title == "PR #88 in acme/api")
+        #expect(try parse("https://git.example.com/acme/api/pull/88 @14:30 ~20m #team").title == "PR #88 in acme/api")
+        #expect(try parse("(https://git.example.com/acme/api/pull/88)").title == "PR #88 in acme/api")
+        #expect(try parse("https://tickets.example.com/browse/ACME-482913").title == "ACME-482913")
+        #expect(try parse("https://docs.example.com/design/retry").title == "docs.example.com")
+        // The first link names the line when there are several.
+        #expect(try parse("https://git.example.com/acme/api/pull/88 https://docs.example.com/x").title == "PR #88 in acme/api")
+        // The ticket in a browse URL is still the line's ticket.
+        #expect(try parse("https://tickets.example.com/browse/ACME-482913").ticket?.key == "ACME-482913")
+    }
+
+    @Test func aLinkThatIsNotKeptStaysInTheTitle() throws {
+        let line = "Look https://bob:pw@git.example.com/acme/x/pull/10"
+        let p = try parse(line)
+        #expect(p.links.isEmpty)
+        #expect(p.title == line)
+        #expect(!p.tokens.contains { $0.kind == .link })
+        // A sixth link is not a link, so it stays; a repeat is the same link, so it goes.
+        let urls = (1...6).map { "https://example.com/p/\($0)" }
+        let many = try parse("See " + urls.joined(separator: " ") + " https://example.com/p/1")
+        #expect(many.links.count == 5)
+        #expect(many.title == "See https://example.com/p/6")
+    }
+
+    @Test func linkNames() throws {
+        func name(_ url: String) -> (String, String) { (Link.inferred(url: url).displayName, Link.inferred(url: url).titleName) }
+        #expect(name("https://git.example.com/acme/api/pull/88") == ("PR #88", "PR #88 in acme/api"))
+        #expect(name("https://git.example.com/acme/api/pull/88/files?x=1#y") == ("PR #88", "PR #88 in acme/api"))
+        #expect(name("https://git.example.com/pull/88") == ("PR #88", "PR #88"))
+        #expect(name("https://tickets.example.com/browse/ACME-12") == ("ACME-12", "ACME-12"))
+        #expect(name("https://docs.example.com/page?q=1") == ("docs.example.com", "docs.example.com"))
+        #expect(name("https://git.example.com/acme/api/pull/x") == ("git.example.com", "git.example.com"))
+        #expect(name("not a url") == ("not a url", "not a url"))
     }
 
     @Test func unsafeSchemesAreDropped() throws {

@@ -74,6 +74,90 @@ import Testing
         #expect(throws: CadenceError.self) { try f.journal.entryEdit(entryID: entry.id, title: "  ", kind: nil, actor: .app) }
     }
 
+    @Test func aLinkIsAddedAndRemovedLaterAsAVersionOfTheEntry() throws {
+        let f = try F(start: "2026-10-29", hour: 11)
+        let entry = try f.journal.log(LogRequest(text: "Reviewed the retry fix", kind: .reviewGiven), actor: .cli, origin: .selfReported)
+        let pr = Link(kind: .pr, url: "https://git.example.com/acme/api/pull/88")
+        let doc = Link(kind: .other, url: "https://docs.example.com/retry")
+        var edited = try f.journal.entryEdit(entryID: entry.id, title: nil, kind: nil, links: [pr], actor: .app)
+        #expect(edited.links == [pr])
+        edited = try f.journal.entryEdit(entryID: entry.id, title: nil, kind: nil, links: [pr, doc, pr], actor: .app)
+        #expect(edited.links == [pr, doc])
+        // The same list writes nothing.
+        _ = try f.journal.entryEdit(entryID: entry.id, title: nil, kind: nil, links: [pr, doc], actor: .app)
+        // A list without a link removes it. An empty list removes them all.
+        edited = try f.journal.entryEdit(entryID: entry.id, title: nil, kind: nil, links: [doc], actor: .app)
+        #expect(edited.links == [doc])
+        edited = try f.journal.entryEdit(entryID: entry.id, title: nil, kind: nil, links: [], actor: .app)
+        #expect(edited.links.isEmpty)
+        // Not passing links leaves them alone.
+        _ = try f.journal.entryEdit(entryID: entry.id, title: nil, kind: nil, links: [pr], actor: .app)
+        edited = try f.journal.entryEdit(entryID: entry.id, title: "Reviewed the retry fix again", kind: nil, actor: .app)
+        #expect(edited.links == [pr])
+        #expect(edited.origin == entry.origin && edited.kind == entry.kind)
+
+        let history = try f.journal.history(subject: "entry:\(entry.id)")
+        #expect(history.map(\.type) == ["entry.created"] + Array(repeating: "entry.updated", count: 6))
+        // A links change keeps the old list beside the new one.
+        let second = try #require(try? EventPayload(type: history[2].type, data: history[2].data))
+        guard case .entryUpdated(let changes) = second else {
+            Issue.record("not an entry.updated")
+            return
+        }
+        #expect(Set(changes.fields.keys) == ["links"])
+        #expect(changes.fields["links"]?.old == .array([pr.json]))
+        #expect(changes.fields["links"]?.new == .array([pr.json, doc.json]))
+        // The projection and a rebuild agree.
+        let before = try f.store.projectionDump()
+        try f.store.rebuild()
+        #expect(try f.store.projectionDump() == before)
+    }
+
+    @Test func anAddedLinkMustPassTheLinkRule() throws {
+        var config = Config.defaults(timezone: DayMechanicsTests.zoneID)
+        config.hosts = ["Git.Example.com"]
+        let zone = try #require(TimeZone(identifier: DayMechanicsTests.zoneID))
+        let clock = ManualClock(Timestamp.resolve(try #require(LocalDate("2026-10-29")), hour: 11, minute: 0, in: zone))
+        let store = try TestStore.make(clock: clock, projector: LedgerProjector())
+        let journal = try Journal(store: store, config: config, clock: clock, ids: CountingIDs())
+        let entry = try journal.log(LogRequest(text: "Reviewed the retry fix"), actor: .cli, origin: .selfReported)
+        func message(_ url: String) -> String? {
+            do {
+                _ = try journal.entryEdit(entryID: entry.id, title: nil, kind: nil, links: [Link(kind: .other, url: url)], actor: .app)
+                return nil
+            } catch { return error.message }
+        }
+        #expect(message("http://other.example.com/x") == "link: only https links, or http on a host in config.hosts, are accepted")
+        #expect(message("javascript:alert(1)") == "link: only https links, or http on a host in config.hosts, are accepted")
+        #expect(message("https://bob:pw@git.example.com/x") == "link: must not carry a user name or password")
+        #expect(message("https://git.example.com/a b") == "link: must not hold spaces, control or bidirectional characters")
+        #expect(message("https:///x") == "link: needs a host")
+        #expect(try journal.history(subject: "entry:\(entry.id)").count == 1)
+        // An http link on a configured host is kept, as at logging.
+        #expect(message("http://git.example.com/acme/api/pull/9") == nil)
+        #expect(try journal.entry(entry.id).links.map(\.url) == ["http://git.example.com/acme/api/pull/9"])
+    }
+
+    @Test func atMostFiveLinksAndOnlyTheAddedOnesAreChecked() throws {
+        let f = try F(start: "2026-10-29", hour: 11)
+        let links = (1...6).map { Link(kind: .other, url: "https://example.com/p/\($0)") }
+        let entry = try f.journal.log(LogRequest(text: "Wrote the doc", links: Array(links.prefix(5))), actor: .cli, origin: .selfReported)
+        #expect(entry.links.count == 5)
+        #expect(validationMessage { try f.journal.entryEdit(entryID: entry.id, title: nil, kind: nil, links: links, actor: .app) }
+            == "links: at most 5 per entry")
+        #expect(try f.journal.entry(entry.id).links.count == 5)
+        // Taking one away is always allowed, even for a list that would not pass today.
+        let kept = try f.journal.entryEdit(entryID: entry.id, title: nil, kind: nil, links: Array(links[1..<5]), actor: .app)
+        #expect(kept.links == Array(links[1..<5]))
+    }
+
+    func validationMessage(_ body: () throws -> Void) -> String? {
+        do { try body() } catch let error as CadenceError {
+            if case .validation(let message) = error { return message }
+        } catch {}
+        return nil
+    }
+
     @Test func carriedTasksLeftBehindAreNotTodaysPlan() throws {
         let f = try F(start: "2026-10-29", hour: 9)
         _ = try f.plan("Keep this", on: "2026-10-29")

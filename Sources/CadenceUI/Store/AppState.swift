@@ -140,11 +140,15 @@ public final class AppState {
         return pending.task
     }
 
+    /// Logs a line. `kind` is the one the person picked on the field's chip; without it Core reads the kind from the
+    /// words. `links` are added to any the line carries. `day` is the day the line is for, when it is not today: a
+    /// reopened day logs onto itself.
     @discardableResult
-    public func log(_ text: String) async -> Entry? {
+    public func log(_ text: String, kind: EntryKind? = nil, links: [CadenceCore.Link] = [], day: LocalDate? = nil) async -> Entry? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        if case .entry(let entry)? = await perform(.log(LogRequest(text: trimmed))) { return entry }
+        let request = LogRequest(text: trimmed, kind: kind, date: day, links: links)
+        if case .entry(let entry)? = await perform(.log(request)) { return entry }
         return nil
     }
 
@@ -206,10 +210,13 @@ public final class AppState {
         await perform(.declare(day: day ?? today, kind: .workday, label: nil)) != nil
     }
 
-    /// Edits an entry's title or kind (section 4.6). The history keeps every version; the origin never changes.
+    /// Edits an entry's title, kind or links (section 4.6). `links` is the whole list after the edit. The history keeps
+    /// every version; the origin never changes.
     @discardableResult
-    public func editEntry(_ entry: String, title: String? = nil, kind: EntryKind? = nil) async -> Bool {
-        await perform(.editEntry(entry: entry, title: title, kind: kind)) != nil
+    public func editEntry(
+        _ entry: String, title: String? = nil, kind: EntryKind? = nil, links: [CadenceCore.Link]? = nil
+    ) async -> Bool {
+        await perform(.editEntry(entry: entry, title: title, kind: kind, links: links)) != nil
     }
 
     @discardableResult

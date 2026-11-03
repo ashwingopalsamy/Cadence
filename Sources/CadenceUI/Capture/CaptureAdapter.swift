@@ -68,6 +68,12 @@ public enum CaptureAdapter {
         return CaptureContext(now: now, zone: zone, boundary: config.dayBoundary, classifier: classifier)
     }
 
+    /// The parser's context with the standard ticket rules, for a field that reads a line as it is typed and has no
+    /// config of its own.
+    public static func context(zone: TimeZone, boundary: DayBoundary, now: Date) -> CaptureContext {
+        CaptureContext(now: now, zone: zone, boundary: boundary, classifier: standardClassifier)
+    }
+
     // The standard rules are a constant that Core's tests compile.
     private static let standardClassifier = try! TicketClassifier(rules: .standard)
 
@@ -112,7 +118,7 @@ public enum CaptureAdapter {
             case .link:
                 chips.append(
                     CaptureChip(
-                        role: .link, label: String(localized: "link"), value: discreet ? String(localized: "hidden") : linkName(token.text), range: token.range,
+                        role: .link, label: String(localized: "link"), value: discreet ? String(localized: "hidden") : Link.inferred(url: token.text).displayName, range: token.range,
                         isFigure: false))
             case .time:
                 sawTime = true
@@ -306,14 +312,6 @@ public enum CaptureAdapter {
         let (h, m) = (minutes / 60, minutes % 60)
         if h == 0 { return String(localized: "\(m)m") }
         return m == 0 ? String(localized: "\(h)h") : String(localized: "\(h)h \(m)m")
-    }
-
-    /// "PR #412" for a pull request, the key for a ticket, the host for anything else.
-    static func linkName(_ url: String) -> String {
-        let parts = url.split(separator: "/", omittingEmptySubsequences: true)
-        if let pull = parts.firstIndex(of: "pull"), pull + 1 < parts.count { return String(localized: "PR #\(parts[pull + 1])") }
-        if let browse = parts.firstIndex(of: "browse"), browse + 1 < parts.count { return String(parts[browse + 1]) }
-        return URL(string: url)?.host() ?? url
     }
 
     private static func kindChip(_ kind: EntryKind, ticketClass: TicketClass?) -> CaptureChip {

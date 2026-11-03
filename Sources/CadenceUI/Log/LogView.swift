@@ -18,6 +18,11 @@ struct LogHandlers {
     var save: () -> Void = {}
     var cancel: () -> Void = {}
     var kind: (EntryKind) -> Void = { _ in }
+    var addLink: () -> Void = {}
+    var linkDraft: (String) -> Void = { _ in }
+    var saveLink: () -> Void = {}
+    var cancelLink: () -> Void = {}
+    var removeLink: (CadenceCore.Link) -> Void = { _ in }
     /// The search field has taken the cursor that ⌘F from another section asked for.
     var searchTaken: () -> Void = {}
 }
@@ -52,6 +57,9 @@ public struct LogView: View {
             loadMore: { model.loadMore() }, edit: { model.beginEdit() }, draft: { model.setDraft($0) },
             save: { Task { await model.saveEdit(through: app) } }, cancel: { model.cancelEdit() },
             kind: { kind in Task { await model.changeKind(kind, through: app) } },
+            addLink: { model.beginAddLink() }, linkDraft: { model.setLinkDraft($0) },
+            saveLink: { Task { await model.saveLink(through: app) } }, cancelLink: { model.cancelAddLink() },
+            removeLink: { link in Task { await model.removeLink(link, through: app) } },
             searchTaken: { navigation?.takeSearch() })
     }
 }
@@ -71,11 +79,14 @@ public struct LogScreen: View {
         public var edit: TitleEdit?
         public var kindProblem: String?
         public var saving: Bool
+        /// A link being added to the open entry, while its field shows.
+        public var linkEdit: LinkEdit?
+        public var linkProblem: String?
 
         public init(
             entries: [Entry], today: LocalDate, zone: TimeZone, filter: LogFilter = LogFilter(), searchText: String? = nil,
             phase: LogModel.Phase = .loaded, hasMore: Bool = false, opened: LogModel.Opened? = nil, edit: TitleEdit? = nil,
-            kindProblem: String? = nil, saving: Bool = false
+            kindProblem: String? = nil, saving: Bool = false, linkEdit: LinkEdit? = nil, linkProblem: String? = nil
         ) {
             self.entries = entries
             self.today = today
@@ -88,13 +99,16 @@ public struct LogScreen: View {
             self.edit = edit
             self.kindProblem = kindProblem
             self.saving = saving
+            self.linkEdit = linkEdit
+            self.linkProblem = linkProblem
         }
 
         @MainActor init(_ model: LogModel) {
             self.init(
                 entries: model.entries, today: model.today ?? LogPage.latestDay, zone: model.zone, filter: model.filter,
                 searchText: model.searchText, phase: model.phase, hasMore: model.hasMore, opened: model.opened,
-                edit: model.edit, kindProblem: model.kindProblem, saving: model.saving)
+                edit: model.edit, kindProblem: model.kindProblem, saving: model.saving, linkEdit: model.linkEdit,
+                linkProblem: model.linkProblem)
         }
     }
 
@@ -143,7 +157,8 @@ public struct LogScreen: View {
                 if let detail {
                     LogDetailCard(
                         detail: detail, kind: state.opened?.entry.kind, edit: state.edit, kindProblem: state.kindProblem,
-                        saving: state.saving, discreet: discreet, handlers: handlers)
+                        saving: state.saving, linkEdit: state.linkEdit, linkProblem: state.linkProblem, discreet: discreet,
+                        handlers: handlers)
                         .frame(width: compact ? nil : ListMetrics.detailWidth)
                         .frame(maxWidth: compact ? .infinity : nil)
                         .transition(.opacity)
@@ -322,6 +337,16 @@ private struct LogDayRows: View {
                 .accessibilityLabel(row.spoken)
                 .accessibilityAddTraits(isOpen ? .isSelected : [])
                 .accessibilityHint(isOpen ? String(localized: "Closes its history") : String(localized: "Opens its history"))
+                // The link button sits over the slot the row's label keeps free before its ticket and origin, so the
+                // badges stay where they are on rows without a link.
+                .overlayPreferenceValue(LinkSlotKey.self) { slot in
+                    if let slot, let link = row.link {
+                        GeometryReader { proxy in
+                            let frame = proxy[slot]
+                            LinkGlyphButton(target: link).position(x: frame.midX, y: frame.midY)
+                        }
+                    }
+                }
                 if offset < rows.count - 1 {
                     Rectangle()
                         .fill(contrast == .increased ? CadenceColor.ink3.color : CadenceColor.line.color)
@@ -364,9 +389,23 @@ private struct LogRowLabel: View {
                 if row.afterWrapUp { AfterWrapUpMark() }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if row.link != nil {
+                Color.clear
+                    .frame(width: CadenceSize.chip, height: CadenceSize.chip)
+                    .anchorPreference(key: LinkSlotKey.self, value: .bounds) { $0 }
+            }
             if let ticket = row.ticket { LogTicketChip(key: ticket) }
             OriginBadge(origin: row.origin)
         }
+    }
+}
+
+/// Where a row's label left room for its link button.
+private struct LinkSlotKey: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
     }
 }
 
@@ -415,6 +454,9 @@ struct LogDetailCard: View {
     let edit: TitleEdit?
     let kindProblem: String?
     let saving: Bool
+    /// A link being added, while its field shows, and why the last one could not be taken away.
+    var linkEdit: LinkEdit?
+    var linkProblem: String?
     let discreet: Bool
     let handlers: LogHandlers
 
@@ -455,6 +497,7 @@ struct LogDetailCard: View {
                 .cadenceType(CadenceType.comparison)
                 .foregroundStyle(CadenceColor.ink3.color)
                 .fixedSize(horizontal: false, vertical: true)
+            if !detail.links.isEmpty || linkEdit != nil || linkProblem != nil { linksSection }
             Text(LogDetail.historyLabel)
                 .cadenceType(CadenceType.label)
                 .foregroundStyle(CadenceColor.ink3.color)
@@ -471,6 +514,10 @@ struct LogDetailCard: View {
                         .accessibilityLabel("Save the title")
                 }
                 kindMenu
+                if linkEdit == nil {
+                    Button(LinkEdit.addLink, action: handlers.addLink)
+                        .accessibilityLabel("Add a link to \(detail.title)")
+                }
             }
             .buttonStyle(WindowButtonStyle(kind: .choice))
             .focusEffectDisabled()
@@ -490,6 +537,39 @@ struct LogDetailCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .cadenceCard()
         .accessibilityElement(children: .contain)
+    }
+
+    /// The entry's links, each opening in the system browser and each with a way to take it off, then the field that adds
+    /// one. A change is a new version; the old links stay in the history.
+    private var linksSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(LinkEdit.linksLabel)
+                .cadenceType(CadenceType.label)
+                .foregroundStyle(CadenceColor.ink3.color)
+                .padding(.top, CadenceSpace.s16)
+                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: CadenceSpace.s2) {
+                ForEach(detail.links) { target in
+                    LogLinkRow(target: target, saving: saving) { handlers.removeLink(target.link) }
+                }
+            }
+            .padding(.top, CadenceSpace.s4)
+            if let linkEdit {
+                HStack(spacing: CadenceSpace.s8) {
+                    InlineLinkField(
+                        text: linkEdit.draft, discreet: discreet, set: handlers.linkDraft, save: handlers.saveLink,
+                        cancel: handlers.cancelLink)
+                    Button(LinkEdit.add, action: handlers.saveLink)
+                        .buttonStyle(WindowButtonStyle(kind: .choice))
+                        .focusEffectDisabled()
+                        .disabled(saving)
+                        .accessibilityLabel("Add the link")
+                }
+                .padding(.top, CadenceSpace.s6)
+                if let problem = linkEdit.problem { EditProblem(text: problem).padding(.top, CadenceSpace.s4) }
+            }
+            if let linkProblem { EditProblem(text: linkProblem).padding(.top, CadenceSpace.s4) }
+        }
     }
 
     /// Every kind under its work kind, each with its work colour and name; the entry's own kind is ticked.
@@ -517,6 +597,92 @@ struct LogDetailCard: View {
         .fixedSize()
         .accessibilityLabel(TitleEdit.changeKind)
     }
+}
+
+/// One link of the open entry: its name, which opens it in the system browser, and a control that takes it off.
+private struct LogLinkRow: View {
+    let target: LinkTarget
+    let saving: Bool
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(spacing: CadenceSpace.s8) {
+            Image(systemName: "link")
+                .cadenceIcon(size: CadenceIcon.small)
+                .foregroundStyle(CadenceColor.ink3.color)
+                .accessibilityHidden(true)
+            if let url = target.url {
+                SwiftUI.Link(destination: url) {
+                    Text(target.name)
+                        .cadenceType(CadenceType.body)
+                        .foregroundStyle(CadenceColor.ink.color)
+                        .underline()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .buttonStyle(RowButtonStyle())
+                .focusEffectDisabled()
+                .help(target.help ?? "")
+            } else {
+                Text(target.name)
+                    .cadenceType(CadenceType.body)
+                    .foregroundStyle(CadenceColor.ink2.color)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+            Button(action: remove) {
+                Image(systemName: "xmark").cadenceIcon(size: CadenceIcon.small)
+            }
+            .buttonStyle(IconButtonStyle())
+            .focusEffectDisabled()
+            .disabled(saving)
+            .accessibilityLabel("Remove \(target.name)")
+        }
+        .frame(minHeight: ListMetrics.iconButton)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A link's address as a field on `track`: Return adds it, Esc cancels. In discreet mode its words are hidden like any
+/// title (section 6.7).
+struct InlineLinkField: View {
+    let text: String
+    let discreet: Bool
+    let set: (String) -> Void
+    let save: () -> Void
+    let cancel: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let binding = Binding(get: { text }, set: { set($0) })
+        Group {
+            if discreet {
+                SecureField("", text: binding, prompt: prompt)
+            } else {
+                TextField("", text: binding, prompt: prompt)
+            }
+        }
+        .textFieldStyle(.plain)
+        .cadenceType(CadenceType.body)
+        .foregroundStyle(CadenceColor.ink.color)
+        .focused($focused)
+        .focusEffectDisabled()
+        .onSubmit(save)
+        .onExitCommand(perform: cancel)
+        .padding(.horizontal, CadenceSpace.s8)
+        .padding(.vertical, CadenceSpace.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: CadenceRadius.small, style: .continuous).fill(CadenceColor.track.color))
+        .overlay(
+            RoundedRectangle(cornerRadius: CadenceRadius.small, style: .continuous)
+                .strokeBorder(focused ? CadenceColor.focus.color : Color.clear, lineWidth: ListMetrics.focusRing))
+        .accessibilityLabel(LinkEdit.addLink)
+        .accessibilityHint("Return adds the link. Escape leaves the entry as it was.")
+        .onAppear { focused = true }
+    }
+
+    private var prompt: Text { Text(LinkEdit.placeholder).foregroundStyle(CadenceColor.ink3.color) }
 }
 
 /// Every version of an entry, oldest first, on a rule: the time, who did what, and the title it left.

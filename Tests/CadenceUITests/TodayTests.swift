@@ -269,6 +269,26 @@ import Testing
         #expect(today.time(of: today.shownFound[0]) == "16:44")
     }
 
+    @Test func aFoundRowOpensItsFirstLinkAndDiscreetModeHidesItsName() {
+        var today = Self.input(.inRhythm)
+        let pr = Link(kind: .pr, url: "https://git.example.com/acme/api/pull/88")
+        today.found.append(
+            Entry(
+                id: "linked", day: Self.date.description, kind: .reviewGiven, family: .review, title: "Reviewed", links: [pr],
+                origin: .selfReported))
+        let linked = today.found.last!
+        #expect(today.link(of: linked)?.name == "PR #88")
+        #expect(today.link(of: linked)?.openVoice == "Open PR #88")
+        #expect(today.link(of: linked)?.url == URL(string: pr.url))
+        #expect(today.link(of: today.found[0]) == nil, "an entry without a link has no button")
+        // A link the system cannot open is not offered.
+        var odd = linked
+        odd.links = [Link(kind: .other, url: "file:///etc/hosts")]
+        #expect(today.link(of: odd) == nil)
+        today.discreet = true
+        #expect(today.link(of: linked)?.name == "Link 1")
+    }
+
     @Test func failureCopyFollowsTheTable() {
         #expect(FailureCopy(.busy).title == "Your log is busy right now.")
         #expect(FailureCopy(.busy).primary == .tryAgain && FailureCopy(.busy).secondary == .copyText)

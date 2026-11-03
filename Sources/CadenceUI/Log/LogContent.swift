@@ -168,6 +168,8 @@ public struct LogContent: Sendable, Equatable {
         /// Nil when there is none, and in discreet mode.
         public var ticket: String?
         public var origin: Origin
+        /// The first link the system can open, for the row's link button. Nil when there is none.
+        public var link: LinkTarget?
         /// The row as VoiceOver reads it.
         public var spoken: String
     }
@@ -217,7 +219,8 @@ public struct LogContent: Sendable, Equatable {
         spoken.append(EntryWords.originMeaning(entry.origin))
         return Row(
             id: entry.id, time: time, family: entry.family, title: title, afterWrapUp: entry.afterSeal, ticket: ticket,
-            origin: entry.origin, spoken: spoken.joined(separator: ", "))
+            origin: entry.origin, link: entry.linkTargets(discreet: discreet).first { $0.url != nil },
+            spoken: spoken.joined(separator: ", "))
     }
 
     /// A title as a list may show it: "Item 1" in discreet mode, as `AppState.title` does.
@@ -241,6 +244,8 @@ public struct LogDetail: Sendable, Equatable {
     public var kind: String
     public var title: String
     public var origin: String
+    /// Every link the entry holds, in order, each with its name and the address it opens.
+    public var links: [LinkTarget]
     public var versions: [Version]
 
     public static let historyLabel = String(localized: "History")
@@ -256,6 +261,7 @@ public struct LogDetail: Sendable, Equatable {
         kind = EntryWords.family(entry.family)
         title = LogContent.shownTitle(entry.title, index: index, discreet: discreet)
         origin = Self.originLine(entry)
+        links = entry.linkTargets(discreet: discreet)
         let clock = ClockFormat(locale: locale)
         let days = DayFormat(locale: locale)
         let entryDay = LocalDate(entry.day)
@@ -361,6 +367,53 @@ public struct TitleEdit: Sendable, Equatable {
     static let kindsByFamily: [(family: Family, kinds: [EntryKind])] = Family.allCases.compactMap { family in
         let kinds = EntryKind.allCases.filter { $0.defaultFamily == family && !measured.contains($0) }
         return kinds.isEmpty ? nil : (family, kinds)
+    }
+}
+
+/// A link being added in the Log's detail: the address typed so far and, after a refusal, why. Adding is a new version of
+/// the entry through `AppState`; nothing is overwritten.
+public struct LinkEdit: Sendable, Equatable {
+    public var entry: String
+    public var draft: String
+    /// Why the last save was refused, shown under the field. Nil while there is nothing to say.
+    public var problem: String?
+
+    public static let addLink = String(localized: "Add link")
+    public static let add = String(localized: "Add")
+    public static let placeholder = String(localized: "Paste a link")
+    public static let linksLabel = String(localized: "Links")
+    public static let empty = String(localized: "Paste a link first. Nothing was changed.")
+    public static let notWeb = String(localized: "A link starts with https://. Nothing was changed.")
+
+    public init(entry: String, draft: String, problem: String? = nil) {
+        self.entry = entry
+        self.draft = draft
+        self.problem = problem
+    }
+
+    /// The address to add, trimmed. Nil when there is none.
+    var cleaned: String? {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    /// Whether the words start like a web address. The ledger's rule decides the rest: which schemes and hosts it
+    /// keeps, how long and with what characters.
+    static func looksWeb(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.hasPrefix("https://") || lower.hasPrefix("http://")
+    }
+
+    /// The ledger's reason for refusing, in a sentence: "Only https links are accepted. Nothing was changed." Other
+    /// failures say what the banner says.
+    static func refused(_ failure: StoreFailure?) -> String {
+        guard let failure, failure.kind == .invalid else {
+            return "\(failure?.summary ?? String(localized: "Cadence could not save that")). Nothing was changed."
+        }
+        var reason = failure.detail
+        for prefix in ["link: ", "links: "] where reason.hasPrefix(prefix) { reason.removeFirst(prefix.count) }
+        guard let first = reason.first else { return String(localized: "Cadence could not do that. Nothing was changed.") }
+        return "\(first.uppercased() + reason.dropFirst()). Nothing was changed."
     }
 }
 

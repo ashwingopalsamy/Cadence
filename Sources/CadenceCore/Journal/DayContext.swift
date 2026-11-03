@@ -48,13 +48,35 @@ extension Journal {
         }
     }
 
-    /// Edits an entry's title or kind as the person (section 4.6, Log and Inbox). It appends `entry.updated` with the old
-    /// and new values, so the history keeps every version and nothing is overwritten; the origin never changes.
+    /// Edits an entry's title, kind or links as the person (section 4.6, Log and Inbox). It appends `entry.updated` with
+    /// the old and new values, so the history keeps every version and nothing is overwritten; the origin never changes.
+    ///
+    /// `links` is the entry's whole list after the edit, so it adds and removes: nil leaves the links alone, and a list
+    /// without a link takes it away. A link that is new to the entry must pass the rule every writer shares (https, or
+    /// http on a host in `config.hosts`), and the entry keeps at most five. A link the entry already has is not checked
+    /// again, so taking one away never fails over another.
     @discardableResult
-    public func entryEdit(entryID: String, title: String?, kind: EntryKind?, actor: Actor) throws(CadenceError) -> Entry {
+    public func entryEdit(
+        entryID: String, title: String?, kind: EntryKind?, links: [Link]? = nil, actor: Actor
+    ) throws(CadenceError) -> Entry {
         try store.transact { () throws(CadenceError) -> Entry in
             let entry = try self.entry(entryID)
             var fields: [String: Change] = [:]
+            if let links {
+                let httpHosts = Set(self.config.hosts.map { $0.lowercased() })
+                var next: [Link] = []
+                for link in links where !next.contains(link) {
+                    if !entry.links.contains(link), let refusal = LinkRule.refusal(link.url, httpHosts: httpHosts) {
+                        throw .validation("link: " + refusal.message(httpHosts: httpHosts))
+                    }
+                    next.append(link)
+                }
+                guard next.count <= Self.maxLinks else { throw .validation("links: at most \(Self.maxLinks) per entry") }
+                if next != entry.links {
+                    fields["links"] = Change(
+                        old: .array(entry.links.map(\.json)), new: .array(next.map(\.json)))
+                }
+            }
             if let title {
                 let cleaned = Self.clean(title, limit: Self.maxTitle)
                 guard !cleaned.isEmpty else { throw .validation("title must not be empty") }

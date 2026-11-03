@@ -126,18 +126,26 @@ public enum CaptureParser {
             toks.append(Tok(kind: kind, range: r, remove: remove))
         }
 
-        // 1. Links. Every http(s) URL is protected from the other rules; only https becomes a link.
+        // 1. Links. Every http(s) URL is protected from the other rules; only an https URL that the link rule keeps
+        // becomes a link, and a URL that becomes a link leaves the title (a repeat of one goes too). The rest stay in it.
         var links: [Link] = []
+        var repeats: [NSRange] = []
         for m in Lex.url.all(in: line) {
             let r = trimmedURL(m.range, in: line)
             guard r.length > 0, let sr = Range(r, in: line) else { continue }
             protected.append(r)
             let url = String(line[sr])
-            guard url.lowercased().hasPrefix("https://"), url.count > "https://".count else { continue }
+            guard url.lowercased().hasPrefix("https://"), url.count > "https://".count,
+                LinkRule.isKept(url, httpHosts: [])
+            else { continue }
             let link = Link(kind: linkKind(url), url: url)
-            if links.contains(link) || links.count >= 5 { continue }
+            if links.contains(link) {
+                repeats.append(r)
+                continue
+            }
+            if links.count >= 5 { continue }
             links.append(link)
-            add(.link, r)
+            add(.link, r, remove: true)
         }
 
         // 2. Tickets. All are protected; the first one is the entry's ticket.
@@ -286,6 +294,8 @@ public enum CaptureParser {
             tokens.append(CaptureToken(kind: t.kind, text: String(line[r]), range: r))
             if t.remove { removals.append(r) }
         }
+        removals.append(contentsOf: repeats.compactMap { Range($0, in: line) })
+        removals.sort { $0.lowerBound < $1.lowerBound }
 
         // Title: everything except the removed tokens, whitespace collapsed, one trailing period dropped.
         var rest = ""
@@ -297,11 +307,15 @@ public enum CaptureParser {
         }
         rest += line[cursor...]
         var title = collapse(rest)
+        // Where a URL stood, an empty pair of brackets or a colon left hanging is not part of what was said.
+        if !links.isEmpty { title = tidyAfterLinks(title) }
         if title.hasSuffix(".") {
             title.removeLast()
             title = title.trimmingCharacters(in: .whitespaces)
         }
         let dayOnly = tokens.count == 1 && tokens[0].kind == .day && !title.contains { $0.isLetter || $0.isNumber }
+        // A line that is only a link is titled by the link's name.
+        if title.isEmpty, let first = links.first { title = first.titleName }
         if title.isEmpty { title = line.trimmingCharacters(in: .whitespacesAndNewlines) }
 
         let capture = ParsedCapture(
@@ -315,6 +329,21 @@ public enum CaptureParser {
 
     private static func collapse(_ s: String) -> String {
         s.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
+    private static let emptyBrackets = Rx(#"[(\[<]\s*[)\]>]"#)
+
+    /// The title once its links are out: empty bracket pairs taken away, and no colon, comma, semicolon or hyphen
+    /// left at the end. A title with nothing but punctuation left is empty.
+    private static func tidyAfterLinks(_ title: String) -> String {
+        var text = title
+        while let m = emptyBrackets.first(in: text), let r = Range(m.range, in: text) {
+            text.replaceSubrange(r, with: " ")
+        }
+        text = collapse(text)
+        let edge: Set<Character> = [":", ",", ";", "-", " "]
+        while let last = text.last, edge.contains(last) { text.removeLast() }
+        return text.contains { $0.isLetter || $0.isNumber } ? text : ""
     }
 
     private static func trimmedURL(_ r: NSRange, in line: String) -> NSRange {
@@ -489,8 +518,12 @@ private enum Lex {
 
     /// Scanned in this order; the first group with a word in the line wins.
     static let groups: [LexiconGroup] = [
-        LexiconGroup([("reviewed", .reviewGiven), ("approved", .reviewGiven)]),
+        LexiconGroup([
+            ("reviewed", .reviewGiven), ("approved", .reviewGiven), ("code review", .reviewGiven),
+            ("pr review", .reviewGiven), ("reviewing", .reviewGiven),
+        ]),
         LexiconGroup([("merged", .prMerged), ("shipped", .shipped), ("released", .shipped)]),
+        LexiconGroup([("opened a pr", .prOpened), ("pr opened", .prOpened)]),
         LexiconGroup([
             ("fixed", .workDone), ("implemented", .workDone), ("built", .workDone), ("refactored", .workDone),
             ("finished", .workDone),
