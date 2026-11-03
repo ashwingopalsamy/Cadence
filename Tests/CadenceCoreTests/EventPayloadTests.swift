@@ -31,7 +31,7 @@ struct EventPayloadTests {
         let types = try Self.golden().map(\.type)
         #expect(types == EventPayload.allTypes)
         #expect(Set(EventPayload.allTypes).count == EventPayload.allTypes.count)
-        #expect(EventPayload.allTypes.count == 19)
+        #expect(EventPayload.allTypes.count == 20)
     }
 
     @Test func goldenRoundTripsByteForByte() throws {
@@ -132,6 +132,18 @@ struct EventPayloadTests {
         expectInvalid(
             "entry.updated", try mutated("entry.updated") { $0["changes"] = ["origin": ["self", "agent"]] },
             mentions: "origin")
+    }
+
+    @Test func dayReopenedCarriesTheDayAndNothingElse() throws {
+        // No free text, no zone, no reason: the event says only which day was reopened.
+        expectInvalid("day.reopened", try mutated("day.reopened") { $0["reason"] = "Forgot a review" }, mentions: "reason")
+        expectInvalid("day.reopened", try mutated("day.reopened") { $0["tz"] = "UTC" }, mentions: "tz")
+        expectInvalid("day.reopened", try mutated("day.reopened") { $0["day"] = nil }, mentions: "day")
+        expectInvalid("day.reopened", try mutated("day.reopened") { $0["day"] = "2026-13-01" }, mentions: "day")
+        expectInvalid("day.reopened", try mutated("day.reopened") { $0["day"] = 5 }, mentions: "day")
+        let payload = try EventPayload(type: "day.reopened", data: Self.entry("day.reopened").data)
+        #expect(payload.subject(id: nil) == "day:2026-10-29")
+        #expect(payload.data == ["day": "2026-10-29"])
     }
 
     @Test func rejectsBadDatesAndTimes() throws {

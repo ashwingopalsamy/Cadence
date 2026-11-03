@@ -21,15 +21,11 @@ public struct DayRules: Sendable, Equatable {
         declared ?? (workdays.contains(date.weekday) ? .workday : .weekend)
     }
 
-    /// The last instant a day can be sealed and still count: 23:59:59 local on the next calendar day
-    /// (the grace window, "seal yesterday until the end of today").
+    /// The last instant of a day's grace window: 23:59:59 local on the next calendar day ("wrap up yesterday until the
+    /// end of today"). The window decides when an unsealed day stops being open, for reminders, "yesterday still
+    /// open" and the streak. It does not decide whether a seal counts: any seal does, whenever it was made.
     public func graceEnd(of date: LocalDate, in zone: TimeZone) -> Date {
         Timestamp.resolve(date.adding(days: 2), hour: 0, minute: 0, in: zone).addingTimeInterval(-0.001)
-    }
-
-    /// Whether a seal recorded at `sealedAt` counts for `date`.
-    public func sealCounts(_ sealedAt: Date, for date: LocalDate, in zone: TimeZone) -> Bool {
-        sealedAt <= graceEnd(of: date, in: zone)
     }
 
     /// Whether a leave or holiday that took effect at `declaredAt` (the recorded time of the declaration) came after

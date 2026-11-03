@@ -166,7 +166,7 @@ public struct Summary: Sendable, Equatable {
     }
 
     static let definitions: [String: String] = [
-        "sealed_workdays": "Workdays wrapped up by 23:59 the next day, counted from the day the ledger began; leave and holidays excluded, days still inside that window not counted yet, and workdays before the ledger began reported as before_ledger",
+        "sealed_workdays": "Workdays that are wrapped up, whenever the wrap-up was made (the current one if a day was reopened), counted from the day the ledger began; leave and holidays excluded, unsealed days still inside the window that ends at 23:59 the next day not counted yet, and workdays before the ledger began reported as before_ledger",
         "plan_done": PlanDoneText.definition,
         "merged_prs": "Merged PRs authored, from the GitHub collector; assigned and self-initiated by ticket, the rest have no ticket",
         "reviews": "Review entries, one per PR per day",
@@ -290,10 +290,10 @@ extension Journal {
             dayRows[key]?.text("tz").flatMap { TimeZone(identifier: $0) } ?? zone
         }
 
-        // Workdays: sealed within grace, or unsealed with the grace window closed.
+        // Workdays: sealed, whenever the seal was made, or unsealed with the grace window closed.
         var workdays = 0
         var beforeLedger = 0
-        var sealedInGrace = 0
+        var sealed = 0
         var countable: [String] = []
         for date in LocalDate.range(from, through: to) {
             guard rules.kind(of: date, declared: declared[date]) == .workday else { continue }
@@ -306,11 +306,10 @@ extension Journal {
             }
             let key = date.description
             let tz = dayZone(key)
-            let sealedAt = dayRows[key]?.text("sealed_at").flatMap { Timestamp.parse($0) }
-            let counts = sealedAt.map { rules.sealCounts($0, for: date, in: tz) } ?? false
-            if counts || rules.graceClosed(for: date, at: now, in: tz) {
+            let isSealed = dayRows[key]?.text("sealed_at") != nil
+            if isSealed || rules.graceClosed(for: date, at: now, in: tz) {
                 countable.append(key)
-                if counts { sealedInGrace += 1 }
+                if isSealed { sealed += 1 }
             }
         }
         let countableSet = Set(countable)
@@ -414,7 +413,7 @@ extension Journal {
         let streak = try self.streak(asOf: min(to, today()))
         return Summary(
             label: label ?? "\(from)..\(to)", from: from, to: to, zone: zone.identifier, workdays: workdays,
-            sealedWorkdays: countable.isEmpty ? nil : sealedInGrace, countedWorkdays: countable.count,
+            sealedWorkdays: countable.isEmpty ? nil : sealed, countedWorkdays: countable.count,
             beforeLedger: beforeLedger,
             planDone: counted.isEmpty ? nil : done.count, planTotal: counted.isEmpty ? nil : counted.count,
             planAfterSeal: countable.isEmpty ? nil : leftOut,

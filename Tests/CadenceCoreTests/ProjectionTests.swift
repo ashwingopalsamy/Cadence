@@ -326,6 +326,9 @@ import Testing
                 return EventPayload.witness(WitnessCheckpoint(day: day(), purpose: "stand-up")).draft(actor: .app)
             case 16:
                 return EventDraft(type: "future.thing", subject: nil, data: ["n": .int(Int64(counter))], actor: .app)
+            case 17:
+                // Reopening sits among the seals, so a day is sealed, reopened and sealed again in a random order.
+                return EventPayload.dayReopened(DayReopened(day: day())).draft(actor: [Actor.app, .cli][pick(2)])
             default:
                 let d = day()
                 return EventPayload.genaiUsage(GenAIUsage(day: d, tool: "claude-code", model: ["model-a", "*"][pick(2)], source: ["endpoint", "transcripts"][pick(2)], sessions: Int64(pick(5)), requests: Int64(pick(200)), tokens: TokenCounts(input: 10, output: Int64(pick(1000)), cacheRead: nil, cacheWrite: 0), costMicros: nil, estimated: false)).draft(actor: .collector("claude-code"))

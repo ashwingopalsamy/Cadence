@@ -131,8 +131,11 @@ struct PlanDrop: ParsableCommand {
 
 struct DayCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "day", abstract: "Day start, end, leave, holidays, wrap-up and the day view.",
-        subcommands: [DayStart.self, DayEnd.self, DayLeave.self, DayHoliday.self, DayShow.self, DaySeal.self])
+        commandName: "day", abstract: "Day start, end, leave, holidays, wrap-up, reopening and the day view.",
+        subcommands: [
+            DayStart.self, DayEnd.self, DayLeave.self, DayHoliday.self, DayShow.self, DaySeal.self, DayReopen.self,
+            DayHistory.self,
+        ])
 }
 
 struct DayStart: ParsableCommand {

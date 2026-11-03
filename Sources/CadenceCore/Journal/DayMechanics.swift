@@ -18,7 +18,8 @@ public struct SealResult: Sendable, Equatable {
     public var day: LocalDate
     /// RFC 3339 in the profile zone.
     public var sealedAt: String
-    /// False when the seal landed after the grace window, so the day is sealed but does not count for the streak.
+    /// Whether the seal counts for the streak. Always true: any seal counts, whenever it was made. Kept so the
+    /// `counts_for_streak` field of the JSON output stays.
     public var counts: Bool
     public var carried: [CarriedTask]
     /// Entries per family (non-zero families only) plus `entries`, as recorded in `day.sealed`.
@@ -37,6 +38,39 @@ public struct SealResult: Sendable, Equatable {
     }
 }
 
+/// What a reopening did (docs/SPEC.md section 3).
+public struct ReopenResult: Sendable, Equatable {
+    public var day: LocalDate
+    /// RFC 3339 in the profile zone.
+    public var reopenedAt: String
+    /// The seal this undid, RFC 3339 in the profile zone.
+    public var sealedAt: String
+    /// The streak with the day unsealed.
+    public var streak: Streak
+
+    public var json: JSONValue {
+        [
+            "day": .string(day.description), "reopened_at": .string(reopenedAt), "sealed_at": .string(sealedAt),
+            "streak": streak.json,
+        ]
+    }
+}
+
+/// One seal or reopening of a day, as the day's history shows it: "Sealed 13:15, reopened 14:02, sealed again 15:30".
+public struct DayHistoryItem: Sendable, Equatable {
+    public enum Kind: String, Sendable, Equatable {
+        case sealed
+        case reopened
+    }
+
+    public var kind: Kind
+    /// When the event was recorded. Format it in the day's own zone.
+    public var at: Date
+    public var actor: Actor
+    /// The ledger position of the event.
+    public var seq: Int64
+}
+
 /// The stand-up text a wrap-up copies, and the witness code on its last line.
 public struct StandupText: Sendable, Equatable {
     public var text: String
@@ -47,8 +81,8 @@ extension Journal {
     // MARK: - Seal
 
     /// Wraps up a day: carries every open task to the next workday, then records `day.sealed`, all in one
-    /// transaction. Today and any past day can be sealed; a seal after the grace window is recorded but does
-    /// not count for the streak.
+    /// transaction. Today and any past day can be sealed, and every seal counts for the streak, whenever it is made.
+    /// A day that was reopened reads as unsealed, so this is also how it is sealed again.
     public func seal(_ day: LocalDate?, actor: Actor) throws(CadenceError) -> SealResult {
         let today = self.today()
         let day = day ?? today
@@ -62,7 +96,6 @@ extension Journal {
             var carried: [CarriedTask]
             var counts: [String: Int64]
             var plan: PlanCounts
-            var dayZone: TimeZone
         }
 
         let sealed = try store.transact { () throws(CadenceError) -> Sealed in
@@ -124,20 +157,69 @@ extension Journal {
             let payload = DaySealed(day: day.description, tz: dayZone.identifier, counts: counts, plan: plan, head: head.hash)
             let events = try self.store.append([EventPayload.daySealed(payload).draft(actor: actor)], then: { _ in })
             guard let event = events.first else { throw .integrity("the seal did not read back") }
-            return Sealed(at: event.at, carried: carried, counts: counts, plan: plan, dayZone: dayZone)
+            return Sealed(at: event.at, carried: carried, counts: counts, plan: plan)
         }
 
         let sealedDate = Timestamp.parse(sealed.at) ?? clock.now()
         return SealResult(
             day: day, sealedAt: Timestamp.local(sealedDate, in: zone),
-            counts: rules.sealCounts(sealedDate, for: day, in: sealed.dayZone), carried: sealed.carried,
-            entryCounts: sealed.counts, plan: sealed.plan, streak: try streak(asOf: nil))
+            counts: true, carried: sealed.carried, entryCounts: sealed.counts, plan: sealed.plan,
+            streak: try streak(asOf: nil))
+    }
+
+    // MARK: - Reopen
+
+    /// Opens a sealed day again so it can be changed and sealed again (docs/SPEC.md section 3). Any day can be
+    /// reopened at any time, however old. The ledger only grows: this appends `day.reopened` and removes nothing, so
+    /// every earlier seal stays in the day's history. The day reads as unsealed from here, which makes `seal` the way
+    /// to seal it again. Only the app and the CLI reopen a day; the MCP server has no tool for it.
+    public func reopen(day: LocalDate?, actor: Actor) throws(CadenceError) -> ReopenResult {
+        guard actor == .app || actor == .cli else {
+            throw .validation("only you can reopen a day; use the app or cadence day reopen")
+        }
+        let today = self.today()
+        let day = day ?? today
+        guard day <= today else { throw .validation("date: \(day) is in the future") }
+        let key = SQLValue.text(day.description)
+
+        let (sealedAt, reopenedAt) = try store.transact { () throws(CadenceError) -> (String, String) in
+            guard let sealedAt = try self.rows("SELECT sealed_at FROM days WHERE date = ?", [key]).first?.text("sealed_at") else {
+                throw .validation("\(day) is not wrapped up, so there is nothing to reopen")
+            }
+            let events = try self.store.append(
+                [EventPayload.dayReopened(DayReopened(day: day.description)).draft(actor: actor)], then: { _ in })
+            guard let event = events.first else { throw .integrity("the reopening did not read back") }
+            return (sealedAt, event.at)
+        }
+
+        func local(_ text: String) -> String { Timestamp.parse(text).map { Timestamp.local($0, in: zone) } ?? text }
+        return ReopenResult(day: day, reopenedAt: local(reopenedAt), sealedAt: local(sealedAt), streak: try streak(asOf: nil))
+    }
+
+    /// The seals and reopenings of `date`, oldest first, read from the ledger. An event the projection ignored is not
+    /// history: a seal while the day was already sealed, or a reopening of a day that was not sealed.
+    public func dayHistory(_ date: LocalDate) throws(CadenceError) -> [DayHistoryItem] {
+        var items: [DayHistoryItem] = []
+        var sealed = false
+        for event in try store.events(subject: "day:\(date)") {
+            let kind: DayHistoryItem.Kind
+            switch event.type {
+            case "day.sealed" where !sealed: kind = .sealed
+            case "day.reopened" where sealed: kind = .reopened
+            default: continue
+            }
+            guard let at = Timestamp.parse(event.at) else { continue }
+            sealed = kind == .sealed
+            items.append(DayHistoryItem(kind: kind, at: at, actor: event.actor, seq: event.seq))
+        }
+        return items
     }
 
     // MARK: - Streak
 
-    /// Consecutive workdays sealed within grace, as of `asOf` (default today). One query for the days, one for
-    /// the declarations, then a pure walk (`DayRules.streak`).
+    /// Consecutive workdays that are sealed, as of `asOf` (default today). One query for the days, one for
+    /// the declarations, then a pure walk (`DayRules.streak`). A day counts when it is sealed now and the seal had
+    /// been made by the end of `asOf`; a reopened day does not count until it is sealed again.
     public func streak(asOf: LocalDate? = nil) throws(CadenceError) -> Streak {
         let today = self.today()
         let asOf = asOf ?? today

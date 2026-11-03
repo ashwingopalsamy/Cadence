@@ -267,8 +267,8 @@ import Testing
         let types = Set(try h.agentEvents().map(\.type))
         #expect(types.isSubset(of: ["ledger.genesis", "entry.created", "plan.added", "plan.updated", "plan.resolved", "day.declared"]))
         #expect(types.contains("entry.created") && types.contains("plan.resolved") && types.contains("day.declared"))
-        // Nothing sealed, accepted, dismissed, checkpointed or changed in config, and every entry is the agent's.
-        #expect(try h.events().allSatisfy { !["day.sealed", "entry.status", "witness.checkpoint", "presence.span", "config.classifier"].contains($0.type) })
+        // Nothing sealed, reopened, accepted, dismissed, checkpointed or changed in config, and every entry is the agent's.
+        #expect(try h.events().allSatisfy { !["day.sealed", "day.reopened", "entry.status", "witness.checkpoint", "presence.span", "config.classifier"].contains($0.type) })
         let entries = try h.events().filter { $0.type == "entry.created" }.map { try Entry(json: $0.data) }
         #expect(entries.count == 3 && entries.allSatisfy { $0.origin == .agent })
         // The rebuild gives the same days back.

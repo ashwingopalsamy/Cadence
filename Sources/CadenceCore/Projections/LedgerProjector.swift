@@ -259,10 +259,27 @@ public struct LedgerProjector: Projector {
             }
             try ensureDay(sealed.day, tz: sealed.tz, seq: event.seq, db: db)
             try db.run(
-                // The first seal stands: sealing again later must not undo a seal that counted.
+                // The seal after the last reopen stands: a seal while the day is sealed does not move it.
                 "UPDATE days SET sealed_at = ?, seal_event = ? WHERE date = ? AND sealed_at IS NULL",
                 [.text(event.at), .text(event.hash), .text(sealed.day)])
             try touchDay(sealed.day, seq: seq, db: db)
+
+        // Reopening reads the day as unsealed until the next `day.sealed`. Only the user's own writers may write it.
+        // A reopen of a day that is not sealed changes nothing, so a rebuild never fails over one. The marks that
+        // were "after the seal" are cleared with the seal: entries here, plan tasks by their derived reader
+        // (`Journal.taskAfterSealSQL` has no boundary while `seal_event` is null). `updated_seq` of an entry stays
+        // as it was, since nothing about the entry changed.
+        case .dayReopened(let reopened):
+            switch event.actor {
+            case .app, .cli: break
+            default:
+                throw CadenceError.integrity("event \(event.seq): \(event.actor.rawValue) cannot reopen a day")
+            }
+            guard try db.first("SELECT 1 AS x FROM days WHERE date = ? AND sealed_at IS NOT NULL", [.text(reopened.day)]) != nil
+            else { return }
+            try db.run("UPDATE days SET sealed_at = NULL, seal_event = NULL WHERE date = ?", [.text(reopened.day)])
+            try db.run("UPDATE entries SET after_seal = 0 WHERE day = ?", [.text(reopened.day)])
+            try touchDay(reopened.day, seq: seq, db: db)
 
         case .genaiSession(let session):
             // Start and end can arrive as separate events; later non-null values win, nulls keep what is there.

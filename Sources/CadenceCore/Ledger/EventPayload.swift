@@ -466,6 +466,23 @@ public struct DaySealed: Sendable, Equatable, JSONRepresentable {
     }
 }
 
+/// A sealed day opened again (docs/SPEC.md section 3). The payload names the day and nothing else: no reason, no free
+/// text and no zone, so the owner's words never reach the ledger through it. The time is the event's own `at`.
+public struct DayReopened: Sendable, Equatable, JSONRepresentable {
+    public var day: String
+
+    public init(day: String) {
+        self.day = day
+    }
+
+    public var json: JSONValue { ["day": .string(day)] }
+
+    public init(json: JSONValue) throws(CadenceError) {
+        let r = try PayloadReader(json, owner: "day.reopened", keys: ["day"])
+        day = try r.day("day")
+    }
+}
+
 public struct WitnessCheckpoint: Sendable, Equatable, JSONRepresentable {
     public var day: String
     public var purpose: String
@@ -710,6 +727,7 @@ public enum EventPayload: Sendable, Equatable {
     case entryUpdated(Changes)
     case entryStatus(EntryStatusChange)
     case daySealed(DaySealed)
+    case dayReopened(DayReopened)
     case witness(WitnessCheckpoint)
     case genaiSession(GenAISession)
     case genaiUsage(GenAIUsage)
@@ -719,8 +737,8 @@ public enum EventPayload: Sendable, Equatable {
     public static let allTypes: [String] = [
         "ledger.genesis", "day.started", "day.ended", "presence.span", "day.declared", "day.noted",
         "plan.added", "plan.updated", "plan.resolved", "plan.committed", "entry.created", "entry.updated",
-        "entry.status", "day.sealed", "witness.checkpoint", "genai.session", "genai.usage", "ingest.run",
-        "config.classifier",
+        "entry.status", "day.sealed", "day.reopened", "witness.checkpoint", "genai.session", "genai.usage",
+        "ingest.run", "config.classifier",
     ]
 
     public var type: String {
@@ -739,6 +757,7 @@ public enum EventPayload: Sendable, Equatable {
         case .entryUpdated: "entry.updated"
         case .entryStatus: "entry.status"
         case .daySealed: "day.sealed"
+        case .dayReopened: "day.reopened"
         case .witness: "witness.checkpoint"
         case .genaiSession: "genai.session"
         case .genaiUsage: "genai.usage"
@@ -761,6 +780,7 @@ public enum EventPayload: Sendable, Equatable {
         case .entryCreated(let p): p.json
         case .entryStatus(let p): p.json
         case .daySealed(let p): p.json
+        case .dayReopened(let p): p.json
         case .witness(let p): p.json
         case .genaiSession(let p): p.json
         case .genaiUsage(let p): p.json
@@ -787,6 +807,7 @@ public enum EventPayload: Sendable, Equatable {
             self = .entryUpdated(try Changes(json: data, allowed: Changes.entryFields, owner: type))
         case "entry.status": self = .entryStatus(try EntryStatusChange(json: data))
         case "day.sealed": self = .daySealed(try DaySealed(json: data))
+        case "day.reopened": self = .dayReopened(try DayReopened(json: data))
         case "witness.checkpoint": self = .witness(try WitnessCheckpoint(json: data))
         case "genai.session": self = .genaiSession(try GenAISession(json: data))
         case "genai.usage": self = .genaiUsage(try GenAIUsage(json: data))
@@ -811,6 +832,7 @@ public enum EventPayload: Sendable, Equatable {
         case .entryCreated(let p): return "entry:\(p.id)"
         case .entryUpdated, .entryStatus: return id.map { "entry:\($0)" }
         case .daySealed(let p): return "day:\(p.day)"
+        case .dayReopened(let p): return "day:\(p.day)"
         case .witness(let p): return "day:\(p.day)"
         case .genaiSession(let p): return "session:\(p.sessionId)"
         case .genaiUsage(let p): return "usage:\(p.day):\(p.tool):\(p.model):\(p.source)"

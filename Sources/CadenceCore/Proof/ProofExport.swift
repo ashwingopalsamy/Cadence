@@ -52,7 +52,8 @@ public struct ProofFile: Sendable, Equatable {
 ///   deleted entries never leave the Mac with their text. `digest` items appear in `days` as
 ///   redacted stubs; `exclude` items do not appear at all. Every hash-only event in range is counted
 ///   in `summary.private_events`, so redaction is visible.
-/// - A day's seal is its first seal: sealing again later never undoes one that counted.
+/// - A day's seal is its current seal: the one after its last reopening (`day.reopened`, listed in the chain with its
+///   time). Any seal counts, whenever it was made.
 /// - Summary numbers count only items present in `days`, and each one carries its definition. Days
 ///   before the ledger began are not counted as unsealed: they are reported as `before_ledger`.
 ///
@@ -116,7 +117,7 @@ private struct Builder {
         func isNull(_ key: String) -> Bool { data[key] == nil || data[key] == .null }
         switch event.type {
         case "ledger.genesis", "day.started", "day.ended", "presence.span", "plan.added", "plan.updated",
-            "day.sealed", "witness.checkpoint", "genai.session", "genai.usage":
+            "day.sealed", "day.reopened", "witness.checkpoint", "genai.session", "genai.usage":
             return true
         case "day.declared": return isNull("label")
         case "plan.resolved": return isNull("reason_note")
@@ -158,7 +159,7 @@ private struct Builder {
         var privateEvents = 0
         var declared: [String: DayKind] = [:]
         var leftTheCount: [String: Date] = [:]  // day -> recorded time it entered its current leave or holiday state
-        var firstSeal: [String: Int64] = [:]  // day -> seq of its first day.sealed
+        var currentSeal: [String: Int64] = [:]  // day -> seq of its first day.sealed after its last day.reopened
         var updateSeqs: [String: [Int64]] = [:]  // entry id -> seqs of its entry.updated events
         var ledgerStart: LocalDate? = nil
         var after: Int64 = 0
@@ -199,7 +200,9 @@ private struct Builder {
                         leftTheCount[d] = nil
                     }
                 }
-                if event.type == "day.sealed", let d = day, firstSeal[d] == nil { firstSeal[d] = event.seq }
+                // The projection's rule: a seal while the day is sealed does not move it, and a reopening clears it.
+                if event.type == "day.sealed", let d = day, currentSeal[d] == nil { currentSeal[d] = event.seq }
+                if event.type == "day.reopened", let d = day { currentSeal[d] = nil }
                 var e: [String: JSONValue] = [
                     "v": .int(event.v), "seq": .int(event.seq), "id": .string(event.id), "at": .string(event.at),
                     "actor": .string(event.actor.rawValue), "type": .string(event.type),
@@ -233,7 +236,7 @@ private struct Builder {
         var days: [JSONValue] = []
         var countable: [String] = []  // workdays since the ledger began whose outcome is final
         var beforeLedger = 0
-        var sealedInGrace = 0
+        var sealed = 0
         for date in LocalDate.range(request.from, through: request.to) {
             let key = date.description
             let row = dayRows[key]
@@ -241,7 +244,7 @@ private struct Builder {
             let items = entriesByDay[key] ?? []
             if row == nil && kind != .workday && items.isEmpty { continue }
             let dayZone = row?.text("tz").flatMap(TimeZone.init(identifier:)) ?? zone
-            let sealSeq = firstSeal[key]
+            let sealSeq = currentSeal[key]
             let sealHash = sealSeq.flatMap { hashBySeq[$0] }
             let sealedAt = row?.text("sealed_at").flatMap(Timestamp.parse)
             var d: [String: JSONValue] = ["date": .string(key), "kind": .string(kind.rawValue)]
@@ -255,7 +258,7 @@ private struct Builder {
                 && (leftTheCount[key].map { request.rules.declaredLate(date, at: $0, in: dayZone) } ?? false)
             d["flags"] = ["declared_late": .bool(late)]
             d["items"] = .array(items.map { entry in
-                // Edited means changed after the day's wrap-up: an entry.updated after the first seal.
+                // Edited means changed after the day's wrap-up: an entry.updated after the day's current seal.
                 let edited = sealSeq.map { seal in (updateSeqs[entry.id] ?? []).contains { $0 > seal } } ?? false
                 return item(entry, edited: edited, hashBySeq: hashBySeq, zone: dayZone)
             })
@@ -266,10 +269,10 @@ private struct Builder {
                 beforeLedger += 1
                 continue
             }
-            let counts = sealedAt.map { request.rules.sealCounts($0, for: date, in: dayZone) } ?? false
-            if counts || request.rules.graceClosed(for: date, at: request.generatedAt, in: dayZone) {
+            let isSealed = sealedAt != nil
+            if isSealed || request.rules.graceClosed(for: date, at: request.generatedAt, in: dayZone) {
                 countable.append(key)
-                if counts { sealedInGrace += 1 }
+                if isSealed { sealed += 1 }
             }
         }
 
@@ -303,9 +306,9 @@ private struct Builder {
         func known(_ n: Int) -> JSONValue { githubSeen ? .int(Int64(n)) : .null }
         let base: JSONValue = [
             "sealed_workdays": [
-                "value": .int(Int64(sealedInGrace)), "of": .int(Int64(countable.count)),
+                "value": .int(Int64(sealed)), "of": .int(Int64(countable.count)),
                 "before_ledger": .int(Int64(beforeLedger)),
-                "definition": "Workdays wrapped up by 23:59 the next day, counted from the day the ledger began; leave and holidays excluded, days still inside that window not counted yet, and workdays before the ledger began reported as before_ledger",
+                "definition": "Workdays that are wrapped up, whenever the wrap-up was made (the current one if a day was reopened), counted from the day the ledger began; leave and holidays excluded, unsealed days still inside the window that ends at 23:59 the next day not counted yet, and workdays before the ledger began reported as before_ledger",
             ],
             "plan_done": [
                 "value": .int(Int64(doneOnDay.count)), "of": .int(Int64(tasks.count)),

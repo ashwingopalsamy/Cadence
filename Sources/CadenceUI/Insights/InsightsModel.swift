@@ -185,7 +185,7 @@ public struct InsightsStoreLoader: InsightsLoading {
                 continue
             }
             let zone = TimeZone(identifier: view.tz) ?? journal.zone
-            if let at = view.sealedAt.flatMap({ Timestamp.parse($0) }), rules.sealCounts(at, for: date, in: zone) {
+            if view.sealedAt != nil {
                 days.append(.init(date: date, state: .sealed))
             } else if rules.graceClosed(for: date, at: now, in: zone) {
                 days.append(.init(date: date, state: .notSealed))

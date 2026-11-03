@@ -202,3 +202,12 @@ Sections 5.4 and 5.5 give the recap sentences and two rules (no "best since", no
 ## Planner decisions for the app icon, T4.19 (2026-11-03)
 
 - The app icon is App/Cadence.icon, an Icon Composer document compiled by actool in scripts/bundle.sh into Assets.car and Cadence.icns.
+
+## Planner decisions for reopening a sealed day, T4.18 (2026-11-03)
+
+- A day can be reopened at any time, however old, and sealed again. The ledger stays append-only: `day.reopened` is one more event with the payload `{day}` and no free text, written only by the app and the CLI. The ledger refuses it from any other actor, and no MCP tool reopens a day.
+- Any seal counts for the streak, the summary, Insights and the proof, whenever it was made. A seal made after the grace window used to be kept but not counted; that rule is gone, and a late seal of a gap day joins the runs on both sides of it. The grace window now only decides when an unsealed day stops being open: for reminders, "yesterday still open" and late leave or holiday declarations, and for when an unsealed day breaks the streak. A reopened day that is not sealed again breaks the streak once its window has closed, until it is sealed again.
+- The projection reads a day as sealed by the first `day.sealed` after its last `day.reopened`; a seal while the day is sealed still changes nothing. This supersedes "A day's first seal stands" (2026-10-30). Reopening clears the "after wrap-up" marks of the day's entries. A plan task's mark is derived from the day's seal event, so it clears with the seal and nothing else is stored.
+- The proof uses the current seal for `seal_ev`, `sealed_at` and `edited`, and lists `day.reopened` events in the chain with their payloads. The proof format is unchanged (`cadence.proof/1`): the verifiers only check that `seal_ev` is a `day.sealed` of that day and that `sealed_at` matches its time, so the verifiers, the `days` shape and the existing vectors are untouched. `valid-reopen.json` is a new vector: seal, edit, reopen, change, seal again.
+- This supersedes the sentence of 2026-11-02 that the ledger has no reopen event and that adding one would change the proof format. A day now has one, and the format did not change. A task tick still has no reopen event, so the panel's Undo (section 4.2) holds the tick for its 4 seconds as before.
+- An older binary ignores `day.reopened` as an unknown type, so it would still show the day as sealed. The app, the CLI and the MCP server ship together.

@@ -13,6 +13,7 @@
   {"type":"entry.updated","subject":"entry:01JBX3N0A1B2C3D4E5F6G7H8J9","data":{"changes":{"title":["Merged ACME-123 schema change","Merged ACME-123 schema migration"],"tags":[["db"],["db","migration"]]}}},
   {"type":"entry.status","subject":"entry:01JBX3N0A1B2C3D4E5F6G7H8J9","data":{"from":"proposed","to":"accepted","note":null}},
   {"type":"day.sealed","subject":"day:2026-10-29","data":{"day":"2026-10-29","tz":"Europe/Berlin","counts":{"delivery":2,"review":1},"plan":{"done":2,"slipped":1,"dropped":0,"moved":1,"open":0},"head":"b4f1c2d3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e7f809"}},
+  {"type":"day.reopened","subject":"day:2026-10-29","data":{"day":"2026-10-29"}},
   {"type":"witness.checkpoint","subject":"day:2026-10-29","data":{"day":"2026-10-29","purpose":"standup"}},
   {"type":"genai.session","subject":"session:sess-0001","data":{"session_id":"sess-0001","tool":"claude-code","day":"2026-10-29","started_at":"2026-10-29T10:00:00.000Z","ended_at":"2026-10-29T10:45:00.000Z","end_reason":"exit","project_alias":"acme-api","models":["model-a"],"turns":18}},
   {"type":"genai.usage","subject":"usage:2026-10-28:claude-code:model-a:endpoint","data":{"day":"2026-10-28","tool":"claude-code","model":"model-a","source":"endpoint","sessions":5,"requests":212,"tokens":{"in":48210,"out":96115,"cache_read":8120400,"cache_write":402118},"cost_micros":null,"estimated":false}},

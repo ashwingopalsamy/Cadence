@@ -38,6 +38,8 @@ def ulid(n):
 def build_chain(drafts):
     events, prev = [], ZERO
     for seq, (at, actor, etype, subject, data) in enumerate(drafts, start=1):
+        if callable(data):
+            data = data(prev)  # a payload that names the event before it, such as the head of day.sealed
         e = {"v": 1, "seq": seq, "id": ulid(seq), "at": at, "actor": actor, "type": etype,
              "subject": subject, "data_digest": sha(data), "prev": prev}
         e["hash"] = sha({k: e[k] for k in HEAD})
@@ -132,6 +134,107 @@ def valid_proof():
         }],
         "chain": {"algo": "sha256", "c14n": "cadence-c14n/1", "events": events},
         "witnesses": [{"date": "2026-10-01", "code": witness["hash"][:16], "where": "stand-up message"}],
+        "checks": ["export_digest", "sequence", "links", "payload_digests", "event_hashes", "references", "witnesses"],
+    }
+    proof["export_digest"] = sha(proof)
+    return proof
+
+
+def reopen_proof():
+    """One day sealed, edited, reopened, changed and sealed again (docs/SPEC.md section 3, T4.18).
+
+    The day cites its current seal, the second one, and the chain lists the reopening with its time. The edit before the
+    reopening is not "edited" (it came before the current seal); the edit after the second seal is.
+    """
+    day = "2026-10-01"
+    plan = {"done": 1, "slipped": 0, "dropped": 0, "moved": 0, "open": 0}
+    pr_link = "https://git.example.com/acme/ledger-core/pull/405"
+    review_link = "https://git.example.com/acme/refunds/pull/88"
+    clock_title = "Fixed flaky ledger test with deterministic clock"
+    reworded = "Fixed flaky ledger test with a deterministic clock"
+    final = "Fixed the flaky ledger test with a deterministic clock"
+
+    def sealed(counts):
+        return lambda prev: {"day": day, "tz": TZ, "counts": counts, "plan": plan, "head": prev}
+
+    drafts = [
+        ("2026-10-01T03:58:00.000Z", "app", "ledger.genesis", "ledger",
+         {"created": "2026-10-01T03:58:00.000Z", "app_version": "0.0.0", "profile": {"name": "Sample Person", "timezone": TZ}}),
+        ("2026-10-01T04:12:30.000Z", "app", "day.started", "day:" + day,
+         {"at": "2026-10-01T04:12:30.000Z", "source": "input"}),
+        ("2026-10-01T04:15:02.000Z", "cli", "plan.added", "task:01JB00000000000000000T0001",
+         {"day": day, "position": 1, "title": "Batch settlement writes", "ticket": {"key": "ACME-482901", "class": "assigned"}, "origin": "self"}),
+        ("2026-10-01T09:42:40.000Z", "collector:github", "entry.created", "entry:01JB00000000000000000E0001",
+         entry("01JB00000000000000000E0001", day, "pr.merged", "delivery", "ACME-482901 Batch settlement writes",
+               "2026-10-01T15:12:40+05:30", "collected", "github", "github:PR_kwDOAcme405:merged",
+               {"key": "ACME-482901", "class": "assigned"}, [{"kind": "pr", "url": pr_link}],
+               attrs={"ai_assisted": True})),
+        ("2026-10-01T10:05:11.000Z", "mcp", "entry.created", "entry:01JB00000000000000000E0002",
+         entry("01JB00000000000000000E0002", day, "work.done", "delivery", clock_title,
+               "2026-10-01T15:35:11+05:30", "agent")),
+        ("2026-10-01T11:54:10.000Z", "app", "plan.resolved", "task:01JB00000000000000000T0001",
+         {"status": "done", "reason": None, "links": ["entry:01JB00000000000000000E0001"]}),
+        # The first seal.
+        ("2026-10-01T11:54:10.500Z", "app", "day.sealed", "day:" + day, sealed({"delivery": 2, "entries": 2})),
+        ("2026-10-01T11:54:11.000Z", "app", "witness.checkpoint", "day:" + day, {"purpose": "standup"}),
+        # An edit after the first seal, then the reopening.
+        ("2026-10-01T12:30:00.000Z", "cli", "entry.updated", "entry:01JB00000000000000000E0002",
+         {"changes": {"title": [clock_title, reworded]}}),
+        ("2026-10-01T13:02:00.000Z", "cli", "day.reopened", "day:" + day, {"day": day}),
+        # A review added while the day is open, so it is not after any seal.
+        ("2026-10-01T13:10:00.000Z", "collector:github", "entry.created", "entry:01JB00000000000000000E0003",
+         entry("01JB00000000000000000E0003", day, "review.given", "review", "ACME-482905 Reviewed refunds retry path",
+               "2026-10-01T18:40:00+05:30", "collected", "github", "github:PRR_kwDOAcme777", None,
+               [{"kind": "pr", "url": review_link}])),
+        # The second seal is the day's current seal.
+        ("2026-10-01T13:40:00.000Z", "cli", "day.sealed", "day:" + day, sealed({"delivery": 2, "review": 1, "entries": 3})),
+        # An edit after the current seal.
+        ("2026-10-01T14:00:00.000Z", "cli", "entry.updated", "entry:01JB00000000000000000E0002",
+         {"changes": {"title": [reworded, final]}}),
+    ]
+    events = build_chain(drafts)
+    by_seq = {e["seq"]: e for e in events}
+    witness, second_seal, last_edit = by_seq[8], by_seq[12], by_seq[13]
+
+    def item(seq, title=None, last=None, edited=False):
+        e = by_seq[seq]
+        d = e["data"]
+        it = {"ev": e["hash"], "last_ev": (last or e)["hash"], "kind": d["kind"], "family": d["family"],
+              "title": title or d["title"], "occurred_at": d["occurred_at"], "origin": d["origin"]}
+        if d.get("source"):
+            it["source"] = d["source"]
+        if d.get("ticket"):
+            it["ticket"] = d["ticket"]
+        it["links"] = [l["url"] for l in d["links"]]
+        it["flags"] = {"edited": edited, "after_seal": False, "backfilled": False}
+        return it
+
+    proof = {
+        "format": "cadence.proof/1",
+        "generated_at": "2026-10-02T09:12:00+05:30",
+        "generator": "Cadence 0.0.0",
+        "subject": {"name": "Sample Person", "role": "Software Engineer"},
+        "range": {"from": day, "to": day, "tz": TZ},
+        "how_to_verify": "Synthetic test vector. Run: python3 tools/verify_proof.py THIS_FILE",
+        "verifier_py": "omitted in test vectors",
+        "summary": {
+            "sealed_workdays": {"value": 1, "of": 1, "definition": "Workdays that are wrapped up, whenever the wrap-up was made; leave and holidays excluded"},
+            "plan_done": {"value": 1, "of": 1, "definition": "Planned tasks marked done on their day"},
+            "merged_prs": {"value": 1, "assigned": 1, "self_initiated": 0, "definition": "Merged PRs authored, from the GitHub collector"},
+            "reviews": {"value": 1, "definition": "Review entries, one per PR per day"},
+            "ai_assisted_merges": {"value": 1, "of": 1, "percent": 100, "unrecorded": 0,
+                                   "definition": "Merged PRs listed in days that recorded an AI marker, out of listed merged PRs with a recorded marker; computed by Cadence, not recomputed by the verifier"},
+            "agent_entries": {"value": 1, "definition": "Items listed in days with origin agent, which is self-reported; computed by Cadence, not recomputed by the verifier"},
+            "review_sentence": {"text": "100% of merged PRs were AI-assisted. Your agent logged 1 entry you accepted.",
+                                "definition": "Written from the figures beside it and computed by Cadence; the verifier recomputes only merged_prs and reviews"},
+        },
+        "days": [{
+            "date": day, "kind": "workday", "first_activity": "09:42", "last_activity": "-",
+            "sealed_at": "2026-10-01T19:10:00+05:30", "seal_ev": second_seal["hash"],
+            "items": [item(4), item(5, title=final, last=last_edit, edited=True), item(11)],
+        }],
+        "chain": {"algo": "sha256", "c14n": "cadence-c14n/1", "events": events},
+        "witnesses": [{"date": day, "code": witness["hash"][:16], "where": "stand-up message"}],
         "checks": ["export_digest", "sequence", "links", "payload_digests", "event_hashes", "references", "witnesses"],
     }
     proof["export_digest"] = sha(proof)
@@ -315,6 +418,12 @@ def main(argv):
     valid = valid_proof()
     files = {"proofs/valid.json": valid}
     files.update({"proofs/" + k: v for k, v in tampered_variants(valid).items()})
+    reopened = reopen_proof()
+    files["proofs/valid-reopen.json"] = reopened
+    # The day cites its second seal but shows the first seal's time: the time must match the seal it cites.
+    t = copy.deepcopy(reopened)
+    t["days"][0]["sealed_at"] = "2026-10-01T17:24:10+05:30"
+    files["proofs/tampered-reopen-sealed-at.json"] = redigest(t)
     files["c14n.json"] = c14n_vectors()
     files["chains/basic.json"] = chain_vectors()
     stale = []

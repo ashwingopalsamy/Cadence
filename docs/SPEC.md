@@ -191,8 +191,9 @@ First activity| First input after the boundary with the session unlocked| Matche
 Last activity| End of the last activity span before the next boundary| Logout is inferred, never typed. Spans close after 5 minutes idle.
 Seal| Wrap-up seals the day| Seal at stand-up time; the day keeps collecting.
 After the seal| New collected entries join the day marked "after wrap-up"| A PR merged at 19:02 still counts without reopening anything.
-Grace window| Seal yesterday until 23:59 today, calendar time in the day's zone| Forgetting once does not cost the streak if you account for it next morning. The proof states the same rule.
-Streak| Consecutive workdays sealed; leave and holidays are skipped| Rewards accounting for every workday, not hours.
+Reopen| A sealed day can be reopened at any time, however old, and sealed again. Only you reopen a day, in the app or with `cadence day reopen`; an agent cannot| Honest history beats a locked log. The ledger keeps every seal and every reopening with its time; only the day's current seal stands, and reopening clears its "after wrap-up" marks.
+Grace window| Wrap up yesterday until 23:59 today, calendar time in the day's zone| Until then an unsealed day is open: it neither counts nor breaks the streak. After it, the day breaks the streak until it is sealed, however late. The proof states the same rule.
+Streak| Consecutive workdays sealed, whenever the seal was made; leave and holidays are skipped| Rewards accounting for every workday, not hours. A late seal of a gap day joins the runs on both sides of it. A reopened day that is not sealed again breaks the streak until it is.
 Edits after seal| Allowed, recorded as amendments with timestamps| Honest history beats a locked log.
 
 
@@ -816,6 +817,7 @@ day.declared| `day:…`| kind, label| app, CLI, MCP
 plan.added · plan.updated · plan.resolved| `task:<ulid>`| task fields · changes as [old, new] · status, reason, links| app, CLI, MCP
 entry.created · entry.updated · entry.status| `entry:<ulid>`| entry · changes as [old, new] · from, to| any writer; collectors only edit their own entries
 day.sealed| `day:…`| counts, plan states, head before seal| app, CLI
+day.reopened| `day:…`| the day, nothing else| app, CLI; the ledger refuses any other writer
 witness.checkpoint| `day:…`| purpose| app (copy stand-up)
 genai.session · genai.usage| `session:…` · `usage:…`| session or daily usage| spool drain, collectors, import
 ingest.run| `run:<ulid>`| collector, window, counts, errors| collector runner
@@ -1090,7 +1092,7 @@ S9| Claude Code transcript lines carry `message.usage` and `model` as expected (
 
 ## 9. Agents, MCP, CLI
 
-Claude Code gets your powers minus the ones that would make the log less honest. It can log, plan and read; it cannot accept its own proposals, seal a day, change config or touch presence.
+Claude Code gets your powers minus the ones that would make the log less honest. It can log, plan and read; it cannot accept its own proposals, seal or reopen a day, change config or touch presence.
 
 ### 9.1 Setup on the Mac
 
@@ -1215,7 +1217,7 @@ Command| Does
 `cadence today`| Today's ring, plan and entries; `--json` everywhere
 `cadence log "<text>"`| Parse and record; flags `--kind --at --date --ticket --link --qty`
 `cadence plan add|list|done|slip|drop`| Manage the day's plan; `slip --reason reprioritised`
-`cadence day start|end|seal|leave|holiday`| Manual corrections, always recorded with origin self
+`cadence day start|end|seal|reopen|history|leave|holiday`| Manual corrections, always recorded with origin self; `reopen` opens a sealed day again and `history` lists its seals and reopenings
 `cadence inbox list|accept|dismiss`| Review proposals from agents, dictation and backfill
 `cadence query --from --to [--kind --family --origin]`| Entries as a table, JSON or NDJSON
 `cadence summary --range week|month|cycle|A..B`| Metrics and findings
@@ -1478,7 +1480,7 @@ One JSON file with the hash chain, the days, the witnesses and its own verifier 
 
 **Links to check** Collected items point at the PR. Your manager clicks them on the company network; nothing leaves it.
 
-**Labels that don't move** Observed, collected, agent and self are fixed at creation. Edits after sealing are counted, not hidden.
+**Labels that don't move** Observed, collected, agent and self are fixed at creation. Edits after a day's current seal are counted, not hidden, and every reopening is listed with its time.
 
 ### 12.1 The file
 
@@ -1495,7 +1497,7 @@ october.cadence-proof.json (shape; arrays shortened)
   "how_to_verify": "…plain-language steps, shown in 12.2…",
   "verifier_py": "…the script in 12.3, verbatim…",
   "summary": {
-    "sealed_workdays": { "value": 19, "of": 19, "before_ledger": 0, "definition": "Workdays wrapped up by 23:59 the next day, counted from the day the ledger began; …" },
+    "sealed_workdays": { "value": 19, "of": 19, "before_ledger": 0, "definition": "Workdays that are wrapped up, whenever the wrap-up was made, counted from the day the ledger began; …" },
     "plan_done":       { "value": 61, "of": 73, "after_seal": 2, "definition": "Planned tasks on counted workdays marked done by the end of their day; …" },
     "merged_prs":      { "value": 14, "assigned": 11, "self_initiated": 3, "definition": "Merged PRs authored, from the GitHub collector; …" },
     "reviews":         { "value": 47, "definition": "Review entries, one per PR per day" },
@@ -1534,9 +1536,9 @@ october.cadence-proof.json (shape; arrays shortened)
 ```
 
 
-  * **Chain:** every event from genesis to the last one before export, in order. Outside the range events carry hashes only. Inside the range, payloads are allow-listed: day marks, presence spans, plan tasks, seals, witnesses and AI usage carry theirs; free text that is the owner's own (day notes and focus lines, reason notes, status notes, day labels, collector errors) and any event type the exporter does not know stay hash-only. Entries carry their payload only when accepted with export policy `include` (notes default to `digest`). An event belongs to the day its subject names, or to the current day of the entry, task or session it is about. A year is roughly 10,000 to 20,000 events; items appear both in `days` and in the chain, so expect 10 to 17 MB.
+  * **Chain:** every event from genesis to the last one before export, in order. Outside the range events carry hashes only. Inside the range, payloads are allow-listed: day marks, presence spans, plan tasks, seals, reopenings, witnesses and AI usage carry theirs; free text that is the owner's own (day notes and focus lines, reason notes, status notes, day labels, collector errors) and any event type the exporter does not know stay hash-only. Entries carry their payload only when accepted with export policy `include` (notes default to `digest`). An event belongs to the day its subject names, or to the current day of the entry, task or session it is about. A year is roughly 10,000 to 20,000 events; items appear both in `days` and in the chain, so expect 10 to 17 MB.
   * **Redaction is visible:** an item with policy `exclude` is left out of `days`, but its event stays in the chain as hash-only, and `summary.private_events` counts every hash-only event in range.
-  * **Seals:** a day's seal is its first seal. Sealing again later never undoes a seal that counted. `edited` means an `entry.updated` after that seal; status changes are not edits.
+  * **Seals:** a day's seal is its current seal, the first `day.sealed` after its last `day.reopened`. Every reopening is in the chain with its time, and the seals before it stay there too, so a reader can see that a day was reopened and sealed again. Any seal counts for `sealed_workdays`, whenever it was made. `edited` means an `entry.updated` after the current seal; status changes are not edits.
   * **Days before the ledger:** workdays before the ledger began (a backfill) are not counted as unsealed; `sealed_workdays.before_ledger` reports them.
   * **Summary** carries a definition next to every number, so an agent reading it never has to guess what a metric means. The verifier recomputes `merged_prs` and `reviews` from the items; the other numbers are computed by Cadence. That includes `ai_assisted_merges`, `agent_entries` and `review_sentence` (section 11), whose figures can still be counted from the file: `origin` on the items, and `attrs.ai_assisted` in each included entry's payload in the chain. A figure with no record is null, and a clause of the sentence with no figure is left out.
   * **Witnesses** are the codes that ended your stand-up messages. Slack sets those message timestamps, not you, so each one shows that the chain up to that event existed by then.
@@ -1796,7 +1798,7 @@ Work data leaves the Mac| App sandbox with no network entitlement. The `cadence`
 Employer names or hosts land in the public repo| Examples use ACME and example.com. `tools/guard.sh` reads a forbidden-terms list from `~/.config/cadence/forbidden.txt`, which is never committed, and fails with file and line without printing the term. It runs as a pre-commit hook, inside `make check`, and over the full history before publishing| Terms you forget to list
 Your work log ends up in git| The store lives outside the repo. `.gitignore` covers `*.db`, `*.cadence-proof.json`, `maps/` and local config. The guard also rejects files whose content starts with `cadence.proof/1`, `envelope/1` or the SQLite header| Data pasted into an issue by hand
 Collector command abuse| argv only, absolute path, fixed environment, approval by digest, and a config that must be yours with mode 0600| Malware already running as you can edit anything you can
-Prompt injection through PR titles or entries returned to agents| MCP results return entries as data fields, and tool descriptions state the content is user data. No MCP tool can delete, seal, accept or change presence. Agent writes are labelled agent and rate-limited to 60 a minute| An agent can still log misleading entries, labelled as agent
+Prompt injection through PR titles or entries returned to agents| MCP results return entries as data fields, and tool descriptions state the content is user data. No MCP tool can delete, seal, reopen, accept or change presence. Agent writes are labelled agent and rate-limited to 60 a minute| An agent can still log misleading entries, labelled as agent
 Screen sharing and lock screen| Notifications show counts, not titles, unless you turn titles on. Discreet mode (⌃⌥D) replaces titles in the panel and window. Detecting a screen share automatically is later work (verify)| A shared window while discreet mode is off
 Lost or stolen laptop| FileVault for data at rest; files are 0600 in a 0700 folder. `cadence doctor` reports whether FileVault is on| An unlocked, unattended Mac
 A rewritten history| Hash chain, witnesses, edit counts after sealing, and the limits stated in the proof itself| A full rebuild before the first witness

@@ -102,18 +102,23 @@ import Testing
         #expect(result.plan == PlanCounts(done: 0, slipped: 0, dropped: 0, moved: 0, open: 0))
     }
 
-    @Test func graceWindowDecidesWhetherASealCounts() throws {
+    @Test func anySealCountsWhateverTheGraceWindowSays() throws {
         let f = try Fixture(start: "2026-10-28")
         // Wednesday sealed on Thursday morning: inside grace.
         f.go("2026-10-29", 9, 0)
-        let late = try f.journal.seal(f.day("2026-10-28"), actor: .cli)
-        #expect(late.counts)
-        // Thursday sealed on Saturday: past grace. Sealed, but it does not count.
+        let early = try f.journal.seal(f.day("2026-10-28"), actor: .cli)
+        #expect(early.counts)
+        // Thursday sealed on Saturday: past grace. The seal is recorded and counts, so the run goes on.
         f.go("2026-10-31", 9, 0)
-        let tooLate = try f.journal.seal(f.day("2026-10-29"), actor: .cli)
-        #expect(!tooLate.counts)
-        #expect(tooLate.streak.current == 0)  // Thursday is final and uncounted, so it ended the run Wednesday started
+        let late = try f.journal.seal(f.day("2026-10-29"), actor: .cli)
+        #expect(late.counts)
+        #expect(late.streak.current == 2)  // Friday 30 is unsealed but its window is open until the end of today
+        #expect(late.streak.atRisk)
         #expect(try f.journal.dayView(f.day("2026-10-29")).day.sealedAt != nil)
+        // The window only decides when an unsealed day stops being open: Friday closes unsealed on Sunday.
+        f.go("2026-11-01", 9, 0)
+        #expect(try f.journal.streak().current == 0)
+        #expect(try f.journal.seal(f.day("2026-10-30"), actor: .cli).streak.current == 3)
     }
 
     @Test func sealingTwiceAndSealingTheFutureAreRefused() throws {
@@ -305,10 +310,11 @@ import Testing
         // A day before the change: 11-02 00:00 is already EST (UTC-5).
         #expect(Timestamp.utc(rules.graceEnd(of: LocalDate("2026-10-31")!, in: ny)) == "2026-11-02T04:59:59.999Z")
         #expect(Timestamp.utc(rules.graceEnd(of: LocalDate("2026-10-30")!, in: ny)) == "2026-11-01T03:59:59.999Z")
+        // The same window decides when an unsealed day is final, whatever the zone does to the hours.
         let eleven30 = Timestamp.resolve(LocalDate("2026-11-02")!, hour: 23, minute: 30, in: ny)
         let past = Timestamp.resolve(LocalDate("2026-11-03")!, hour: 0, minute: 30, in: ny)
-        #expect(rules.sealCounts(eleven30, for: LocalDate("2026-11-01")!, in: ny))
-        #expect(!rules.sealCounts(past, for: LocalDate("2026-11-01")!, in: ny))
+        #expect(!rules.graceClosed(for: LocalDate("2026-11-01")!, at: eleven30, in: ny))
+        #expect(rules.graceClosed(for: LocalDate("2026-11-01")!, at: past, in: ny))
     }
 
     @Test func streakWalkStartsAtTheGenesisDay() throws {

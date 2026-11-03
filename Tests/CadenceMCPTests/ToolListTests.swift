@@ -4,7 +4,7 @@ import Testing
 
 @testable import CadenceMCP
 
-/// docs/SPEC.md section 9.2: nine tools in a fixed order, and nothing that deletes, seals, accepts or edits presence.
+/// docs/SPEC.md section 9.2: nine tools in a fixed order, and nothing that deletes, seals, reopens, accepts or edits presence.
 @Suite struct ToolListTests {
     static let nine = ["log_entry", "log_entries", "plan_add", "plan_update", "declare_day", "get_day", "query", "summary", "standup"]
 
@@ -44,16 +44,16 @@ import Testing
         #expect(CadenceMCP.toolNames == Self.nine)
     }
 
-    @Test func noToolDeletesSealsAcceptsOrTouchesPresenceOrConfig() throws {
+    @Test func noToolDeletesSealsReopensAcceptsOrTouchesPresenceOrConfig() throws {
         for tool in try listed() {
             let name = try #require(tool["name"]?.stringValue)
-            for word in ["delete", "remove", "seal", "accept", "dismiss", "inbox", "presence", "config", "rebuild", "export", "collect"] {
+            for word in ["delete", "remove", "seal", "reopen", "accept", "dismiss", "inbox", "presence", "config", "rebuild", "export", "collect"] {
                 #expect(!name.contains(word), "\(name)")
             }
             // And no argument asks for one either.
             let properties = tool["inputSchema"]?["properties"]?.objectValue ?? [:]
             for key in properties.keys {
-                for word in ["delete", "seal", "accept", "dismiss", "presence"] {
+                for word in ["delete", "seal", "reopen", "accept", "dismiss", "presence"] {
                     #expect(!key.contains(word), "\(name).\(key)")
                 }
             }

@@ -1,9 +1,10 @@
 extension Journal {
-    /// 1 when a plan task was added after the first seal of its day, else 0 (docs/SPEC.md section 3, "After the seal").
-    /// It compares two places in the ledger: the task's `plan.added` (`created_seq`) and the event that is the day's
-    /// first seal (`days.seal_event` is its hash, and a day's first seal stands). Nothing is stored, so the answer
-    /// cannot differ between a live store, a rebuilt one and one made before this rule, and no writer can forget it.
-    /// A day with no seal has no boundary, so nothing on it is after the seal.
+    /// 1 when a plan task was added after the current seal of its day, else 0 (docs/SPEC.md section 3, "After the
+    /// seal"). It compares two places in the ledger: the task's `plan.added` (`created_seq`) and the event that is the
+    /// day's seal (`days.seal_event` is its hash, and the seal after the last reopening stands). Nothing is stored, so
+    /// the answer cannot differ between a live store, a rebuilt one and one made before this rule, and no writer can
+    /// forget it. A day with no seal has no boundary, so nothing on it is after the seal: that is also why reopening a
+    /// day clears the mark on its tasks without touching them.
     static let taskAfterSealSQL = """
         (plan_tasks.created_seq > COALESCE(
             (SELECT e.seq FROM days AS d JOIN events AS e ON e.hash = d.seal_event WHERE d.date = plan_tasks.day),

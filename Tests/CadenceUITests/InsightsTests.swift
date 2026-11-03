@@ -112,6 +112,36 @@ import Testing
         #expect(data.days.first { $0.date == LocalDate("2026-10-23") }?.state == .off(.leavePlanned))
     }
 
+    @Test func aReopenedDayIsNotSealedUntilItIsSealedAgainWheneverThatIs() throws {
+        let home = try Home()
+        defer { home.remove() }
+        let clock = ManualClock(Timestamp.parse(Self.thursday)!)
+        let journal = try Home.journal(home.roots, clock)
+        let day = LocalDate("2026-10-15")!
+        func state(_ data: InsightsData) -> ConsistencyFigures.State? { data.days.first { $0.date == day }?.state }
+        func agree(_ data: InsightsData) {
+            #expect(ConsistencyFigures(days: data.days, locale: Self.gb).sealed == data.summary.sealedWorkdays)
+        }
+
+        var data = try Self.data(home.loader(Self.thursday).load(.month))
+        #expect(state(data) == .sealed)
+        let sealed = try #require(data.summary.sealedWorkdays)
+
+        // Reopened two weeks later and left open: its window closed long ago, so it is not sealed.
+        _ = try journal.reopen(day: day, actor: .cli)
+        data = try Self.data(home.loader(Self.thursday).load(.month))
+        #expect(state(data) == .notSealed)
+        #expect(data.summary.sealedWorkdays == sealed - 1)
+        agree(data)
+
+        // Sealed again long after that window: any seal counts.
+        _ = try journal.seal(day, actor: .cli)
+        data = try Self.data(home.loader(Self.thursday).load(.month))
+        #expect(state(data) == .sealed)
+        #expect(data.summary.sealedWorkdays == sealed)
+        agree(data)
+    }
+
     @Test func theWeekComparesWithTheSamePointLastWeek() throws {
         let home = try Home()
         defer { home.remove() }

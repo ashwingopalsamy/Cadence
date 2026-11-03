@@ -1,6 +1,6 @@
 import Foundation
 
-/// The streak as docs/SPEC.md section 3 defines it: consecutive workdays sealed within grace.
+/// The streak as docs/SPEC.md section 3 defines it: consecutive workdays that are sealed, whenever the seal was made.
 /// Weekends, leave and holidays pause it and never break it.
 public struct Streak: Sendable, Equatable {
     public var current: Int
@@ -31,8 +31,9 @@ extension DayRules {
 
     /// Pure streak computation over a ledger's days, from `first` through `asOf`.
     ///
-    /// - A workday counts when its seal landed within grace. A workday that is unsealed or sealed late
-    ///   breaks the run once its grace window has closed at `now`; until then it is neither counted nor broken.
+    /// - A workday counts when it is sealed, whenever the seal was made, so a day sealed weeks late joins the runs on
+    ///   both sides of it. A workday that is unsealed, including one reopened and not sealed again, breaks the run
+    ///   once its grace window has closed at `now`; until then it is neither counted nor broken.
     /// - Weekends, leave and holidays never count and never break, sealed or not.
     /// - `now` is the reference instant, so a caller asking about a past day passes the end of that day.
     public func streak(
@@ -51,7 +52,7 @@ extension DayRules {
                 continue
             }
             let dayZone = sealed[day]?.zone ?? zone
-            if let seal = sealed[day], sealCounts(seal.sealedAt, for: day, in: seal.zone) {
+            if sealed[day] != nil {
                 run += 1
                 best = max(best, run)
             } else if graceClosed(for: day, at: now, in: dayZone) {

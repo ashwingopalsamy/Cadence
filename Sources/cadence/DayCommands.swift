@@ -15,7 +15,6 @@ struct DaySeal: ParsableCommand {
             let journal = try context.openJournal()
             let result = try journal.seal(requested, actor: .cli)
             var lines = ["Wrapped up \(result.day) at \(Format.clock(result.sealedAt))"]
-            if !result.counts { lines.append("This wrap-up came after the grace window, so it does not count for the streak.") }
             if !result.carried.isEmpty {
                 lines.append("Carried to \(result.carried[0].task.day):")
                 lines += result.carried.map { "  " + $0.task.title + Format.ticket($0.task.ticket, unlessIn: $0.task.title) }
@@ -26,9 +25,68 @@ struct DaySeal: ParsableCommand {
     }
 }
 
+struct DayReopen: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "reopen",
+        abstract: "Reopen a wrapped-up day. Wrap it up again with day seal; the history is kept.")
+
+    @OptionGroup var output: OutputOptions
+    @Option(help: "Day as YYYY-MM-DD. Default: today.") var date: String?
+
+    func run() throws {
+        try output.run { context in
+            let requested = try Args.date(date)
+            let journal = try context.openJournal()
+            let result = try journal.reopen(day: requested, actor: .cli)
+            let lines = [
+                "Reopened \(result.day) at \(Format.clock(result.reopenedAt)). It was wrapped up at \(Format.clock(result.sealedAt)).",
+                "Wrap it up again when you are ready: cadence day seal --date \(result.day)",
+                StreakCommand.summary(result.streak),
+            ]
+            return Rendered(human: lines.joined(separator: "\n"), json: result.json)
+        }
+    }
+}
+
+struct DayHistory: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "history", abstract: "Show when a day was wrapped up and reopened.")
+
+    @OptionGroup var output: OutputOptions
+    @Option(help: "Day as YYYY-MM-DD. Default: today.") var date: String?
+
+    func run() throws {
+        try output.run { context in
+            let requested = try Args.date(date)
+            let journal = try context.openJournal()
+            let day = requested ?? journal.today()
+            let items = try journal.dayHistory(day)
+            let zone = journal.zone
+            var lines = ["\(day)"]
+            var seen = false
+            var json: [JSONValue] = []
+            for item in items {
+                let at = Timestamp.local(item.at, in: zone)
+                switch item.kind {
+                case .sealed:
+                    lines.append((seen ? "Sealed again " : "Sealed ") + Format.clock(at))
+                    seen = true
+                case .reopened:
+                    lines.append("Reopened " + Format.clock(at))
+                }
+                json.append([
+                    "kind": .string(item.kind.rawValue), "at": .string(at), "actor": .string(item.actor.rawValue),
+                ])
+            }
+            if items.isEmpty { lines = ["No wrap-up history for \(day)."] }
+            return Rendered(human: lines.joined(separator: "\n"), json: ["day": .string(day.description), "history": .array(json)])
+        }
+    }
+}
+
 struct StreakCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "streak", abstract: "Consecutive workdays sealed within the grace window.")
+        commandName: "streak", abstract: "Consecutive workdays that are wrapped up.")
 
     @OptionGroup var output: OutputOptions
 
