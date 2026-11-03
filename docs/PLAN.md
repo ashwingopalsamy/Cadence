@@ -210,7 +210,7 @@ On 2026-11-02 The Coach design was approved and replaced SPEC §4 to §6. T3.3, 
 |---|---|---|---|---|
 | [x] T5.1 | README, CONTRIBUTING, SECURITY.md, and the PROOF-FORMAT, COLLECTORS, MCP and PRIVACY docs | mechanic | §16 | The planner reviews them against the spec |
 | [ ] T5.2 | `make demo`, screenshots and screen recording from demo data only | builder | §16 | Shows no real data |
-| [ ] T5.3 | `guard --history` over every commit; decide whether to publish a fresh history | planner | §16 | Clean |
+| [x] T5.3 | `guard --history` over every commit; decide whether to publish a fresh history | planner | §16 | Clean |
 | [ ] T5.4 | Apply the name decision (renames are mechanic work once you decide) | mechanic | §17 | Builds and tests pass |
 | [ ] T5.5 | Fresh clone to a running app on a clean macOS account in under 10 minutes | planner | §15 | Timed run recorded |
 | [ ] T5.6 | Final audit: spec against implementation, every verify tag resolved | auditor | all | No open gaps. Only then is Cadence 100% |
