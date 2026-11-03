@@ -1,0 +1,9 @@
+# Synthetic on-call shifts for two ACME services. Columns: day,role,service
+2026-10-12,primary,ACME ledger
+2026-10-13,secondary,ACME ledger
+2026-10-19,primary,ACME ledger
+2026-10-26,primary,ACME ledger
+2026-10-27,secondary,ACME ledger
+2026-10-28,primary,ACME refunds
+2026-10-29,primary,ACME ledger
+2026-11-02,primary,ACME ledger

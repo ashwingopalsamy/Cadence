@@ -1,0 +1,15 @@
+{
+  "cadence": "map/1",
+  "input": "csv",
+  "produces": "genai.usage",
+  "fields": {
+    "day": { "path": "$.date", "format": "yyyy-MM-dd" },
+    "tool": { "const": "claude-code" },
+    "model": { "path": "$.model", "default": "*" },
+    "requests": { "path": "$.requests" },
+    "tokens.in": { "path": "$.input" },
+    "tokens.out": { "path": "$.output" },
+    "cost_micros": { "path": "$.cost_usd", "scale": 1000000 }
+  },
+  "source_ref": "acme-app:{day}:{tool}:{model}"
+}

@@ -1,0 +1,10 @@
+{"data":{"viewer":{"login":"acme-dev","contributionsCollection":{
+"pullRequestContributions":{"pageInfo":{"hasNextPage":true,"endCursor":"PRS1"},"nodes":[
+{"pullRequest":{"id":"PR_acme001","number":412,"title":"ACME-482913 Ship retry budget for capture path","url":"https://git.example.com/acme/ledger-core/pull/412","isDraft":false,"createdAt":"2026-10-27T05:00:00Z","additions":184,"deletions":37,"bodyText":"Adds a retry budget.\n\nGenerated with Claude Code","repository":{"nameWithOwner":"acme/ledger-core"}}},
+{"pullRequest":{"id":"PR_acme002","number":415,"title":"ACME-000000 Draft: tidy exporter","url":"https://git.example.com/acme/ledger-core/pull/415","isDraft":true,"createdAt":"2026-10-28T06:30:00Z","additions":12,"deletions":3,"bodyText":"Plain body, written by hand.","repository":{"nameWithOwner":"acme/ledger-core"}}},
+{"pullRequest":null}]},
+"pullRequestReviewContributions":{"pageInfo":{"hasNextPage":true,"endCursor":"REV1"},"nodes":[
+{"pullRequestReview":{"id":"PRR_acme101","state":"COMMENTED","submittedAt":"2026-10-28T05:50:40Z","comments":{"totalCount":4}},"pullRequest":{"id":"PR_acme088","number":88,"title":"ACME-482100 Idempotency keys for refunds","url":"https://git.example.com/acme/refunds/pull/88","author":{"login":"example-colleague"},"repository":{"nameWithOwner":"acme/refunds"}}},
+{"pullRequestReview":{"id":"PRR_acme102","state":"APPROVED","submittedAt":"2026-10-28T09:00:00Z","comments":{"totalCount":2}},"pullRequest":{"id":"PR_acme088","number":88,"title":"ACME-482100 Idempotency keys for refunds","url":"https://git.example.com/acme/refunds/pull/88","author":{"login":"example-colleague"},"repository":{"nameWithOwner":"acme/refunds"}}},
+{"pullRequestReview":{"id":"PRR_acme103","state":"COMMENTED","submittedAt":"2026-10-28T07:00:00Z","comments":{"totalCount":1}},"pullRequest":{"id":"PR_acme002","number":415,"title":"ACME-000000 Draft: tidy exporter","url":"https://git.example.com/acme/ledger-core/pull/415","author":{"login":"acme-dev"},"repository":{"nameWithOwner":"acme/ledger-core"}}}]}
+}}}}

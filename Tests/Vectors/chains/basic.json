@@ -1,0 +1,139 @@
+{
+  "c14n": "cadence-c14n/1",
+  "algo": "sha256",
+  "genesis_prev": "0000000000000000000000000000000000000000000000000000000000000000",
+  "events": [
+    {
+      "v": 1,
+      "seq": 1,
+      "id": "01JB0000000000000000000001",
+      "at": "2026-10-01T03:58:00.000Z",
+      "actor": "app",
+      "type": "ledger.genesis",
+      "subject": "ledger",
+      "data_digest": "6dda82cab0c8a874fee505b7d4018b467273ff02a435c5b7311b3fc559296caa",
+      "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "b9bd184d0ba91d850d0cec28c1aa870742ef4e8e2b02381a48f71b1a469dae24",
+      "data": {
+        "created": "2026-10-01T03:58:00.000Z",
+        "app_version": "0.0.0",
+        "profile": {
+          "name": "Sample Person",
+          "timezone": "Asia/Kolkata"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "seq": 2,
+      "id": "01JB0000000000000000000002",
+      "at": "2026-10-01T04:12:30.123Z",
+      "actor": "app",
+      "type": "day.started",
+      "subject": "day:2026-10-01",
+      "data_digest": "26def4625a2d7c982c93af63111cd357012be3f2e9d0730902160e526042b494",
+      "prev": "b9bd184d0ba91d850d0cec28c1aa870742ef4e8e2b02381a48f71b1a469dae24",
+      "hash": "a509853136fbde286a86062ec91f14030d40d01332d8299e82dd367b4dfa6fda",
+      "data": {
+        "at": "2026-10-01T04:12:30.123Z",
+        "source": "input"
+      }
+    },
+    {
+      "v": 1,
+      "seq": 3,
+      "id": "01JB0000000000000000000003",
+      "at": "2026-10-01T05:00:00.000Z",
+      "actor": "cli",
+      "type": "config.classifier",
+      "subject": null,
+      "data_digest": "d6badab0eed92f364f5a3ec5b1f439ee3cac716fe5a53e43c5456475c1ba5741",
+      "prev": "a509853136fbde286a86062ec91f14030d40d01332d8299e82dd367b4dfa6fda",
+      "hash": "9fba752662db1c2aa8f549f8672f901b0863f6c83033fa21a55b7b841ae05e32",
+      "data": {
+        "patterns": [
+          "sha256:abababababababababababababababababababababababababababababababab"
+        ]
+      }
+    },
+    {
+      "v": 1,
+      "seq": 4,
+      "id": "01JB0000000000000000000004",
+      "at": "2026-10-01T06:30:00.000Z",
+      "actor": "collector:github",
+      "type": "entry.created",
+      "subject": "entry:01JB00000000000000000E0001",
+      "data_digest": "7ac33cd48f092c4819547b8889bd68d5e45a81d2601848f544f12c5e8b7139fb",
+      "prev": "9fba752662db1c2aa8f549f8672f901b0863f6c83033fa21a55b7b841ae05e32",
+      "hash": "67f999b4c2ecf92a00a1836da3e9a8a40cc64e6855484980dc88ee3df79d2af8",
+      "data": {
+        "id": "01JB00000000000000000E0001",
+        "day": "2026-10-01",
+        "kind": "review.given",
+        "family": "review",
+        "title": "ACME-000000 Idempotency keys · refunds",
+        "occurred_at": "2026-10-01T12:00:00+05:30",
+        "ticket": null,
+        "links": [
+          {
+            "kind": "pr",
+            "url": "https://git.example.com/acme/refunds/pull/88"
+          }
+        ],
+        "tags": [],
+        "attrs": {},
+        "origin": "collected",
+        "source": "github",
+        "source_ref": "github:PRR_kwDOAcme777",
+        "status": "accepted",
+        "backfilled": false,
+        "after_seal": false,
+        "export": "include"
+      }
+    },
+    {
+      "v": 1,
+      "seq": 5,
+      "id": "01JB0000000000000000000005",
+      "at": "2026-10-01T06:31:00.000Z",
+      "actor": "import:october-app",
+      "type": "genai.usage",
+      "subject": "usage:2026-10-01:claude-code:*:import",
+      "data_digest": "7b5fc11e3b8236eca591ddce5c6e9d3cdc1a4bb79ef9d7cc8c405a9887a6b78d",
+      "prev": "67f999b4c2ecf92a00a1836da3e9a8a40cc64e6855484980dc88ee3df79d2af8",
+      "hash": "0514ccaa74139775a1e9956e2b30514c2cb5d2d7d5cce29de860f43281811cec",
+      "data": {
+        "day": "2026-10-01",
+        "tool": "claude-code",
+        "model": "*",
+        "source": "import:october-app",
+        "requests": 118,
+        "tokens": {
+          "in": 48210,
+          "out": 51302,
+          "cache_read": 8120400,
+          "cache_write": 402118
+        },
+        "cost_micros": 14210000
+      }
+    },
+    {
+      "v": 1,
+      "seq": 6,
+      "id": "01JB0000000000000000000006",
+      "at": "2026-10-01T06:32:00.000Z",
+      "actor": "mcp",
+      "type": "entry.status",
+      "subject": "entry:01JB00000000000000000E0001",
+      "data_digest": "5f56ef55f23ade3a31f9abb3c41573c5e3cee98a8d9d89c1caf9916b8412eb60",
+      "prev": "0514ccaa74139775a1e9956e2b30514c2cb5d2d7d5cce29de860f43281811cec",
+      "hash": "7b291a517841f9be1df4d94bdb2e28cdab878730372b22d46ad365b433b5922f",
+      "data": {
+        "from": "accepted",
+        "to": "dismissed",
+        "note": "line\nbreak \"quoted\" tab\t"
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "cadence": "config/1",
+  "profile": { "name": "Your Name", "role": "Software Engineer", "timezone": "Asia/Kolkata" },
+  "workdays": ["mon", "tue", "wed", "thu", "fri"],
+  "dayBoundary": "04:00",
+  "reminders": [
+    { "kind": "plan", "after": "dayStart+2m" },
+    { "kind": "wrap", "at": "17:30" }
+  ],
+  "tickets": {
+    "pattern": "\\b(?<key>[A-Z][A-Z0-9]{1,9}-(?<num>\\d{3,8}))\\b",
+    "titleWindow": 12,
+    "selfInitiated": "^0+$",
+    "linkTemplate": "https://tickets.example.com/browse/{key}"
+  },
+  "team": { "timezone": "America/Sao_Paulo", "hours": ["09:00", "18:00"] },
+  "sounds": "subtle",
+  "claudeCode": { "injectPlanAtSessionStart": true, "projectsDir": "~/.claude/projects" },
+  "privacy": { "notificationTitles": false, "exportSpans": false, "projectAliases": true },
+  "collectors": {
+    "github": { "enabled": true, "builtin": "github", "env": { "GH_HOST": "git.example.com" }, "gh": "/opt/homebrew/bin/gh", "every": "30m" },
+    "claude-code": { "enabled": true, "builtin": "claude-code-transcripts", "every": "60m" },
+    "genai-endpoint": { "enabled": false, "command": ["/usr/bin/curl", "-fsS", "--max-time", "20", "http://127.0.0.1:PORT/usage?from={since}&to={until}"], "map": "maps/genai-endpoint.json", "at": ["17:10"] }
+  }
+}

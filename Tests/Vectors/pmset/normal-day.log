@@ -1,0 +1,5 @@
+2026-10-27 09:05:12 +0530 Wake            	Wake from Deep Idle [CDNVA] : due to EC.LidOpen/Lid Open Using AC
+2026-10-27 09:05:30 +0530 Notification    	Display is turned on
+2026-10-27 12:30:00 +0530 Sleep           	Entering Sleep state due to 'Idle Sleep':TCPKeepAlive=active Using AC (Charge:100%)
+2026-10-27 13:10:44 +0530 Wake            	Wake from Normal Sleep [CDNVA] : due to EC.LidOpen/Lid Open Using AC
+2026-10-27 18:20:09 +0530 Sleep           	Entering Sleep state due to 'Clamshell Sleep':TCPKeepAlive=active Using Batt (Charge:61%)

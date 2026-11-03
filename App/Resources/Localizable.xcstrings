@@ -1,0 +1,3279 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    " %@ still open." : {
+
+    },
+    " %lld are not sealed." : {
+
+    },
+    " (%@ and %lld more)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : " (%1$@ and %2$lld more)"
+          }
+        }
+      }
+    },
+    " A source is behind, so there is no comparison." : {
+
+    },
+    " A usual day is %lld to %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : " A usual day is %1$lld to %2$lld"
+          }
+        }
+      }
+    },
+    " And %lld more." : {
+
+    },
+    " Days off paused it %@ and never broke it." : {
+
+    },
+    " Every one is sealed." : {
+
+    },
+    " Milestones passed: %@." : {
+
+    },
+    " Not sealed: " : {
+
+    },
+    " Only %@ is not sealed." : {
+
+    },
+    " Still learning your usual range." : {
+
+    },
+    " The first milestone is %lld." : {
+
+    },
+    " The next is %lld." : {
+
+    },
+    " Usual by %@: %lld to %lld." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : " Usual by %1$@: %2$lld to %3$lld."
+          }
+        }
+      }
+    },
+    " percent" : {
+
+    },
+    " with a recorded marker" : {
+
+    },
+    "%" : {
+
+    },
+    "%@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "%@ %@ after your day starts" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@ after your day starts"
+          }
+        }
+      }
+    },
+    "%@ %@, and usually %lld to %lld by %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@, and usually %3$lld to %4$lld by %5$@."
+          }
+        }
+      }
+    },
+    "%@ approved. It runs on the agent's next pass." : {
+
+    },
+    "%@ backfill" : {
+
+    },
+    "%@ changed the %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ changed the %2$@"
+          }
+        }
+      }
+    },
+    "%@ could not be asked to run. Try again." : {
+
+    },
+    "%@ counts as assigned" : {
+
+    },
+    "%@ counts as self-started" : {
+
+    },
+    "%@ did not pass the checks the open verifier runs." : {
+
+    },
+    "%@ fell outside its usual range." : {
+
+    },
+    "%@ has not synced for %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ has not synced for %2$@"
+          }
+        }
+      }
+    },
+    "%@ is already used by %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ is already used by %2$@."
+          }
+        }
+      }
+    },
+    "%@ is already used by another app. Pick another shortcut, or use the menu-bar icon." : {
+
+    },
+    "%@ is not sealed yet" : {
+
+    },
+    "%@ last synced at %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ last synced at %2$@."
+          }
+        }
+      }
+    },
+    "%@ logged" : {
+
+    },
+    "%@ logged on %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ logged on %2$@."
+          }
+        }
+      }
+    },
+    "%@ logged since %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ logged since %2$@."
+          }
+        }
+      }
+    },
+    "%@ logged today." : {
+
+    },
+    "%@ merged: %lld assigned, %lld self-started, %lld with no ticket." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ merged: %2$lld assigned, %3$lld self-started, %4$lld with no ticket."
+          }
+        }
+      }
+    },
+    "%@ open" : {
+
+    },
+    "%@ sealed in a row." : {
+
+    },
+    "%@ shortcut" : {
+
+    },
+    "%@ so far" : {
+
+    },
+    "%@ to %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ to %2$@"
+          }
+        }
+      }
+    },
+    "%@ waiting on you" : {
+
+    },
+    "%@ was not approved: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ was not approved: %2$@"
+          }
+        }
+      }
+    },
+    "%@ will run in a moment. Everything else keeps working." : {
+
+    },
+    "%@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "%@, %@, %@%@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@, %3$@%4$@, %5$@"
+          }
+        }
+      }
+    },
+    "%@, frame %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, frame %2$lld of %3$lld"
+          }
+        }
+      }
+    },
+    "%@, in %@. " : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, in %2$@. "
+          }
+        }
+      }
+    },
+    "%@, partial" : {
+
+    },
+    "%@, this cycle" : {
+
+    },
+    "%@, title hidden" : {
+
+    },
+    "%@, your last full week" : {
+
+    },
+    "%@. %lld daily and %lld weekly kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@. %2$lld daily and %3$lld weekly kept."
+          }
+        }
+      }
+    },
+    "%@. Talks to %@. Reads your PRs and reviews, and sends nothing from your log." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@. Talks to %2$@. Reads your PRs and reviews, and sends nothing from your log."
+          }
+        }
+      }
+    },
+    "%@. This is exactly what runs, as you approved it." : {
+
+    },
+    "%@. Your answers are kept." : {
+
+    },
+    "%@. Your line is still here. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@. Your line is still here. %2$@"
+          }
+        }
+      }
+    },
+    "%@. Your log is unchanged." : {
+
+    },
+    "%@: %@%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@%3$@"
+          }
+        }
+      }
+    },
+    "%@Chain intact, and %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@Chain intact, and %2$@."
+          }
+        }
+      }
+    },
+    "%lld" : {
+
+    },
+    "%lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld %2$@"
+          }
+        }
+      }
+    },
+    "%lld %@ checked" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld %2$@ checked"
+          }
+        }
+      }
+    },
+    "%lld %@ logged" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld %2$@ logged"
+          }
+        }
+      }
+    },
+    "%lld %@ shipped." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld %2$@ shipped."
+          }
+        }
+      }
+    },
+    "%lld %@ still open. Sealing takes under a minute." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld %2$@ still open. Sealing takes under a minute."
+          }
+        }
+      }
+    },
+    "%lld %@ to %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld %2$@ to %3$lld %4$@"
+          }
+        }
+      }
+    },
+    "%lld beyond the plan: " : {
+
+    },
+    "%lld carried" : {
+
+    },
+    "%lld codes can be checked against your stand-ups" : {
+
+    },
+    "%lld entries waiting for you." : {
+
+    },
+    "%lld hours" : {
+
+    },
+    "%lld hours %lld minutes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld hours %2$lld minutes"
+          }
+        }
+      }
+    },
+    "%lld items" : {
+
+    },
+    "%lld items logged" : {
+
+    },
+    "%lld more in Today" : {
+
+    },
+    "%lld of %@ closed, %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$@ closed, %3$@."
+          }
+        }
+      }
+    },
+    "%lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "%lld of %lld %@ a code you copied into a stand-up. Those can be checked against that message." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld %3$@ a code you copied into a stand-up. Those can be checked against that message."
+          }
+        }
+      }
+    },
+    "%lld of %lld done, and %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld done, and %3$@."
+          }
+        }
+      }
+    },
+    "%lld of %lld planned done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld planned done"
+          }
+        }
+      }
+    },
+    "%lld of %lld slips" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld slips"
+          }
+        }
+      }
+    },
+    "%lld of %lld workdays until your usual range appears" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld workdays until your usual range appears"
+          }
+        }
+      }
+    },
+    "%lld of %lld workdays. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld workdays. %3$@"
+          }
+        }
+      }
+    },
+    "%lld of your %lld merged %@%@ %@ AI-assisted." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of your %2$lld merged %3$@%4$@ %5$@ AI-assisted."
+          }
+        }
+      }
+    },
+    "%lld planned. Suggestions only join your plan if you pick them." : {
+
+    },
+    "%lld planned. You usually plan %@, and suggestions only join your plan if you pick them." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld planned. You usually plan %2$@, and suggestions only join your plan if you pick them."
+          }
+        }
+      }
+    },
+    "%lld slipped: " : {
+
+    },
+    "%lld times" : {
+
+    },
+    "%lld to %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld to %2$@"
+          }
+        }
+      }
+    },
+    "%lld to %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld to %2$lld"
+          }
+        }
+      }
+    },
+    "%lld to %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld to %2$lld %3$@"
+          }
+        }
+      }
+    },
+    "%lld to %lld by %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld to %2$lld by %3$@"
+          }
+        }
+      }
+    },
+    "%lldh" : {
+
+    },
+    "%lldh %lldm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lldh %2$lldm"
+          }
+        }
+      }
+    },
+    "%lldm" : {
+
+    },
+    ", %@ is behind" : {
+
+    },
+    ", after wrap-up" : {
+
+    },
+    ", and usually %lld to %lld by %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : ", and usually %1$lld to %2$lld by %3$@"
+          }
+        }
+      }
+    },
+    ", falling" : {
+
+    },
+    ", partial" : {
+
+    },
+    ", ready to hand over." : {
+
+    },
+    ", removed %lld old %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : ", removed %1$lld old %2$@"
+          }
+        }
+      }
+    },
+    ", rising" : {
+
+    },
+    ", self-started" : {
+
+    },
+    "-shm" : {
+
+    },
+    "-wal" : {
+
+    },
+    "1 code can be checked against your stand-ups" : {
+
+    },
+    "1 entry waiting for you." : {
+
+    },
+    "1 item" : {
+
+    },
+    "1 item logged" : {
+
+    },
+    "A code only helps if it reaches someone else, so copying is the default." : {
+
+    },
+    "A cycle recap appears once you set a cycle start date in Settings." : {
+
+    },
+    "A minute to seal the day." : {
+
+    },
+    "A private folder on this Mac, with daily backups. You can read it with the command-line tool whenever you like." : {
+
+    },
+    "A small hook records when sessions start and end, and a skill lets Claude log what it did. Nothing from your code or prompts is read." : {
+
+    },
+    "A source is behind, so today is not compared." : {
+
+    },
+    "A source only runs after you approve its exact command." : {
+
+    },
+    "A ticket key in a PR title counts as assigned." : {
+
+    },
+    "A ticket number that matches this counts as self-started." : {
+
+    },
+    "A usual day is %lld to %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A usual day is %1$lld to %2$lld"
+          }
+        }
+      }
+    },
+    "AI" : {
+
+    },
+    "AI session" : {
+
+    },
+    "AI sessions and usage" : {
+
+    },
+    "AI usage" : {
+
+    },
+    "About" : {
+
+    },
+    "Accept" : {
+
+    },
+    "Accept %@" : {
+
+    },
+    "Accept all" : {
+
+    },
+    "Add" : {
+
+    },
+    "Add a note" : {
+
+    },
+    "Add a one-line note" : {
+
+    },
+    "Add a task" : {
+
+    },
+    "Add time" : {
+
+    },
+    "Added by you" : {
+
+    },
+    "Added now, this is marked as after wrap-up" : {
+
+    },
+    "After wrap-up" : {
+
+    },
+    "Agent" : {
+
+    },
+    "All" : {
+
+    },
+    "All %lld slips" : {
+
+    },
+    "All clear." : {
+
+    },
+    "Allow Cadence in System Settings, General, Login Items, so collectors can run" : {
+
+    },
+    "Allowed by %@" : {
+
+    },
+    "Always on, so your proof stays honest." : {
+
+    },
+    "Always private" : {
+
+    },
+    "An agent" : {
+
+    },
+    "And %@" : {
+
+    },
+    "Anyone can check the file with the open verifier." : {
+
+    },
+    "Anything else today?" : {
+
+    },
+    "App sandbox" : {
+
+    },
+    "Appears only in Insights. Reminders never mention it." : {
+
+    },
+    "Approve" : {
+
+    },
+    "Approve %@?" : {
+
+    },
+    "Approve this command" : {
+
+    },
+    "Approved. GitHub syncs on the next run of the collector agent." : {
+
+    },
+    "Assigned" : {
+
+    },
+    "Assigned pattern" : {
+
+    },
+    "Back" : {
+
+    },
+    "Back to today" : {
+
+    },
+    "Back to today (esc)" : {
+
+    },
+    "Back up now" : {
+
+    },
+    "Back up now is not available" : {
+
+    },
+    "Backed up %lld %@ for %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Backed up %1$lld %2$@ for %3$@"
+          }
+        }
+      }
+    },
+    "Backed up. Today's copy is saved." : {
+
+    },
+    "Before the log began" : {
+
+    },
+    "Behind, last synced %@" : {
+
+    },
+    "Beyond the plan" : {
+
+    },
+    "Beyond the plan. You also logged %@." : {
+
+    },
+    "Both are optional, and you can change them in Settings." : {
+
+    },
+    "Bring in October so your usual range starts sooner. Backfilled entries are always labelled as backfilled." : {
+
+    },
+    "Bring in your GitHub work?" : {
+
+    },
+    "Cadence" : {
+
+    },
+    "Cadence %@" : {
+
+    },
+    "Cadence cannot change Claude Code's settings from inside its sandbox, so run this once in Terminal. It saves a backup of your settings first." : {
+
+    },
+    "Cadence cannot open its log." : {
+
+    },
+    "Cadence cannot read its store" : {
+
+    },
+    "Cadence checked your ledger again and it did not pass either: %@ Run cadence doctor before you export." : {
+
+    },
+    "Cadence checked your ledger again, and all %lld events verify, so the fault is in this file." : {
+
+    },
+    "Cadence could not do that" : {
+
+    },
+    "Cadence could not find its store" : {
+
+    },
+    "Cadence could not find where it keeps your work log. Quit Cadence and open it again to try once more." : {
+
+    },
+    "Cadence could not find your home folder" : {
+
+    },
+    "Cadence could not open %@." : {
+
+    },
+    "Cadence could not read %@" : {
+
+    },
+    "Cadence could not read it. Run cadence doctor to check." : {
+
+    },
+    "Cadence could not read its log, so nothing was written." : {
+
+    },
+    "Cadence could not read the FileVault state. Run cadence doctor in Terminal to check." : {
+
+    },
+    "Cadence could not record the approval here. Approve it in Settings, Sources." : {
+
+    },
+    "Cadence could not record the approval. Run cadence collect approve %@ in Terminal." : {
+
+    },
+    "Cadence could not save that" : {
+
+    },
+    "Cadence could not start setup. Quit Cadence and open it again to try once more." : {
+
+    },
+    "Cadence could not write %@." : {
+
+    },
+    "Cadence keeps your day running in the background." : {
+
+    },
+    "Cadence panel" : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Cannot run" : {
+
+    },
+    "Capture" : {
+
+    },
+    "Capture hotkey" : {
+
+    },
+    "Capture paused until %@." : {
+
+    },
+    "Capture paused." : {
+
+    },
+    "Carried" : {
+
+    },
+    "Carried from yesterday" : {
+
+    },
+    "Carried over" : {
+
+    },
+    "Challenged a decision" : {
+
+    },
+    "Challenged decisions" : {
+
+    },
+    "Changes the kind." : {
+
+    },
+    "Chart" : {
+
+    },
+    "Check Sources" : {
+
+    },
+    "Check a file" : {
+
+    },
+    "Checked %@." : {
+
+    },
+    "Checking" : {
+
+    },
+    "Claude Code" : {
+
+    },
+    "Claude Code session" : {
+
+    },
+    "Claude Code sessions" : {
+
+    },
+    "Claude Code sessions, on %lld of %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Claude Code sessions, on %1$lld of %2$@."
+          }
+        }
+      }
+    },
+    "Claude Code sessions." : {
+
+    },
+    "Clear" : {
+
+    },
+    "Clear filters" : {
+
+    },
+    "Close details" : {
+
+    },
+    "Close recap" : {
+
+    },
+    "Closes its history" : {
+
+    },
+    "Code and document reviews that day" : {
+
+    },
+    "Code and document reviews today" : {
+
+    },
+    "Code reviews" : {
+
+    },
+    "Codes you copied" : {
+
+    },
+    "Collected" : {
+
+    },
+    "Collected by a source you approved" : {
+
+    },
+    "Collected from %@" : {
+
+    },
+    "Command Return" : {
+
+    },
+    "Commits the plan. Command Return." : {
+
+    },
+    "Consistency" : {
+
+    },
+    "Continue" : {
+
+    },
+    "Copied" : {
+
+    },
+    "Copied %@" : {
+
+    },
+    "Copied. Paste it in Terminal, then carry on here." : {
+
+    },
+    "Copy as text" : {
+
+    },
+    "Copy command" : {
+
+    },
+    "Copy my text" : {
+
+    },
+    "Copy stand-up and seal" : {
+
+    },
+    "Copy the command" : {
+
+    },
+    "Copy the import command" : {
+
+    },
+    "Corrupt, missing or broken chain" : {
+
+    },
+    "Count" : {
+
+    },
+    "Counts only, never titles. macOS will ask you once." : {
+
+    },
+    "Coverage" : {
+
+    },
+    "Custom" : {
+
+    },
+    "Cycle" : {
+
+    },
+    "Cycle, %@" : {
+
+    },
+    "D" : {
+
+    },
+    "Daily at %@" : {
+
+    },
+    "Dashed: still open." : {
+
+    },
+    "Data" : {
+
+    },
+    "Date of your last 1:1" : {
+
+    },
+    "Day" : {
+
+    },
+    "Day ends at" : {
+
+    },
+    "Day length" : {
+
+    },
+    "Day length. %@." : {
+
+    },
+    "Day off" : {
+
+    },
+    "Day shape" : {
+
+    },
+    "Days" : {
+
+    },
+    "Days closed %@." : {
+
+    },
+    "Days off are never counted against you" : {
+
+    },
+    "Days off inside the run" : {
+
+    },
+    "Days off never break it." : {
+
+    },
+    "Decision challenged" : {
+
+    },
+    "Default kind" : {
+
+    },
+    "Delivery" : {
+
+    },
+    "Delivery. You have merged %@." : {
+
+    },
+    "Details" : {
+
+    },
+    "Discreet mode" : {
+
+    },
+    "Discussion" : {
+
+    },
+    "Disk full" : {
+
+    },
+    "Dismiss" : {
+
+    },
+    "Dismiss %@" : {
+
+    },
+    "Do not share this file." : {
+
+    },
+    "Doc" : {
+
+    },
+    "Doc reviewed" : {
+
+    },
+    "Document reviews" : {
+
+    },
+    "Done" : {
+
+    },
+    "Done, %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Done, %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Drop it" : {
+
+    },
+    "Earlier" : {
+
+    },
+    "Edit %@" : {
+
+    },
+    "Edit the %@" : {
+
+    },
+    "Edit the title of %@" : {
+
+    },
+    "Editing your last entry. Saving replaces it." : {
+
+    },
+    "Edits add a version. Nothing is overwritten." : {
+
+    },
+    "Edits the %@." : {
+
+    },
+    "Encrypted at rest" : {
+
+    },
+    "Enjoy the day." : {
+
+    },
+    "Entries appear here as you log them." : {
+
+    },
+    "Entries from agents, dictation and backfill wait here for your yes." : {
+
+    },
+    "Entries you excluded, hashes only" : {
+
+    },
+    "Event %lld does not link to the event before it." : {
+
+    },
+    "Event %lld does not match its hash." : {
+
+    },
+    "Event %lld is out of order, or one before it is missing." : {
+
+    },
+    "Event %lld was changed after it was recorded." : {
+
+    },
+    "Event %lld: %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Event %1$lld: %2$@."
+          }
+        }
+      }
+    },
+    "Every %@" : {
+
+    },
+    "Every %lld min" : {
+
+    },
+    "Every earlier day was inside its usual range." : {
+
+    },
+    "Every number is backed by your ledger." : {
+
+    },
+    "Every recap copies as plain text or Markdown." : {
+
+    },
+    "Everything else keeps working." : {
+
+    },
+    "Everything is accounted for. Rest well." : {
+
+    },
+    "Everything, in order." : {
+
+    },
+    "Example: %@. A PR with no ticket counts as neither." : {
+
+    },
+    "Export a proof file from Proof whenever you need one." : {
+
+    },
+    "Export again" : {
+
+    },
+    "Export and check" : {
+
+    },
+    "Export digest %@" : {
+
+    },
+    "Export proof" : {
+
+    },
+    "Exported and checked." : {
+
+    },
+    "Exporting and checking" : {
+
+    },
+    "Failed %lld times in a row" : {
+
+    },
+    "FileVault is off" : {
+
+    },
+    "FileVault is off, so your log is not encrypted at rest. Turn it on in System Settings, Privacy & Security." : {
+
+    },
+    "FileVault is on" : {
+
+    },
+    "FileVault is on, so your log is encrypted at rest." : {
+
+    },
+    "Filled: sealed." : {
+
+    },
+    "Filters" : {
+
+    },
+    "Finish" : {
+
+    },
+    "Finish setting up" : {
+
+    },
+    "First activity" : {
+
+    },
+    "First activity to now" : {
+
+    },
+    "First to last activity" : {
+
+    },
+    "Fix this source in config.json, and it will ask for approval here." : {
+
+    },
+    "Fonts" : {
+
+    },
+    "For another reason" : {
+
+    },
+    "Found on %@" : {
+
+    },
+    "Found today" : {
+
+    },
+    "From" : {
+
+    },
+    "From %@" : {
+
+    },
+    "From anywhere: press ⌃⌥L." : {
+
+    },
+    "From the %@ backfill" : {
+
+    },
+    "From workdays only, so days off never move it." : {
+
+    },
+    "From your Cadence checkout, run make install, then open Cadence again. Your log is not touched." : {
+
+    },
+    "From your dictation" : {
+
+    },
+    "Full" : {
+
+    },
+    "Geist Mono, SIL OFL 1.1" : {
+
+    },
+    "General" : {
+
+    },
+    "Get started" : {
+
+    },
+    "GitHub" : {
+
+    },
+    "GitLab" : {
+
+    },
+    "Handled an incident" : {
+
+    },
+    "Handled incidents" : {
+
+    },
+    "Hashes only" : {
+
+    },
+    "Hatched weeks are partial." : {
+
+    },
+    "Hello. I keep time for your work." : {
+
+    },
+    "Hide titles on the lock screen" : {
+
+    },
+    "Hides titles and Tempo, for screen sharing. Press %@." : {
+
+    },
+    "History" : {
+
+    },
+    "Holiday" : {
+
+    },
+    "Hollow dots were outside the usual." : {
+
+    },
+    "How did this one go?" : {
+
+    },
+    "I cannot read your log." : {
+
+    },
+    "I log what you plan and what you do, then help you tell the story at review time. Your log stays on this Mac. This app makes no network calls, and any source you connect runs only a command you approve." : {
+
+    },
+    "Icon only" : {
+
+    },
+    "If something came up" : {
+
+    },
+    "Imported from %@" : {
+
+    },
+    "In 30 min" : {
+
+    },
+    "Inbox" : {
+
+    },
+    "Inbox, %lld waiting" : {
+
+    },
+    "Inbox, nothing to review" : {
+
+    },
+    "Incident" : {
+
+    },
+    "Included" : {
+
+    },
+    "Initiative" : {
+
+    },
+    "Initiative progress" : {
+
+    },
+    "Insights" : {
+
+    },
+    "It was not approved: %@" : {
+
+    },
+    "Item" : {
+
+    },
+    "Item %lld" : {
+
+    },
+    "Items" : {
+
+    },
+    "Items logged" : {
+
+    },
+    "Items logged per workday" : {
+
+    },
+    "Items logged per workday, as a table" : {
+
+    },
+    "Its pull request for %@ merged %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Its pull request for %1$@ merged %2$@."
+          }
+        }
+      }
+    },
+    "Its pull request for %@ merged today." : {
+
+    },
+    "Kind" : {
+
+    },
+    "Kinds, tickets and times turn into chips as you type." : {
+
+    },
+    "Last activity" : {
+
+    },
+    "Later" : {
+
+    },
+    "Latest backup" : {
+
+    },
+    "Leadership" : {
+
+    },
+    "Leave" : {
+
+    },
+    "Led a meeting" : {
+
+    },
+    "Led meetings" : {
+
+    },
+    "Length" : {
+
+    },
+    "Link them" : {
+
+    },
+    "Link them and it counts once." : {
+
+    },
+    "Loading Insights" : {
+
+    },
+    "Local-only work log" : {
+
+    },
+    "Log" : {
+
+    },
+    "Log field off. %@" : {
+
+    },
+    "Log it, and it is marked as a day-off entry." : {
+
+    },
+    "Log separately" : {
+
+    },
+    "Log something" : {
+
+    },
+    "Log your Claude Code sessions?" : {
+
+    },
+    "Logged by an agent" : {
+
+    },
+    "Logged by you" : {
+
+    },
+    "Logged, %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Logged, %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Logged. Anything else?" : {
+
+    },
+    "Logging is off until the log is fixed" : {
+
+    },
+    "Looks like the same %@ %@ already found." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Looks like the same %1$@ %2$@ already found."
+          }
+        }
+      }
+    },
+    "M" : {
+
+    },
+    "Mark entries added after wrap-up" : {
+
+    },
+    "Meeting" : {
+
+    },
+    "Meeting led" : {
+
+    },
+    "Meetings, mentoring and incidents" : {
+
+    },
+    "Mentored" : {
+
+    },
+    "Mentored someone" : {
+
+    },
+    "Mentoring" : {
+
+    },
+    "Menu-bar icon" : {
+
+    },
+    "Merged" : {
+
+    },
+    "Merged ACME-4821 retry fix" : {
+
+    },
+    "Merged PRs" : {
+
+    },
+    "Merged PRs AI-assisted" : {
+
+    },
+    "Merged pull requests that day" : {
+
+    },
+    "Merged pull requests today" : {
+
+    },
+    "Merges and reviews can log themselves through gh, once a GitHub source is in config.json." : {
+
+    },
+    "Merges and reviews can log themselves, if you approve this exact command." : {
+
+    },
+    "Merges, reviews and sessions appear here as they happen." : {
+
+    },
+    "Milestones passed" : {
+
+    },
+    "Month" : {
+
+    },
+    "Move to %@" : {
+
+    },
+    "Move to tomorrow" : {
+
+    },
+    "Moved initiatives on" : {
+
+    },
+    "Needs approval" : {
+
+    },
+    "Network calls by approved sources" : {
+
+    },
+    "Network calls by this app" : {
+
+    },
+    "Next" : {
+
+    },
+    "Next milestone" : {
+
+    },
+    "No PRs merged %@." : {
+
+    },
+    "No PRs merged." : {
+
+    },
+    "No activity recorded" : {
+
+    },
+    "No counts recorded." : {
+
+    },
+    "No day in this range is sealed yet, so there is no code to check." : {
+
+    },
+    "No days in this range." : {
+
+    },
+    "No map yet. Once one is in the maps folder, cadence import genai brings October in from Terminal." : {
+
+    },
+    "No plan yet." : {
+
+    },
+    "No reason given" : {
+
+    },
+    "No sources are turned on, so nothing else does either." : {
+
+    },
+    "No sources yet. Add one to config.json and it appears here for approval." : {
+
+    },
+    "No ticket" : {
+
+    },
+    "No time" : {
+
+    },
+    "No usual start or end yet." : {
+
+    },
+    "No workday has closed %@ yet." : {
+
+    },
+    "None" : {
+
+    },
+    "None slipped." : {
+
+    },
+    "None yet. %lld daily and %lld weekly are kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "None yet. %1$lld daily and %2$lld weekly are kept."
+          }
+        }
+      }
+    },
+    "None. Read live from its entitlements." : {
+
+    },
+    "Not blocked. This build runs outside the app sandbox." : {
+
+    },
+    "Not copied, no outside date" : {
+
+    },
+    "Not counted" : {
+
+    },
+    "Not known yet" : {
+
+    },
+    "Not now" : {
+
+    },
+    "Not picked" : {
+
+    },
+    "Not recorded %@." : {
+
+    },
+    "Not run yet" : {
+
+    },
+    "Not saved. %@" : {
+
+    },
+    "Not saved. Your text is kept." : {
+
+    },
+    "Not saved: %@." : {
+
+    },
+    "Not sealed" : {
+
+    },
+    "Not set" : {
+
+    },
+    "Not working today" : {
+
+    },
+    "Not working today:" : {
+
+    },
+    "Not yet" : {
+
+    },
+    "Note" : {
+
+    },
+    "Note for %@" : {
+
+    },
+    "Notes and digest entries, title kept back" : {
+
+    },
+    "Nothing beyond the plan was logged." : {
+
+    },
+    "Nothing can be saved until this is fixed." : {
+
+    },
+    "Nothing carried over." : {
+
+    },
+    "Nothing expected today." : {
+
+    },
+    "Nothing has been changed, and it will not fall back to another location." : {
+
+    },
+    "Nothing has been changed." : {
+
+    },
+    "Nothing logged on %@." : {
+
+    },
+    "Nothing logged yet today." : {
+
+    },
+    "Nothing logged yet." : {
+
+    },
+    "Nothing matches." : {
+
+    },
+    "Nothing planned or logged" : {
+
+    },
+    "Nothing planned yet" : {
+
+    },
+    "Nothing recorded %@ yet." : {
+
+    },
+    "Nothing to review." : {
+
+    },
+    "Nothing was found that day." : {
+
+    },
+    "Nothing was planned %@." : {
+
+    },
+    "Nothing was planned, and %@." : {
+
+    },
+    "Nothing yet. Merges, reviews and sessions appear here on their own." : {
+
+    },
+    "Nothing you can share was written." : {
+
+    },
+    "Notifications are off for Cadence." : {
+
+    },
+    "Notifications are off for Cadence. Turn them on in System Settings, Notifications." : {
+
+    },
+    "Notifications show counts only, so there is nothing to hide." : {
+
+    },
+    "Now" : {
+
+    },
+    "OK" : {
+
+    },
+    "Observed" : {
+
+    },
+    "Observed on this Mac" : {
+
+    },
+    "Observed through the Claude Code hook" : {
+
+    },
+    "Off" : {
+
+    },
+    "Off in config.json" : {
+
+    },
+    "Off shows counts only." : {
+
+    },
+    "Off unless you turn it on." : {
+
+    },
+    "On" : {
+
+    },
+    "On call" : {
+
+    },
+    "One line is enough." : {
+
+    },
+    "Only sources you approved do: %@." : {
+
+    },
+    "Only when you ask" : {
+
+    },
+    "Open Cadence" : {
+
+    },
+    "Open Cadence at login" : {
+
+    },
+    "Open Cadence to fix" : {
+
+    },
+    "Open Sources" : {
+
+    },
+    "Open System Settings" : {
+
+    },
+    "Open recap" : {
+
+    },
+    "Opened" : {
+
+    },
+    "Opens its history" : {
+
+    },
+    "Origin is set once and never changes: %@" : {
+
+    },
+    "Outlined: not sealed." : {
+
+    },
+    "Ownership" : {
+
+    },
+    "PR" : {
+
+    },
+    "PR #%@" : {
+
+    },
+    "PR merged" : {
+
+    },
+    "PR opened" : {
+
+    },
+    "PRs" : {
+
+    },
+    "PRs merged, and how many were your own idea." : {
+
+    },
+    "Paste it in Terminal. It checks the store, the hooks and the agent, and changes nothing." : {
+
+    },
+    "Pause capture until %@" : {
+
+    },
+    "Permissions" : {
+
+    },
+    "Pick up where you left off" : {
+
+    },
+    "Picked" : {
+
+    },
+    "Plan" : {
+
+    },
+    "Plan %@" : {
+
+    },
+    "Plan and wrap-up reminders" : {
+
+    },
+    "Plan done" : {
+
+    },
+    "Plan done %lld%%." : {
+
+    },
+    "Plan done unknown." : {
+
+    },
+    "Plan now" : {
+
+    },
+    "Plan prompt" : {
+
+    },
+    "Plan today" : {
+
+    },
+    "Plan your day" : {
+
+    },
+    "Plan, sealed" : {
+
+    },
+    "Planned done on counted days" : {
+
+    },
+    "Plus %@ opened, shipped or done" : {
+
+    },
+    "Presence" : {
+
+    },
+    "Presence and notes" : {
+
+    },
+    "Press to record a new shortcut" : {
+
+    },
+    "Privacy" : {
+
+    },
+    "Private notes" : {
+
+    },
+    "Private notes and reasons" : {
+
+    },
+    "Private notes only ever appear in a proof as a digest." : {
+
+    },
+    "Proof" : {
+
+    },
+    "Proposed by %@" : {
+
+    },
+    "Proposed by an agent" : {
+
+    },
+    "Proposed entries count for nothing until you accept them. Their origin never changes, even after you edit them." : {
+
+    },
+    "Quick note" : {
+
+    },
+    "Quit Cadence" : {
+
+    },
+    "Quitting never deletes anything, and uninstalling leaves your data in place." : {
+
+    },
+    "Raised discussions" : {
+
+    },
+    "Range" : {
+
+    },
+    "Reading your stand-up" : {
+
+    },
+    "Reads the envelope your command prints." : {
+
+    },
+    "Reads token counts from Claude Code's transcripts on this Mac. No code or prompts." : {
+
+    },
+    "Reads what your command prints, through the map %@." : {
+
+    },
+    "Reads your PRs and reviews through gh on %@." : {
+
+    },
+    "Ready to close" : {
+
+    },
+    "Ready to close %@" : {
+
+    },
+    "Ready to share" : {
+
+    },
+    "Reason" : {
+
+    },
+    "Recap" : {
+
+    },
+    "Recording" : {
+
+    },
+    "Remind me on weekends" : {
+
+    },
+    "Reminders" : {
+
+    },
+    "Reminders never mention your streak, and never use titles unless you ask." : {
+
+    },
+    "Restore from a backup" : {
+
+    },
+    "Restore from backup" : {
+
+    },
+    "Restoring never overwrites your log. Cadence cannot restore from inside the app yet, so your backups stay as they are." : {
+
+    },
+    "Resume" : {
+
+    },
+    "Resume capture" : {
+
+    },
+    "Return saves" : {
+
+    },
+    "Return saves a new version. Escape keeps the title as it was." : {
+
+    },
+    "Review" : {
+
+    },
+    "Reviews" : {
+
+    },
+    "Reviews given %@." : {
+
+    },
+    "Reviews given by week" : {
+
+    },
+    "Reviews given." : {
+
+    },
+    "Reviews. You have given %@." : {
+
+    },
+    "Run cadence doctor" : {
+
+    },
+    "Run it in Terminal with your own export file. The dry run writes nothing; run it again without --dry-run to import. It reads only that file and sends nothing." : {
+
+    },
+    "Run now" : {
+
+    },
+    "Same point in %@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Same point in %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "Same point last week: %@" : {
+
+    },
+    "Sandbox denied or unreadable" : {
+
+    },
+    "Save the title" : {
+
+    },
+    "Saved for your review" : {
+
+    },
+    "Schema newer than the app" : {
+
+    },
+    "Seal %@" : {
+
+    },
+    "Seal as empty" : {
+
+    },
+    "Seal only" : {
+
+    },
+    "Sealed" : {
+
+    },
+    "Sealed at %@, %@ logged." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sealed at %1$@, %2$@ logged."
+          }
+        }
+      }
+    },
+    "Sealed in a row" : {
+
+    },
+    "Sealed on %lld of %lld %@. Done is self-marked." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sealed on %1$lld of %2$lld %3$@. Done is self-marked."
+          }
+        }
+      }
+    },
+    "Sealed workdays: -. Done is self-marked." : {
+
+    },
+    "Sealed." : {
+
+    },
+    "Sealing takes under a minute." : {
+
+    },
+    "Search the log" : {
+
+    },
+    "Search titles, tickets and notes" : {
+
+    },
+    "Search titles, tickets, notes" : {
+
+    },
+    "Section" : {
+
+    },
+    "See approved sources" : {
+
+    },
+    "See everything" : {
+
+    },
+    "See last week's recap" : {
+
+    },
+    "See update steps" : {
+
+    },
+    "Self" : {
+
+    },
+    "Self-started" : {
+
+    },
+    "Self-started rule" : {
+
+    },
+    "Settings" : {
+
+    },
+    "Settings panes" : {
+
+    },
+    "Settings ⌘," : {
+
+    },
+    "Settings…" : {
+
+    },
+    "Setup" : {
+
+    },
+    "Share" : {
+
+    },
+    "Share of plan done by week" : {
+
+    },
+    "Shipped" : {
+
+    },
+    "Show Tempo" : {
+
+    },
+    "Show chart" : {
+
+    },
+    "Show in Finder" : {
+
+    },
+    "Show my streak" : {
+
+    },
+    "Show table" : {
+
+    },
+    "Show task titles in notifications" : {
+
+    },
+    "Show the chart" : {
+
+    },
+    "Show the damaged file" : {
+
+    },
+    "Show the folder" : {
+
+    },
+    "Show the table" : {
+
+    },
+    "Showing %@. %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Showing %1$@. %2$@ %3$@"
+          }
+        }
+      }
+    },
+    "Shows this log was not changed after sealing. It does not show the work happened." : {
+
+    },
+    "Sick" : {
+
+    },
+    "Since %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Since %1$lld %2$@"
+          }
+        }
+      }
+    },
+    "Since my last 1:1" : {
+
+    },
+    "Since your last 1:1" : {
+
+    },
+    "Since your last 1:1 on %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Since your last 1:1 on %1$lld %2$@"
+          }
+        }
+      }
+    },
+    "Size" : {
+
+    },
+    "Skip for now" : {
+
+    },
+    "Skip today" : {
+
+    },
+    "Slipped" : {
+
+    },
+    "Slips" : {
+
+    },
+    "So your day is tracked without you thinking about it." : {
+
+    },
+    "Sound" : {
+
+    },
+    "Sound when an agent logs work" : {
+
+    },
+    "Sources" : {
+
+    },
+    "Sources are off. %@" : {
+
+    },
+    "Space counts one. Return adds a note. Delete clears." : {
+
+    },
+    "Start the day" : {
+
+    },
+    "Start with some history?" : {
+
+    },
+    "Started initiatives" : {
+
+    },
+    "Starts with your first input" : {
+
+    },
+    "State" : {
+
+    },
+    "Step %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Step %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Still learning your usual range." : {
+
+    },
+    "Still open" : {
+
+    },
+    "Store busy past the 3 s timeout" : {
+
+    },
+    "Streak" : {
+
+    },
+    "Subtle" : {
+
+    },
+    "Suggested from your sources" : {
+
+    },
+    "Synced %@" : {
+
+    },
+    "Tab moves between chips. Click a chip to change it. Saved as logged by you." : {
+
+    },
+    "Table" : {
+
+    },
+    "Tap to count, and press and hold to add a note." : {
+
+    },
+    "Tap what happened." : {
+
+    },
+    "Task" : {
+
+    },
+    "Task and entry titles, ticket keys and links" : {
+
+    },
+    "That change was not saved: %@" : {
+
+    },
+    "That is a lot for one day. You can still start, and anything open can move to tomorrow." : {
+
+    },
+    "The %@ import" : {
+
+    },
+    "The 1 slip" : {
+
+    },
+    "The Claude Code hook" : {
+
+    },
+    "The GitHub source in config.json cannot run: %@" : {
+
+    },
+    "The app itself makes no network calls." : {
+
+    },
+    "The app will not read or change it until you update." : {
+
+    },
+    "The collector agent is missing from the app" : {
+
+    },
+    "The collector agent is not registered" : {
+
+    },
+    "The collector agent is registered" : {
+
+    },
+    "The first %lld characters of a PR title" : {
+
+    },
+    "The little metronome. Everything still works without it." : {
+
+    },
+    "The menu-bar mark still shows when a wrap-up is due." : {
+
+    },
+    "The plan" : {
+
+    },
+    "The stand-up is hidden while discreet mode is on." : {
+
+    },
+    "The text is kept until you free some." : {
+
+    },
+    "There are no backups yet. The first one is made today." : {
+
+    },
+    "There is no cadence.db in %@" : {
+
+    },
+    "There is none yet. Add it whenever you like, and approve it in Settings, Sources." : {
+
+    },
+    "Things you did that were never on the plan." : {
+
+    },
+    "This cycle" : {
+
+    },
+    "This file covers" : {
+
+    },
+    "This file did not pass its check." : {
+
+    },
+    "This file was edited after it was exported." : {
+
+    },
+    "This is exactly what will run, every argument and every setting. It runs only after you approve, and asks again if it changes." : {
+
+    },
+    "This is not a Cadence proof file." : {
+
+    },
+    "This is not a readable proof file." : {
+
+    },
+    "This log was updated by a newer Cadence." : {
+
+    },
+    "This month" : {
+
+    },
+    "This source cannot run: %@" : {
+
+    },
+    "This source is off in config.json, so it does not run." : {
+
+    },
+    "This week" : {
+
+    },
+    "This week. You sealed %@. Days off are never counted against you." : {
+
+    },
+    "This will show as sealed the next morning, on your log and in any proof." : {
+
+    },
+    "Ticket" : {
+
+    },
+    "Tickets" : {
+
+    },
+    "Timestamps only, never apps or window titles" : {
+
+    },
+    "Titles show only while your Mac is unlocked." : {
+
+    },
+    "To" : {
+
+    },
+    "To check a backup, run this in Terminal:" : {
+
+    },
+    "Today" : {
+
+    },
+    "Today's backup was already there. Nothing was replaced." : {
+
+    },
+    "Today's backup, %@, already exists" : {
+
+    },
+    "Today's plan" : {
+
+    },
+    "Today, %lld" : {
+
+    },
+    "Today, Log, Insights, Recap and Proof: ⌘1 to ⌘5" : {
+
+    },
+    "Trends appear after three weeks, because two points are not a pattern." : {
+
+    },
+    "Try a ticket key or clear the filters." : {
+
+    },
+    "Try again" : {
+
+    },
+    "Turn it on in System Settings, Privacy & Security, FileVault." : {
+
+    },
+    "Two small permissions." : {
+
+    },
+    "Type a shortcut" : {
+
+    },
+    "Undo" : {
+
+    },
+    "Unknown" : {
+
+    },
+    "Until then, here is what is already true." : {
+
+    },
+    "Update the app and the command-line tool together." : {
+
+    },
+    "Usual" : {
+
+    },
+    "Usual by %@: %lld to %lld." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Usual by %1$@: %2$lld to %3$lld."
+          }
+        }
+      }
+    },
+    "Usual day: %lld to %lld." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Usual day: %1$lld to %2$lld."
+          }
+        }
+      }
+    },
+    "Usual end" : {
+
+    },
+    "Usual first and last activity on workdays: " : {
+
+    },
+    "Usual range" : {
+
+    },
+    "Usual start" : {
+
+    },
+    "Value" : {
+
+    },
+    "W%lld" : {
+
+    },
+    "Week" : {
+
+    },
+    "Week %lld" : {
+
+    },
+    "Week %lld, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Week %1$lld, %2$@"
+          }
+        }
+      }
+    },
+    "Weekend" : {
+
+    },
+    "Welcome" : {
+
+    },
+    "What did you do?" : {
+
+    },
+    "What did you do? Try: merged ACME-4821 retry fix @14:30" : {
+
+    },
+    "What happened? This helps your patterns, and it is never judged." : {
+
+    },
+    "What is included" : {
+
+    },
+    "What leaves this Mac" : {
+
+    },
+    "What matters today?" : {
+
+    },
+    "What you delivered" : {
+
+    },
+    "What your manager sees" : {
+
+    },
+    "When a line names no kind of work." : {
+
+    },
+    "When your day starts" : {
+
+    },
+    "Where to look" : {
+
+    },
+    "With AI" : {
+
+    },
+    "Work after midnight still counts for the day before." : {
+
+    },
+    "Work done" : {
+
+    },
+    "Workdays" : {
+
+    },
+    "Workdays sealed in a row." : {
+
+    },
+    "Workdays with AI" : {
+
+    },
+    "Working after all" : {
+
+    },
+    "Worth raising" : {
+
+    },
+    "Wrap up" : {
+
+    },
+    "Wrap up %@" : {
+
+    },
+    "Wrap up %@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Wrap up %1$@, %2$@"
+          }
+        }
+      }
+    },
+    "Wrap up %@, %lld left" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Wrap up %1$@, %2$lld left"
+          }
+        }
+      }
+    },
+    "Wrap up, %lld left" : {
+
+    },
+    "Wrap up, %lld open" : {
+
+    },
+    "Wrap-up reminders" : {
+
+    },
+    "Wrap-up time" : {
+
+    },
+    "Write a few words first, and I will work out the rest." : {
+
+    },
+    "Writing stopped; nothing is overwritten." : {
+
+    },
+    "Wrote docs" : {
+
+    },
+    "X" : {
+
+    },
+    "Yesterday" : {
+
+    },
+    "You" : {
+
+    },
+    "You also logged" : {
+
+    },
+    "You dictated it" : {
+
+    },
+    "You finished %lld of the %@ you planned." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "You finished %1$lld of the %2$@ you planned."
+          }
+        }
+      }
+    },
+    "You have given" : {
+
+    },
+    "You have merged" : {
+
+    },
+    "You have not planned today yet" : {
+
+    },
+    "You logged it" : {
+
+    },
+    "You sealed" : {
+
+    },
+    "You showed up for people." : {
+
+    },
+    "You've finished" : {
+
+    },
+    "Your " : {
+
+    },
+    "Your Mac is out of space." : {
+
+    },
+    "Your cycle" : {
+
+    },
+    "Your data" : {
+
+    },
+    "Your data is still on disk and nothing has been changed." : {
+
+    },
+    "Your line is still here. %@" : {
+
+    },
+    "Your log" : {
+
+    },
+    "Your log did not pass its integrity check." : {
+
+    },
+    "Your log is busy right now." : {
+
+    },
+    "Your log is sent nowhere unless you hand over this file." : {
+
+    },
+    "Your log lives here." : {
+
+    },
+    "Your month" : {
+
+    },
+    "Your patterns" : {
+
+    },
+    "Your patterns are still forming." : {
+
+    },
+    "Your plan" : {
+
+    },
+    "Your plan. %lld of %lld done." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your plan. %1$lld of %2$lld done."
+          }
+        }
+      }
+    },
+    "Your plan. Nothing planned yet." : {
+
+    },
+    "Your proposals are kept until Cadence can read its log." : {
+
+    },
+    "Your range" : {
+
+    },
+    "Your stand-up is ready. Sent to your team, its last line shows this log existed today." : {
+
+    },
+    "Your text is kept." : {
+
+    },
+    "Your usual start and end." : {
+
+    },
+    "Your week" : {
+
+    },
+    "Your work, told back to you." : {
+
+    },
+    "a collector" : {
+
+    },
+    "a source" : {
+
+    },
+    "accepted it" : {
+
+    },
+    "after wrap-up mark" : {
+
+    },
+    "an agent" : {
+
+    },
+    "assigned" : {
+
+    },
+    "backfill mark" : {
+
+    },
+    "backfilled" : {
+
+    },
+    "backup" : {
+
+    },
+    "backups" : {
+
+    },
+    "cadence doctor is copied." : {
+
+    },
+    "challenge" : {
+
+    },
+    "challenged" : {
+
+    },
+    "code %@" : {
+
+    },
+    "config.json could not be read: %@" : {
+
+    },
+    "could not create %@: permission denied or %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "could not create %1$@: permission denied or %2$@"
+          }
+        }
+      }
+    },
+    "count" : {
+
+    },
+    "day" : {
+
+    },
+    "day has" : {
+
+    },
+    "days have" : {
+
+    },
+    "deleted it" : {
+
+    },
+    "details" : {
+
+    },
+    "discussion" : {
+
+    },
+    "dismissed it" : {
+
+    },
+    "doc" : {
+
+    },
+    "doc review" : {
+
+    },
+    "done" : {
+
+    },
+    "dropped" : {
+
+    },
+    "dropped or left open" : {
+
+    },
+    "duration" : {
+
+    },
+    "earlier day" : {
+
+    },
+    "event" : {
+
+    },
+    "events" : {
+
+    },
+    "first activity %@" : {
+
+    },
+    "had no reason given" : {
+
+    },
+    "hidden" : {
+
+    },
+    "hour" : {
+
+    },
+    "hours" : {
+
+    },
+    "incident" : {
+
+    },
+    "initiative" : {
+
+    },
+    "item" : {
+
+    },
+    "items" : {
+
+    },
+    "kind" : {
+
+    },
+    "led" : {
+
+    },
+    "link" : {
+
+    },
+    "links" : {
+
+    },
+    "macOS did not say whether Cadence opens at login." : {
+
+    },
+    "meeting" : {
+
+    },
+    "mentored" : {
+
+    },
+    "mentoring" : {
+
+    },
+    "merge" : {
+
+    },
+    "merged" : {
+
+    },
+    "min" : {
+
+    },
+    "no code in it can be checked against a stand-up" : {
+
+    },
+    "no items logged" : {
+
+    },
+    "no ticket" : {
+
+    },
+    "note" : {
+
+    },
+    "nothing recorded yet" : {
+
+    },
+    "now" : {
+
+    },
+    "of %@" : {
+
+    },
+    "of %lld" : {
+
+    },
+    "of %lld workdays" : {
+
+    },
+    "on call" : {
+
+    },
+    "on-call shift" : {
+
+    },
+    "once" : {
+
+    },
+    "open" : {
+
+    },
+    "origin %@" : {
+
+    },
+    "other thing" : {
+
+    },
+    "other things" : {
+
+    },
+    "percent" : {
+
+    },
+    "piece of work" : {
+
+    },
+    "proof setting" : {
+
+    },
+    "proposed it" : {
+
+    },
+    "pull request" : {
+
+    },
+    "release" : {
+
+    },
+    "restored it" : {
+
+    },
+    "review" : {
+
+    },
+    "reviewed" : {
+
+    },
+    "reviews" : {
+
+    },
+    "sealed workdays" : {
+
+    },
+    "self-started" : {
+
+    },
+    "session" : {
+
+    },
+    "sessions" : {
+
+    },
+    "shipped" : {
+
+    },
+    "slipped" : {
+
+    },
+    "source" : {
+
+    },
+    "sources" : {
+
+    },
+    "span" : {
+
+    },
+    "tag" : {
+
+    },
+    "tags" : {
+
+    },
+    "task" : {
+
+    },
+    "task is" : {
+
+    },
+    "tasks are" : {
+
+    },
+    "the folder you chose" : {
+
+    },
+    "thing" : {
+
+    },
+    "things" : {
+
+    },
+    "this %@" : {
+
+    },
+    "ticket" : {
+
+    },
+    "ticket %@" : {
+
+    },
+    "time" : {
+
+    },
+    "title" : {
+
+    },
+    "today" : {
+
+    },
+    "unknown" : {
+
+    },
+    "was" : {
+
+    },
+    "were" : {
+
+    },
+    "with AI" : {
+
+    },
+    "with no reason" : {
+
+    },
+    "without" : {
+
+    },
+    "without a review" : {
+
+    },
+    "workday" : {
+
+    },
+    "workdays" : {
+
+    },
+    "you" : {
+
+    }
+  },
+  "version" : "1.0"
+}

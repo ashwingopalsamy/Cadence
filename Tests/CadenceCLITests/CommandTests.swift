@@ -1,0 +1,550 @@
+import CadenceCore
+import Foundation
+import Testing
+
+/// Each test runs the real binary against its own temp home.
+@Suite struct CommandTests {
+    let cli = CLIHome()
+
+    func id(_ value: JSONValue, _ key: String) throws -> String {
+        try #require(value[key]?["id"]?.stringValue)
+    }
+
+    // MARK: log, today
+
+    @Test func logThenTodayShowsIt() throws {
+        defer { cli.remove() }
+        let logged = try cli.run(["log", "Merged ACME-482913 retry budget at 10:30 ~45m #quality"])
+        #expect(logged.status == 0)
+        #expect(logged.stdout.contains("Logged for"))
+        #expect(logged.stdout.contains("ACME-482913"))
+        #expect(logged.stderr.isEmpty)
+
+        let today = try cli.json(["today"])
+        let entries = try #require(today["entries"]?.arrayValue)
+        #expect(entries.count == 1)
+        #expect(entries[0]["title"]?.stringValue == "Merged ACME-482913 retry budget")
+        #expect(entries[0]["origin"]?.stringValue == "self")
+        #expect(entries[0]["ticket"]?["class"]?.stringValue == "assigned")
+        #expect(entries[0]["duration_s"]?.intValue == 2700)
+
+        let human = try cli.run(["today"])
+        #expect(human.status == 0)
+        #expect(human.stdout.contains("Merged ACME-482913 retry budget"))
+        #expect(human.stdout.contains("First activity -, last activity -"))
+        #expect(!human.stdout.contains("\u{2013}") && !human.stdout.contains("\u{2014}"))
+    }
+
+    @Test func logFlagsOverrideTheParse() throws {
+        defer { cli.remove() }
+        let today = try cli.today()
+        let yesterday = today.adding(days: -1)
+        let result = try cli.json([
+            "log", "Helped with the release", "--kind", "mentoring", "--at", "09:15", "--date", yesterday.description,
+            "--ticket", "ACME-000000", "--link", "https://git.example.com/acme/core/pull/7", "--qty", "2",
+            "--duration", "30", "--note", "pairing session",
+        ])
+        let entry = try #require(result["entry"])
+        #expect(entry["kind"]?.stringValue == "mentoring")
+        #expect(entry["day"]?.stringValue == yesterday.description)
+        #expect(entry["backfilled"]?.boolValue == true)
+        #expect(entry["status"]?.stringValue == "accepted")
+        #expect(entry["occurred_at"]?.stringValue?.contains("T09:15:00") == true)
+        #expect(entry["ticket"]?["class"]?.stringValue == "self")
+        #expect(entry["links"]?.arrayValue?.first?["kind"]?.stringValue == "pr")
+        #expect(entry["quantity"]?.intValue == 2)
+        #expect(entry["duration_s"]?.intValue == 1800)
+        #expect(entry["attrs"]?["note"]?.stringValue == "pairing session")
+    }
+
+    @Test func logRefusesLinksWithCredentialsControlOrBidiCharactersAndWritesNothing() throws {
+        defer { cli.remove() }
+        let bad = [
+            "https://user:secret@git.example.com/a", "http://git.example.com/a", "https://git.example.com/\u{202E}x",
+            "https://git.example.com/a\u{7}b", "https://git.example.com/" + String(repeating: "a", count: 2048), "https:///x",
+        ]
+        for url in bad {
+            let result = try cli.run(["log", "Fixed it", "--link", url])
+            #expect(result.status == 2, "\(url.prefix(40))")
+            #expect(result.stderr.contains("link:"), "\(result.stderr)")
+        }
+        let today = try cli.json(["today"])
+        #expect(today["entries"]?.arrayValue?.isEmpty == true)
+        // A link that passes the rule still goes in.
+        #expect(try cli.run(["log", "Fixed it", "--link", "https://git.example.com/acme/x/pull/9"]).status == 0)
+    }
+
+    // MARK: plan
+
+    @Test func planAddListDone() throws {
+        defer { cli.remove() }
+        let added = try cli.json(["plan", "add", "Write the RFC for ACME-482913", "--estimate", "60"])
+        let taskID = try id(added, "task")
+        #expect(added["task"]?["position"]?.intValue == 1)
+        #expect(added["task"]?["estimate_min"]?.intValue == 60)
+        #expect(added["task"]?["ticket"]?["key"]?.stringValue == "ACME-482913")
+        let second = try cli.json(["plan", "add", "Review the retry budget"])
+        let secondID = try id(second, "task")
+        #expect(second["task"]?["position"]?.intValue == 2)
+
+        let list = try cli.json(["plan", "list"])
+        #expect(list["tasks"]?.arrayValue?.count == 2)
+        let human = try cli.run(["plan", "list"])
+        #expect(human.stdout.contains("Plan: 0 of 2 done"))
+
+        let done = try cli.json(["plan", "done", taskID, "--note", "shipped"])
+        #expect(done["task"]?["status"]?.stringValue == "done")
+        #expect(done["task"]?["reason_note"]?.stringValue == "shipped")
+        #expect(done["task"]?["resolved_at"]?.stringValue != nil)
+
+        let slip = try cli.run(["plan", "slip", secondID, "--json"])
+        #expect(slip.status == 2)
+        #expect(slip.stderr.hasPrefix("cadence: "))
+        let slipped = try cli.json(["plan", "slip", secondID, "--reason", "reprioritised"])
+        #expect(slipped["task"]?["status"]?.stringValue == "slipped")
+        let dropped = try cli.json(["plan", "drop", secondID, "--reason", "not needed"])
+        #expect(dropped["task"]?["status"]?.stringValue == "dropped")
+
+        #expect(try cli.run(["plan", "list"]).stdout.contains("Plan: 1 of 2 done"))
+    }
+
+    @Test func aResolvedTaskCanBeCorrectedAgainFromTheCLI() throws {
+        // A manual correction (docs/SPEC.md section 9.5): the user may change their mind. Only an agent over MCP is
+        // refused, since it may not overwrite the user's resolution.
+        defer { cli.remove() }
+        let task = try id(try cli.json(["plan", "add", "Draft the ADR"]), "task")
+        #expect(try cli.json(["plan", "done", task])["task"]?["status"]?.stringValue == "done")
+        let slipped = try cli.json(["plan", "slip", task, "--reason", "blocked"])
+        #expect(slipped["task"]?["status"]?.stringValue == "slipped")
+        let dropped = try cli.json(["plan", "drop", task, "--reason", "cancelled"])
+        #expect(dropped["task"]?["status"]?.stringValue == "dropped")
+        let done = try cli.json(["plan", "done", task, "--note", "after all"])
+        #expect(done["task"]?["status"]?.stringValue == "done" && done["task"]?["reason_note"]?.stringValue == "after all")
+        let plan = try cli.json(["plan", "list"])
+        #expect(plan["tasks"]?.arrayValue?.first?["status"]?.stringValue == "done")
+    }
+
+    @Test func planDoneLinksAnEntry() throws {
+        defer { cli.remove() }
+        let entryID = try id(try cli.json(["log", "Wrote the RFC"]), "entry")
+        let taskID = try id(try cli.json(["plan", "add", "Write the RFC"]), "task")
+        let done = try cli.json(["plan", "done", taskID, "--link", entryID])
+        #expect(done["task"]?["linked_entries"]?.arrayValue?.first?.stringValue == entryID)
+        #expect(try cli.run(["plan", "done", taskID, "--link", "NOPE"]).status == 4)
+    }
+
+    // MARK: day
+
+    @Test func dayLeaveAndHoliday() throws {
+        defer { cli.remove() }
+        let leave = try cli.json(["day", "leave", "2026-10-12", "--unplanned", "--label", "unwell"])
+        #expect(leave["day"]?["kind"]?.stringValue == "leave_unplanned")
+        #expect(leave["day"]?["label"]?.stringValue == "unwell")
+        let planned = try cli.json(["day", "leave", "2026-10-13"])
+        #expect(planned["day"]?["kind"]?.stringValue == "leave_planned")
+        let holiday = try cli.json(["day", "holiday", "2026-10-14", "--label", "Founders day"])
+        #expect(holiday["day"]?["kind"]?.stringValue == "holiday")
+
+        let shown = try cli.json(["day", "show", "--date", "2026-10-12"])
+        #expect(shown["day"]?["kind"]?.stringValue == "leave_unplanned")
+        let human = try cli.run(["day", "show", "--date", "2026-10-14"])
+        #expect(human.stdout.contains("holiday: Founders day"))
+    }
+
+    @Test func dayStartEndShowFirstAndLastActivity() throws {
+        defer { cli.remove() }
+        // A past day, so the times are never in the future whatever the hour of the run.
+        let day = try cli.today().adding(days: -1).description
+        let started = try cli.json(["day", "start", "--date", day, "--at", "09:05"])
+        #expect(started["day"]?["first_activity"]?.stringValue?.contains("T09:05:00") == true)
+        try cli.run(["day", "end", "--date", day, "--at", "17:40"])
+        let shown = try cli.json(["day", "show", "--date", day])
+        #expect(shown["day"]?["last_activity"]?.stringValue?.contains("T17:40:00") == true)
+        let human = try cli.run(["day", "show", "--date", day])
+        #expect(human.stdout.contains("First activity 09:05, last activity 17:40"))
+    }
+
+    @Test func dayShowForAnEmptyDayIsNotZeros() throws {
+        defer { cli.remove() }
+        // 2026-10-17 is a Saturday.
+        let shown = try cli.json(["day", "show", "--date", "2026-10-17"])
+        #expect(shown["day"]?["kind"]?.stringValue == "weekend")
+        #expect(shown["day"]?["first_activity"] == .null)
+        #expect(shown["entries"]?.arrayValue?.isEmpty == true)
+        let human = try cli.run(["day", "show", "--date", "2026-10-17"])
+        #expect(human.stdout.contains("First activity -, last activity -"))
+        #expect(human.stdout.contains("No plan"))
+        #expect(human.stdout.contains("No entries"))
+    }
+
+    // MARK: inbox
+
+    @Test func inboxAcceptAndDismissProposals() throws {
+        defer { cli.remove() }
+        let journal = try cli.journal()
+        let yesterday = journal.today().adding(days: -1)
+        var request = LogRequest(text: "Reviewed the retry budget doc")
+        request.date = yesterday
+        let first = try journal.log(request, actor: .mcp, origin: .agent)
+        request.text = "Fixed the flaky test"
+        let second = try journal.log(request, actor: .mcp, origin: .agent)
+        #expect(first.status == .proposed)
+
+        let list = try cli.json(["inbox", "list"])
+        #expect(list["entries"]?.arrayValue?.count == 2)
+        #expect(try cli.run(["inbox", "list"]).stdout.contains("Proposed entries: 2"))
+
+        let accepted = try cli.json(["inbox", "accept", first.id])
+        #expect(accepted["entry"]?["status"]?.stringValue == "accepted")
+        #expect(accepted["entry"]?["origin"]?.stringValue == "agent")
+        let dismissed = try cli.json(["inbox", "dismiss", second.id])
+        #expect(dismissed["entry"]?["status"]?.stringValue == "dismissed")
+
+        #expect(try cli.json(["inbox", "list"])["entries"]?.arrayValue?.isEmpty == true)
+        #expect(try cli.run(["inbox", "list"]).stdout.contains("The inbox is empty."))
+        #expect(try cli.run(["inbox", "dismiss", "NOPE"]).status == 4)
+        // An accepted entry cannot be accepted again.
+        #expect(try cli.run(["inbox", "accept", first.id]).status == 2)
+    }
+
+    // MARK: query
+
+    @Test func queryTableJsonAndNdjson() throws {
+        defer { cli.remove() }
+        try cli.run(["log", "Fixed the flaky test"])
+        try cli.run(["log", "Reviewed the retry budget"])
+        try cli.run(["log", "Thinking about the roadmap"])
+
+        let table = try cli.run(["query"])
+        #expect(table.status == 0)
+        #expect(table.stdout.contains("KIND"))
+        #expect(table.stdout.contains("Fixed the flaky test"))
+
+        let nd = try cli.run(["query", "--ndjson"])
+        #expect(nd.status == 0)
+        let lines = nd.stdout.split(separator: "\n")
+        #expect(lines.count == 3)
+        for line in lines { _ = try JSONParser.parse(String(line)) }
+
+        let reviews = try cli.json(["query", "--kind", "review.given"])
+        #expect(reviews["entries"]?.arrayValue?.count == 1)
+        #expect(reviews["next"] == .null)
+        let families = try cli.json(["query", "--family", "delivery", "--origin", "self", "--status", "accepted"])
+        #expect(families["entries"]?.arrayValue?.count == 1)
+
+        let today = try cli.today()
+        let none = try cli.json(["query", "--from", today.adding(days: -9).description, "--to", today.adding(days: -2).description])
+        #expect(none["entries"]?.arrayValue?.isEmpty == true)
+    }
+
+    @Test func queryPagesWithACursor() throws {
+        defer { cli.remove() }
+        for n in 1...3 { try cli.run(["log", "Fixed thing \(n)"]) }
+        let one = try cli.json(["query", "--limit", "2"])
+        #expect(one["entries"]?.arrayValue?.count == 2)
+        let cursor = try #require(one["next"]?.stringValue)
+        let two = try cli.json(["query", "--limit", "2", "--cursor", cursor])
+        #expect(two["entries"]?.arrayValue?.count == 1)
+        #expect(two["next"] == .null)
+        #expect(try cli.run(["query", "--cursor", "bogus"]).status == 2)
+        #expect(try cli.run(["query", "--kind", "nonsense"]).status == 2)
+    }
+
+    @Test func querySearchesTitlesTicketsAndNotes() throws {
+        defer { cli.remove() }
+        try cli.run(["log", "Fixed the Flaky ledger test"])
+        try cli.run(["log", "Paired on the capture path", "--ticket", "ACME-482913"])
+        try cli.run(["log", "Reviewed a design doc", "--note", "Blocked on the Idempotency review"])
+        try cli.run(["log", "Raised 100% retry storms in arch sync"])
+        func titles(_ arguments: [String]) throws -> [String] {
+            let found = try cli.json(["query"] + arguments)
+            return (found["entries"]?.arrayValue ?? []).compactMap { $0["title"]?.stringValue }
+        }
+        #expect(try titles(["--search", "FLAKY"]) == ["Fixed the Flaky ledger test"])
+        #expect(try titles(["--search", "acme-482913"]) == ["Paired on the capture path"])
+        #expect(try titles(["--search", "idempotency"]) == ["Reviewed a design doc"])
+        #expect(try titles(["--search", "100%"]) == ["Raised 100% retry storms in arch sync"])
+        #expect(try titles(["--search", "%"]) == ["Raised 100% retry storms in arch sync"])
+        #expect(try titles(["--search", "  flaky "]) == ["Fixed the Flaky ledger test"])
+        #expect(try titles(["--search", "nothing says this"]).isEmpty)
+        #expect(try titles(["--search", ""]).count == 4)
+        #expect(try titles(["--search", "the", "--family", "review"]) == ["Reviewed a design doc"])
+
+        let table = try cli.run(["query", "--search", "flaky"])
+        #expect(table.status == 0 && table.stdout.contains("Fixed the Flaky ledger test"))
+        #expect(!table.stdout.contains("Reviewed a design doc"))
+        #expect(try cli.run(["query", "--search", "nothing says this"]).stdout.hasPrefix("No entries from "))
+        #expect(try cli.run(["query", "--help"]).stdout.contains("--search"))
+    }
+
+    // MARK: rebuild, doctor
+
+    @Test func rebuildKeepsTodayIdentical() throws {
+        defer { cli.remove() }
+        try cli.run(["log", "Fixed the flaky test"])
+        try cli.run(["plan", "add", "Write the RFC", "--estimate", "30"])
+        try cli.run(["day", "start", "--date", try cli.today().adding(days: -1).description, "--at", "09:00"])
+        try cli.run(["day", "leave", "2026-10-12"])
+        let before = try cli.run(["today", "--json"])
+        let rebuilt = try cli.json(["rebuild"])
+        #expect(rebuilt["events"]?.intValue == 5)
+        #expect(rebuilt["entries"]?.intValue == 1)
+        #expect(rebuilt["plan_tasks"]?.intValue == 1)
+        #expect(try cli.run(["today", "--json"]).stdout == before.stdout)
+        #expect(try cli.run(["rebuild"]).stdout.contains("Rebuilt from 5 events"))
+    }
+
+    @Test func doctorOnAFreshHomeIsHealthy() throws {
+        defer { cli.remove() }
+        let result = try cli.run(["doctor"])
+        #expect(result.status == 0)
+        #expect(result.stdout.contains("ok    store: opens, schema version 1"))
+        #expect(result.stdout.contains("ok    folders"))
+        #expect(result.stdout.contains("warn  config: no config file"))
+        let json = try cli.json(["doctor"])
+        #expect(json["ok"]?.boolValue == true)
+        #expect(json["checks"]?.arrayValue?.contains { $0["name"]?.stringValue == "ledger" } == true)
+    }
+
+    @Test func doctorReportsFileVaultAndNeverFailsOnIt() throws {
+        defer { cli.remove() }
+        let result = try cli.run(["doctor"])
+        #expect(result.status == 0)
+        let line = try #require(result.stdout.split(separator: "\n").first { $0.contains("filevault:") }, "no filevault line")
+        #if os(macOS)
+            // The real fdesetup answers on a Mac: on is ok, anything else only warns.
+            #expect(line.hasPrefix("ok    filevault:") || line.hasPrefix("warn  filevault:"), "\(line)")
+        #else
+            #expect(line == "ok    filevault: not applicable on this system")
+        #endif
+        let json = try cli.json(["doctor"])
+        let check = try #require(json["checks"]?.arrayValue?.first { $0["name"]?.stringValue == "filevault" })
+        #expect(["ok", "warn"].contains(check["status"]?.stringValue ?? ""))
+    }
+
+    @Test func doctorVerifiesTheChainAfterWrites() throws {
+        defer { cli.remove() }
+        try cli.run(["log", "Fixed the flaky test"])
+        let result = try cli.run(["doctor"])
+        #expect(result.status == 0)
+        #expect(result.stdout.contains("chain verified over 2 events"))
+    }
+
+    @Test func doctorFailsOnATamperedLedger() throws {
+        defer { cli.remove() }
+        try cli.run(["log", "Fixed the flaky test"])
+        let db = try SQLiteDatabase(path: cli.database)
+        try db.execute("DROP TRIGGER events_no_update")
+        try db.execute("UPDATE events SET data = replace(data, 'flaky', 'steady') WHERE type = 'entry.created'")
+        let result = try cli.run(["doctor"])
+        #expect(result.status == 2)
+        #expect(result.stdout.contains("fail  ledger"))
+    }
+
+    @Test func doctorFailsOnLooseFolders() throws {
+        defer { cli.remove() }
+        try cli.run(["rebuild"])
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.home.path)
+        let result = try cli.run(["doctor"])
+        #expect(result.status == 2)
+        #expect(result.stdout.contains("fail  folders"))
+    }
+
+    // MARK: config
+
+    @Test func doctorAcceptsASavedConfigAndRejectsABrokenOne() throws {
+        defer { cli.remove() }
+        try cli.run(["config", "set", "sounds", "full"])
+        let doctor = try cli.run(["doctor"])
+        #expect(doctor.status == 0)
+        #expect(doctor.stdout.contains("ok    config: valid, mode 0600"))
+        try Data("{ not json".utf8).write(to: cli.configFile)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cli.configFile.path)
+        #expect(try cli.run(["today"]).status == 2)
+        #expect(try cli.run(["doctor"]).status == 2)
+    }
+
+    @Test func configTimezoneIsUsed() throws {
+        defer { cli.remove() }
+        try cli.run(["config", "set", "profile.timezone", "Asia/Kolkata"])
+        let yesterday = try cli.today().adding(days: -1).description
+        let entry = try cli.json(["log", "Fixed the flaky test", "--date", yesterday, "--at", "10:30"])["entry"]
+        #expect(entry?["occurred_at"]?.stringValue?.hasSuffix("T10:30:00+05:30") == true)
+    }
+
+    // MARK: exit codes
+
+    @Test func commandUsageErrorsExitOne() throws {
+        defer { cli.remove() }
+        #expect(try cli.run(["log"]).status == 1)
+        #expect(try cli.run(["log", "x", "--bogus"]).status == 1)
+        #expect(try cli.run(["plan", "add"]).status == 1)
+    }
+
+    @Test func missingTasksAndEntriesExitFour() throws {
+        defer { cli.remove() }
+        #expect(try cli.run(["plan", "done", "NOPE"]).status == 4)
+        #expect(try cli.run(["inbox", "accept", "NOPE"]).status == 4)
+        let missing = try cli.run(["plan", "drop", "NOPE", "--json"])
+        #expect(missing.status == 4)
+        #expect(missing.stdout.isEmpty)
+    }
+
+    @Test func todayJsonIsOneCanonicalLine() throws {
+        defer { cli.remove() }
+        let result = try cli.run(["today", "--json"])
+        #expect(result.status == 0)
+        #expect(result.stdout.hasSuffix("}\n"))
+        #expect(result.stdout.dropLast().firstIndex(of: "\n") == nil)
+        #expect(try CanonicalJSON.string(try result.json()) + "\n" == result.stdout)
+    }
+
+    @Test func validationErrorsExitTwo() throws {
+        defer { cli.remove() }
+        let badDate = try cli.run(["day", "show", "--date", "2026-02-30"])
+        #expect(badDate.status == 2)
+        #expect(badDate.stderr.hasPrefix("cadence: "))
+        #expect(badDate.stdout.isEmpty)
+        #expect(try cli.run(["day", "leave", "next tuesday"]).status == 2)
+        #expect(try cli.run(["log", "Fixed it", "--kind", "bogus"]).status == 2)
+        #expect(try cli.run(["log", "Fixed it", "--at", "25:00"]).status == 2)
+        #expect(try cli.run(["log", "   "]).status == 2)
+        #expect(try cli.run(["log", "Fixed it", "--qty", "0"]).status == 2)
+    }
+
+    @Test func busyStoreExitsThreeAndReadsStillWork() throws {
+        defer { cli.remove() }
+        try cli.run(["today"])  // writes the genesis event, so reads need no write lock afterwards
+        let blocker = try SQLiteDatabase(path: cli.database)
+        try blocker.execute("BEGIN IMMEDIATE")
+        let quick = ["CADENCE_BUSY_TIMEOUT_MS": "200"]
+        let write = try cli.run(["log", "Fixed the secret flaky test"], environment: quick)
+        #expect(write.status == 3)
+        #expect(write.stderr.hasPrefix("cadence: "))
+        // Titles never reach stderr.
+        #expect(!write.stderr.contains("secret"))
+        let read = try cli.run(["today", "--json"], environment: quick)
+        #expect(read.status == 0)
+        try blocker.execute("ROLLBACK")
+        #expect(try cli.run(["log", "Fixed the secret flaky test"], environment: quick).status == 0)
+    }
+
+    // MARK: seal, streak, standup
+
+    @Test func sealCarriesOpenTasksAndRefusesASecondSeal() throws {
+        defer { cli.remove() }
+        let today = try cli.today()
+        try cli.run(["log", "Fixed the flaky test"])
+        let task = try id(try cli.json(["plan", "add", "Write the RFC for ACME-482913"]), "task")
+        let sealed = try cli.json(["day", "seal"])
+        #expect(sealed["day"]?.stringValue == today.description)
+        #expect(sealed["counts_for_streak"]?.boolValue == true)
+        #expect(sealed["counts"]?["entries"]?.intValue == 1)
+        #expect(sealed["plan"]?["moved"]?.intValue == 1 && sealed["plan"]?["open"]?.intValue == 0)
+        let carried = try #require(sealed["carried"]?.arrayValue?.first)
+        #expect(carried["from"]?.stringValue == task)
+        #expect(carried["task"]?["origin"]?.stringValue == "carried")
+        #expect(carried["task"]?["carried_from"]?.stringValue == task)
+        #expect(sealed["streak"]?["best"] != nil)
+
+        let again = try cli.run(["day", "seal"])
+        #expect(again.status == 2)
+        #expect(again.stderr.contains("already wrapped up at"))
+        #expect(try cli.run(["day", "seal", "--date", "2999-01-01"]).status == 2)
+        #expect(try cli.run(["day", "seal", "--date", "nope"]).status == 2)
+    }
+
+    @Test func sealPrintsPlainText() throws {
+        defer { cli.remove() }
+        try cli.run(["plan", "add", "Leftover task"])
+        let result = try cli.run(["day", "seal"])
+        #expect(result.status == 0)
+        #expect(result.stdout.contains("Wrapped up"))
+        #expect(result.stdout.contains("Carried to"))
+        #expect(result.stdout.contains("Leftover task"))
+        #expect(!result.stdout.contains("\u{2013}") && !result.stdout.contains("\u{2014}"))
+    }
+
+    @Test func streakReportsTheRun() throws {
+        defer { cli.remove() }
+        let before = try cli.json(["streak"])
+        #expect(before["current"]?.intValue == 0 && before["best"]?.intValue == 0)
+        #expect(before["at_risk"]?.boolValue == false)
+        #expect(before["paused_by"]?.arrayValue?.isEmpty == true)
+        try cli.run(["day", "seal"])
+        let after = try cli.json(["streak"])
+        #expect(try #require(after["best"]?.intValue) >= after["current"]?.intValue ?? 0)
+        #expect(try cli.run(["streak"]).stdout.hasPrefix("Streak "))
+    }
+
+    @Test func standupPrintsTheTextAndItsWitnessCode() throws {
+        defer { cli.remove() }
+        try cli.run(["log", "Reviewed the settlement RFC", "--kind", "doc.reviewed"])
+        let text = try cli.run(["standup"])
+        #expect(text.status == 0)
+        let lines = text.stdout.split(separator: "\n").map(String.init)
+        #expect(lines.first?.hasPrefix("*") == true)
+        #expect(lines.contains("Blockers: none"))
+        #expect(lines.contains { $0.hasPrefix("\u{2022} Reviewed the settlement RFC") })
+        let json = try cli.json(["standup"])
+        let code = try #require(json["code"]?.stringValue)
+        #expect(code.count == 16)
+        #expect(json["text"]?.stringValue?.hasSuffix("cadence \(code)") == true)
+        #expect(lines.last == "cadence \(code)")
+        #expect(try cli.run(["standup", "--date", "2999-01-01"]).status == 2)
+    }
+
+    // MARK: summary
+
+    @Test func summaryOfAnEmptyHomeShowsDashesAndNulls() throws {
+        defer { cli.remove() }
+        let text = try cli.run(["summary"])
+        #expect(text.status == 0)
+        #expect(text.stdout.hasPrefix("Week: "))
+        #expect(text.stdout.contains("No counted data in this range yet."))
+        #expect(text.stdout.contains("Findings: none for this range."))
+        #expect(text.stdout.split(separator: "\n").contains { $0.hasPrefix("Plan done") && $0.hasSuffix("  -") })
+        #expect(!text.stdout.contains("\u{2013}") && !text.stdout.contains("\u{2014}"))
+
+        let json = try cli.json(["summary"])
+        #expect(json["range"]?["label"]?.stringValue == "week")
+        #expect(json["plan_done"]?["value"] == .null)
+        #expect(json["merged_prs"]?["value"] == .null)
+        #expect(json["ai"]?["sessions"] == .null)
+        #expect(json["findings"] == .array([]))
+    }
+
+    @Test func summaryCountsWhatWasLoggedAndSealed() throws {
+        defer { cli.remove() }
+        let today = try cli.today()
+        try cli.run(["log", "Reviewed the ACME retry budget", "--kind", "review.given"])
+        try cli.run(["log", "Fixed the flaky test"])
+        let task = try id(try cli.json(["plan", "add", "Write the RFC"]), "task")
+        try cli.run(["plan", "done", task])
+        try cli.run(["day", "seal"])
+
+        let json = try cli.json(["summary", "--range", "\(today)..\(today)"])
+        #expect(json["range"]?["from"]?.stringValue == today.description)
+        #expect(json["entries"]?["value"]?.intValue == 2)
+        #expect(json["reviews"]?["value"]?.intValue == 1)
+        #expect(json["entries"]?["by_family"]?["review"]?.intValue == 1)
+        #expect(json["streak"]?["best"] != nil)
+
+        let month = try cli.json(["summary", "--range", "month"])
+        #expect(month["range"]?["label"]?.stringValue == "month")
+        let cycle = try cli.json(["summary", "--range", "cycle"])
+        #expect(cycle["range"]?["label"]?.stringValue == "cycle")
+        let human = try cli.run(["summary", "--range", "\(today)..\(today)"])
+        #expect(human.stdout.contains("Reviews"))
+        #expect(human.stdout.contains("Findings\n- ") && human.stdout.contains("- 100% of your plan got done. 1 of 1 task. None slipped."))
+    }
+
+    @Test func summaryRejectsABadRange() throws {
+        defer { cli.remove() }
+        for bad in ["year", "2026-10-31..2026-10-01", "2026-10-01"] {
+            let result = try cli.run(["summary", "--range", bad])
+            #expect(result.status == 2)
+            #expect(result.stderr.contains("--range"))
+        }
+    }
+}

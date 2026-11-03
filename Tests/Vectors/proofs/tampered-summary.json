@@ -1,0 +1,379 @@
+{
+  "format": "cadence.proof/1",
+  "generated_at": "2026-10-02T09:12:00+05:30",
+  "generator": "Cadence 0.0.0",
+  "subject": {
+    "name": "Sample Person",
+    "role": "Software Engineer"
+  },
+  "range": {
+    "from": "2026-10-01",
+    "to": "2026-10-01",
+    "tz": "Asia/Kolkata"
+  },
+  "how_to_verify": "Synthetic test vector. Run: python3 tools/verify_proof.py THIS_FILE",
+  "verifier_py": "omitted in test vectors",
+  "summary": {
+    "sealed_workdays": {
+      "value": 1,
+      "of": 1,
+      "definition": "Workdays wrapped up by 23:59 the next day; leave and holidays excluded"
+    },
+    "plan_done": {
+      "value": 1,
+      "of": 1,
+      "definition": "Planned tasks marked done on their day"
+    },
+    "merged_prs": {
+      "value": 40,
+      "assigned": 1,
+      "self_initiated": 0,
+      "definition": "Merged PRs authored, from the GitHub collector"
+    },
+    "ai_assisted_merges": {
+      "value": 1,
+      "of": 1,
+      "percent": 100,
+      "unrecorded": 0,
+      "definition": "Merged PRs listed in days that recorded an AI marker, out of listed merged PRs with a recorded marker; computed by Cadence, not recomputed by the verifier"
+    },
+    "agent_entries": {
+      "value": 1,
+      "definition": "Items listed in days with origin agent, which is self-reported; computed by Cadence, not recomputed by the verifier"
+    },
+    "review_sentence": {
+      "text": "100% of merged PRs were AI-assisted. Your agent logged 1 entry you accepted.",
+      "definition": "Written from the figures beside it and computed by Cadence; the verifier recomputes only merged_prs and reviews"
+    }
+  },
+  "days": [
+    {
+      "date": "2026-10-01",
+      "kind": "workday",
+      "first_activity": "09:42",
+      "last_activity": "-",
+      "sealed_at": "2026-10-01T17:24:10+05:30",
+      "seal_ev": "75acce94b854f4c697fbfd8b49c398c10ca466ddea8cc7ff28e06f3d500dda08",
+      "items": [
+        {
+          "ev": "99b023119a02f07258ebfb9ecf9335c5a436764b92b809a481f1b15a04c0f367",
+          "last_ev": "99b023119a02f07258ebfb9ecf9335c5a436764b92b809a481f1b15a04c0f367",
+          "kind": "pr.merged",
+          "family": "delivery",
+          "title": "ACME-482901 Batch settlement writes",
+          "occurred_at": "2026-10-01T15:12:40+05:30",
+          "origin": "collected",
+          "source": "github",
+          "ticket": {
+            "key": "ACME-482901",
+            "class": "assigned"
+          },
+          "links": [
+            "https://git.example.com/acme/ledger-core/pull/405"
+          ],
+          "flags": {
+            "edited": false,
+            "after_seal": false,
+            "backfilled": false
+          }
+        },
+        {
+          "ev": "064b315d862d4a18cf24c612097bb499f75cdc8931201da55bf5a2f8d8c7c005",
+          "last_ev": "064b315d862d4a18cf24c612097bb499f75cdc8931201da55bf5a2f8d8c7c005",
+          "kind": "work.done",
+          "family": "delivery",
+          "title": "Fixed flaky ledger test with deterministic clock",
+          "occurred_at": "2026-10-01T15:35:11+05:30",
+          "origin": "agent",
+          "links": [],
+          "flags": {
+            "edited": false,
+            "after_seal": false,
+            "backfilled": false
+          }
+        },
+        {
+          "ev": "05f1d7d127fe4ef2aeaab969da43f5c4234d6d122b3688c8179f6328b9ad7ca2",
+          "last_ev": "05f1d7d127fe4ef2aeaab969da43f5c4234d6d122b3688c8179f6328b9ad7ca2",
+          "kind": "note",
+          "origin": "self",
+          "redacted": true,
+          "flags": {
+            "edited": false,
+            "after_seal": false,
+            "backfilled": false
+          }
+        },
+        {
+          "ev": "253bc7a115684767eb5a66bf60b7877255b9a4162223ac9ca56e2d909a7c19cc",
+          "last_ev": "253bc7a115684767eb5a66bf60b7877255b9a4162223ac9ca56e2d909a7c19cc",
+          "kind": "discussion.raised",
+          "family": "leadership",
+          "title": "Raised retry storms risk in arch sync",
+          "occurred_at": "2026-10-01T15:51:00+05:30",
+          "origin": "self",
+          "links": [],
+          "flags": {
+            "edited": false,
+            "after_seal": false,
+            "backfilled": false
+          }
+        }
+      ]
+    }
+  ],
+  "chain": {
+    "algo": "sha256",
+    "c14n": "cadence-c14n/1",
+    "events": [
+      {
+        "v": 1,
+        "seq": 1,
+        "id": "01JB0000000000000000000001",
+        "at": "2026-10-01T03:58:00.000Z",
+        "actor": "app",
+        "type": "ledger.genesis",
+        "subject": "ledger",
+        "data_digest": "6dda82cab0c8a874fee505b7d4018b467273ff02a435c5b7311b3fc559296caa",
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "hash": "b9bd184d0ba91d850d0cec28c1aa870742ef4e8e2b02381a48f71b1a469dae24",
+        "data": {
+          "created": "2026-10-01T03:58:00.000Z",
+          "app_version": "0.0.0",
+          "profile": {
+            "name": "Sample Person",
+            "timezone": "Asia/Kolkata"
+          }
+        }
+      },
+      {
+        "v": 1,
+        "seq": 2,
+        "id": "01JB0000000000000000000002",
+        "at": "2026-10-01T04:12:30.000Z",
+        "actor": "app",
+        "type": "day.started",
+        "subject": "day:2026-10-01",
+        "data_digest": "08574d5adb4d47ab4cbb2b158186ad14bd12d15435315b53778f10d5641c5a33",
+        "prev": "b9bd184d0ba91d850d0cec28c1aa870742ef4e8e2b02381a48f71b1a469dae24",
+        "hash": "9fc2713dca0fb3d0e0c16b73448afc018240cfbf60f1d13c0a34735b62c6d554",
+        "data": {
+          "at": "2026-10-01T04:12:30.000Z",
+          "source": "input"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 3,
+        "id": "01JB0000000000000000000003",
+        "at": "2026-10-01T04:15:02.000Z",
+        "actor": "cli",
+        "type": "plan.added",
+        "subject": "task:01JB00000000000000000T0001",
+        "data_digest": "8573f448d92282fef153f6f7945b5d7894e0fcfeb120bb489938a2674ba746dc",
+        "prev": "9fc2713dca0fb3d0e0c16b73448afc018240cfbf60f1d13c0a34735b62c6d554",
+        "hash": "a79f5adaa7e422920331ed56a30e198f98e0382056b30d20bc6294c2ffa91f27",
+        "data": {
+          "day": "2026-10-01",
+          "position": 1,
+          "title": "Batch settlement writes",
+          "ticket": {
+            "key": "ACME-482901",
+            "class": "assigned"
+          },
+          "origin": "self"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 4,
+        "id": "01JB0000000000000000000004",
+        "at": "2026-10-01T09:42:40.000Z",
+        "actor": "collector:github",
+        "type": "entry.created",
+        "subject": "entry:01JB00000000000000000E0001",
+        "data_digest": "beb1c7492842dc3a3ad496c8125d18d29326dd7b2e30ce310573c460239f6ef2",
+        "prev": "a79f5adaa7e422920331ed56a30e198f98e0382056b30d20bc6294c2ffa91f27",
+        "hash": "99b023119a02f07258ebfb9ecf9335c5a436764b92b809a481f1b15a04c0f367",
+        "data": {
+          "id": "01JB00000000000000000E0001",
+          "day": "2026-10-01",
+          "kind": "pr.merged",
+          "family": "delivery",
+          "title": "ACME-482901 Batch settlement writes",
+          "occurred_at": "2026-10-01T15:12:40+05:30",
+          "ticket": {
+            "key": "ACME-482901",
+            "class": "assigned"
+          },
+          "links": [
+            {
+              "kind": "pr",
+              "url": "https://git.example.com/acme/ledger-core/pull/405"
+            }
+          ],
+          "tags": [],
+          "attrs": {
+            "ai_assisted": true
+          },
+          "origin": "collected",
+          "source": "github",
+          "source_ref": "github:PR_kwDOAcme405:merged",
+          "status": "accepted",
+          "backfilled": false,
+          "after_seal": false,
+          "export": "include"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 5,
+        "id": "01JB0000000000000000000005",
+        "at": "2026-10-01T10:05:11.000Z",
+        "actor": "mcp",
+        "type": "entry.created",
+        "subject": "entry:01JB00000000000000000E0002",
+        "data_digest": "52515a299a3698322d9fd7aa47b69e940eeccaf59c112b6427f29496bc4daa39",
+        "prev": "99b023119a02f07258ebfb9ecf9335c5a436764b92b809a481f1b15a04c0f367",
+        "hash": "064b315d862d4a18cf24c612097bb499f75cdc8931201da55bf5a2f8d8c7c005",
+        "data": {
+          "id": "01JB00000000000000000E0002",
+          "day": "2026-10-01",
+          "kind": "work.done",
+          "family": "delivery",
+          "title": "Fixed flaky ledger test with deterministic clock",
+          "occurred_at": "2026-10-01T15:35:11+05:30",
+          "ticket": null,
+          "links": [],
+          "tags": [],
+          "attrs": {},
+          "origin": "agent",
+          "source": null,
+          "source_ref": null,
+          "status": "accepted",
+          "backfilled": false,
+          "after_seal": false,
+          "export": "include"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 6,
+        "id": "01JB0000000000000000000006",
+        "at": "2026-10-01T10:20:00.000Z",
+        "actor": "cli",
+        "type": "entry.created",
+        "subject": "entry:01JB00000000000000000E0003",
+        "data_digest": "57adfab4c34fb907587f128851ef5a1f60624cf831b056c004987f3839874646",
+        "prev": "064b315d862d4a18cf24c612097bb499f75cdc8931201da55bf5a2f8d8c7c005",
+        "hash": "05f1d7d127fe4ef2aeaab969da43f5c4234d6d122b3688c8179f6328b9ad7ca2"
+      },
+      {
+        "v": 1,
+        "seq": 7,
+        "id": "01JB0000000000000000000007",
+        "at": "2026-10-01T10:21:00.000Z",
+        "actor": "cli",
+        "type": "entry.created",
+        "subject": "entry:01JB00000000000000000E0004",
+        "data_digest": "ba2f9279a049308610913b7c7f7d391c890a43754624cba33c8202a3ab1136bd",
+        "prev": "05f1d7d127fe4ef2aeaab969da43f5c4234d6d122b3688c8179f6328b9ad7ca2",
+        "hash": "253bc7a115684767eb5a66bf60b7877255b9a4162223ac9ca56e2d909a7c19cc",
+        "data": {
+          "id": "01JB00000000000000000E0004",
+          "day": "2026-10-01",
+          "kind": "discussion.raised",
+          "family": "leadership",
+          "title": "Raised retry storms risk in arch sync",
+          "occurred_at": "2026-10-01T15:51:00+05:30",
+          "ticket": null,
+          "links": [],
+          "tags": [],
+          "attrs": {},
+          "origin": "self",
+          "source": null,
+          "source_ref": null,
+          "status": "accepted",
+          "backfilled": false,
+          "after_seal": false,
+          "export": "include"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 8,
+        "id": "01JB0000000000000000000008",
+        "at": "2026-10-01T11:54:10.000Z",
+        "actor": "app",
+        "type": "plan.resolved",
+        "subject": "task:01JB00000000000000000T0001",
+        "data_digest": "bfe0d87d51bf89a4965cc32434480deca1ac050c7ed32f2709b422f480b93206",
+        "prev": "253bc7a115684767eb5a66bf60b7877255b9a4162223ac9ca56e2d909a7c19cc",
+        "hash": "c6978d10adff97a10fb66e3f1e0e590d4057454727a04ddbcef6b7f7093ef6a2",
+        "data": {
+          "status": "done",
+          "reason": null,
+          "links": [
+            "entry:01JB00000000000000000E0001"
+          ]
+        }
+      },
+      {
+        "v": 1,
+        "seq": 9,
+        "id": "01JB0000000000000000000009",
+        "at": "2026-10-01T11:54:10.000Z",
+        "actor": "app",
+        "type": "day.sealed",
+        "subject": "day:2026-10-01",
+        "data_digest": "883b0c0fe2a59a26c1df0618e76072ad3b20f20311bcd80e280de3e24ff4cc9c",
+        "prev": "c6978d10adff97a10fb66e3f1e0e590d4057454727a04ddbcef6b7f7093ef6a2",
+        "hash": "75acce94b854f4c697fbfd8b49c398c10ca466ddea8cc7ff28e06f3d500dda08",
+        "data": {
+          "counts": {
+            "entries": 4,
+            "planned": 1,
+            "done": 1
+          },
+          "plan": {
+            "done": 1,
+            "slipped": 0,
+            "dropped": 0
+          }
+        }
+      },
+      {
+        "v": 1,
+        "seq": 10,
+        "id": "01JB0000000000000000000010",
+        "at": "2026-10-01T11:54:11.000Z",
+        "actor": "app",
+        "type": "witness.checkpoint",
+        "subject": "day:2026-10-01",
+        "data_digest": "36c80edf766e19c4df936c84c88c99eefb2c71a84a188cbbd364cf5b9e92031e",
+        "prev": "75acce94b854f4c697fbfd8b49c398c10ca466ddea8cc7ff28e06f3d500dda08",
+        "hash": "4e2581e6bc5609d1a2be87140de00fcc1febe3795092f041137f24a19aac8a82",
+        "data": {
+          "purpose": "standup"
+        }
+      }
+    ]
+  },
+  "witnesses": [
+    {
+      "date": "2026-10-01",
+      "code": "4e2581e6bc5609d1",
+      "where": "stand-up message"
+    }
+  ],
+  "checks": [
+    "export_digest",
+    "sequence",
+    "links",
+    "payload_digests",
+    "event_hashes",
+    "references",
+    "witnesses"
+  ],
+  "export_digest": "1c33487a231adeb8a82070aa86968cc3635e96f6d23ec2b05d6404aa0b6960a2"
+}

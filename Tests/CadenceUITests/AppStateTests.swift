@@ -1,0 +1,215 @@
+import CadenceCore
+import Foundation
+import Testing
+
+@testable import CadenceUI
+
+/// The shared model: the tick held for Undo, the morning commit, days off and failures (docs/SPEC.md 4.2, 4.4).
+@MainActor @Suite struct AppStateTests {
+    typealias Home = DayStoreLoaderTests.Home
+
+    /// An app state on a temp home whose store already exists, read once.
+    static func make(_ home: Home) async throws -> AppState {
+        try ConfigStore.save(Config.defaults(timezone: "Asia/Kolkata"), to: home.roots.config)
+        let clock = DayStoreLoaderTests.FixedClock()
+        let model = DayModel(loader: DayStoreLoader(location: .found(home.roots), clock: clock))
+        let app = AppState(model: model, writer: AppWriter(location: .found(home.roots), clock: clock, poster: AppWriterTests.CountingPoster()), clock: clock)
+        _ = await app.perform(.planAdd(title: "Write the ADR", day: nil))
+        _ = await app.perform(.planAdd(title: "Review the RFC", day: nil))
+        await settle(app)
+        return app
+    }
+
+    /// Waits until the model has read the latest write.
+    static func settle(_ app: AppState) async {
+        let before = app.model.reads
+        app.model.reload()
+        for _ in 0..<1500 where app.model.reads == before {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        // One more pass, so a read already running when the reload was asked for is followed by a fresh one.
+        let after = app.model.reads
+        for _ in 0..<10 where app.model.reads == after && app.model.reads < before + 2 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    @Test func aTickReadsAsDoneAtOnceAndUndoWritesNothing() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let task = try #require(app.context?.plan.first)
+        app.tick(task)
+        #expect(app.status(of: task) == .done)
+        #expect(app.shownDone == 1)
+        app.undoTick()
+        #expect(app.status(of: task) == .open)
+        await Self.settle(app)
+        #expect(app.context?.plan.first?.status == .open)
+    }
+
+    @Test func aSecondTickWritesTheFirstAndHoldsItsOwnUndo() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let plan = try #require(app.context?.plan)
+        app.tick(plan[0])
+        app.tick(plan[1])
+        #expect(app.pendingTick?.task == plan[1].id)
+        #expect(app.shownDone == 1)  // the second is shown done; the first is being written
+        for _ in 0..<100 where app.context?.plan.first?.status != .done {
+            try? await Task.sleep(for: .milliseconds(10))
+            await Self.settle(app)
+        }
+        #expect(app.context?.plan.map(\.status) == [.done, .open])
+        #expect(app.shownDone == 2)
+        app.undoTick()
+        await Self.settle(app)
+        #expect(app.context?.plan.map(\.status) == [.done, .open])
+    }
+
+    /// What VoiceOver would have been told.
+    @MainActor final class Heard {
+        var lines: [String] = []
+    }
+
+    @Test func oneTickIsAnnouncedOnceAsDoneNOfM() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let heard = Heard()
+        app.announce = { heard.lines.append($0) }
+        let task = try #require(app.context?.plan.first)
+        app.tick(task)
+        #expect(heard.lines == ["Done, 1 of 2"])
+        // The same tick again, and the write when it is flushed, say nothing more.
+        app.tick(task)
+        await app.flushPendingTick()
+        await Self.settle(app)
+        #expect(heard.lines == ["Done, 1 of 2"])
+    }
+
+    @Test func undoSaysNothingAndTheNextTickIsAnnouncedAgain() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let heard = Heard()
+        app.announce = { heard.lines.append($0) }
+        let task = try #require(app.context?.plan.first)
+        app.tick(task)
+        app.undoTick()
+        #expect(heard.lines == ["Done, 1 of 2"])
+        app.tick(task)
+        #expect(heard.lines == ["Done, 1 of 2", "Done, 1 of 2"])
+    }
+
+    @Test func aTickOnADoneTaskSaysNothing() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let task = try #require(app.context?.plan.first)
+        app.tick(task)
+        await app.flushPendingTick()
+        await Self.settle(app)
+        let heard = Heard()
+        app.announce = { heard.lines.append($0) }
+        app.tick(try #require(app.context?.plan.first))
+        #expect(heard.lines.isEmpty)
+    }
+
+    @Test func aSecondTickCountsTheFirstThatIsStillBeingWritten() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let heard = Heard()
+        app.announce = { heard.lines.append($0) }
+        let plan = try #require(app.context?.plan)
+        app.tick(plan[0])
+        app.tick(plan[1])
+        #expect(heard.lines == ["Done, 1 of 2", "Done, 2 of 2"])
+    }
+
+    @Test func theTickAnnouncementIsDoneNOfM() {
+        #expect(AppState.tickAnnouncement(done: 3, planned: 5) == "Done, 3 of 5")
+    }
+
+    @Test func aFlushedTickIsWritten() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let task = try #require(app.context?.plan.first)
+        app.tick(task)
+        await app.flushPendingTick()
+        #expect(app.pendingTick == nil)
+        await Self.settle(app)
+        #expect(app.context?.plan.first?.status == .done)
+        // A done task is not ticked again: the ledger has no reopen.
+        app.tick(try #require(app.context?.plan.first))
+        #expect(app.pendingTick == nil)
+    }
+
+    @Test func aTakenTickIsHandedOverOnce() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let task = try #require(app.context?.plan.first)
+        app.tick(task)
+        #expect(app.takePendingTick() == task.id)
+        #expect(app.takePendingTick() == nil && app.pendingTick == nil)
+    }
+
+    @Test func theMorningCommitAddsDropsAndOrders() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        let ids = try #require(app.context?.plan.map(\.id))
+        #expect(await app.commitPlan(picked: [ids[1]], added: ["Draft the replay tool"]))
+        await Self.settle(app)
+        #expect(app.context?.committed == true)
+        #expect(app.context?.plan.map(\.title).prefix(2) == ["Review the RFC", "Draft the replay tool"])
+    }
+
+    @Test func sickLeaveIsTheSickStateAndWorkingAfterAllUndoesIt() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        #expect(await app.declare(.sick))
+        await Self.settle(app)
+        #expect(app.story?.state == .sick)
+        #expect(await app.workingAfterAll())
+        await Self.settle(app)
+        #expect(app.story?.state != .sick)
+    }
+
+    @Test func aRefusedWriteIsKeptForTheBannerUntilTheNextSuccess() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        #expect(!(await app.resolve("missing", as: .done)))
+        #expect(app.issue?.kind == .invalid)
+        #expect(await app.log("Merged the retry budget") != nil)
+        #expect(app.issue == nil)
+    }
+
+    @Test func aLineThatCouldNotBeSavedIsKeptForCopyMyText() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        // A day in the future is refused by the ledger, so the words stay with the app.
+        _ = await app.perform(.log(LogRequest(text: "Merged the retry budget", date: LocalDate("2099-01-01")!)))
+        #expect(app.issue != nil)
+        #expect(app.unsavedText == "Merged the retry budget")
+        #expect(await app.log("Reviewed the RFC") != nil)
+        #expect(app.unsavedText == nil && app.issue == nil)
+    }
+
+    @Test func discreetModeHidesTitlesAndTempo() async throws {
+        let home = Home()
+        defer { home.remove() }
+        let app = try await Self.make(home)
+        #expect(app.title("Write the ADR", index: 0, word: "Task") == "Write the ADR")
+        app.discreet = true
+        #expect(app.title("Write the ADR", index: 0, word: "Task") == "Task 1")
+        #expect(!app.showsTempo)
+    }
+}

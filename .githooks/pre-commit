@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+tools/guard.sh --staged
+make test-fast

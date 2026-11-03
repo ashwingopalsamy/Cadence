@@ -1,0 +1,335 @@
+{
+  "c14n": "cadence-c14n/1",
+  "vectors": [
+    {
+      "name": "scalars",
+      "input": "[null,true,false,0,-0,1,-1,42]",
+      "canonical": "[null,true,false,0,0,1,-1,42]",
+      "sha256": "af6df279b93404bc3041945b03b859bcc9b1d7abbe1a38f2e737aceb5c222437"
+    },
+    {
+      "name": "max safe integers",
+      "input": "[9007199254740991,-9007199254740991]",
+      "canonical": "[9007199254740991,-9007199254740991]",
+      "sha256": "84bad60c1793654a7cdca854230af90af531ecc8f7656e2c7b2bd91890017b37"
+    },
+    {
+      "name": "empty containers",
+      "input": "{\"a\":[],\"b\":{},\"c\":\"\"}",
+      "canonical": "{\"a\":[],\"b\":{},\"c\":\"\"}",
+      "sha256": "12db860d7676bcec84a4ea9fa9a3e39e8931c41b10d064b23ced53f06e15caae"
+    },
+    {
+      "name": "key order is by code point",
+      "input": "{\"b\":1,\"a\":2,\"B\":3,\"aa\":4,\"_\":5,\"\":6,\"a b\":7,\"0\":8,\"~\":9}",
+      "canonical": "{\"\":6,\"0\":8,\"B\":3,\"_\":5,\"a\":2,\"a b\":7,\"aa\":4,\"b\":1,\"~\":9}",
+      "sha256": "7238c12e6bd0cde442980e3faa777f29787d0cedda64446875c2420cf4f84e6b"
+    },
+    {
+      "name": "nested key order",
+      "input": "{\"z\":{\"y\":{\"x\":1,\"w\":2},\"v\":[{\"u\":1,\"t\":2}]},\"s\":0}",
+      "canonical": "{\"s\":0,\"z\":{\"v\":[{\"t\":2,\"u\":1}],\"y\":{\"w\":2,\"x\":1}}}",
+      "sha256": "9edf6f8fcd9e3bd1ba94798eaa7da7b7014cc2e4fb84d44950a9ede483741051"
+    },
+    {
+      "name": "whitespace is dropped",
+      "input": " { \"a\" : [ 1 , 2 ] ,\n\t\"b\" : null } ",
+      "canonical": "{\"a\":[1,2],\"b\":null}",
+      "sha256": "f25109c4111335e4a32d49373585e7a788ff5b10e70023f7004b170e7f84716a"
+    },
+    {
+      "name": "quote and backslash",
+      "input": "\"say \\\"hi\\\" and \\\\ back\"",
+      "canonical": "\"say \\\"hi\\\" and \\\\ back\"",
+      "sha256": "4457ef4d79382762fe8a3ba9c25a5623a3dd18f111421dbf705e249a33e92854"
+    },
+    {
+      "name": "short escapes",
+      "input": "\"\\b\\f\\n\\r\\t\"",
+      "canonical": "\"\\b\\f\\n\\r\\t\"",
+      "sha256": "88821412381596c0dc2c66e310ae7e66100d7e4196456e2e9f3d261d0b562746"
+    },
+    {
+      "name": "other control characters",
+      "input": "\"\\u0000\\u0001\\u001f\\u000b\\u001B\"",
+      "canonical": "\"\\u0000\\u0001\\u001f\\u000b\\u001b\"",
+      "sha256": "a35c4b1e7ed2789f14dc8bcc58a929cbf6094f039ae8e68678ba4c7ee426f2b7"
+    },
+    {
+      "name": "slash stays raw",
+      "input": "\"https:\\/\\/git.example.com/acme/pull/1\"",
+      "canonical": "\"https://git.example.com/acme/pull/1\"",
+      "sha256": "0e746fc7df0ba63fafede0b77539246c878463f28e6f66950bad172afb8f39e6"
+    },
+    {
+      "name": "delete stays raw",
+      "input": "\"a\\u007fb\"",
+      "canonical": "\"ab\"",
+      "sha256": "373c8d06d55897183a658ec10f29e4f98a0c18f53e8d66cd4c1037caa00be0c2"
+    },
+    {
+      "name": "latin escapes become raw UTF-8",
+      "input": "\"caf\\u00e9 r\\u00e9sum\\u00e9\"",
+      "canonical": "\"café résumé\"",
+      "sha256": "ec5af3ceec14a265fd191237812b37cbd0c690c439edaca8b1dd6a5a9917de0e"
+    },
+    {
+      "name": "raw UTF-8 stays raw",
+      "input": "\"São Paulo · ₹ 中文\"",
+      "canonical": "\"São Paulo · ₹ 中文\"",
+      "sha256": "dc75a86fff61cf34bce8510e4f61f5197cad63d6e81bfb41a15cd416bf50dc67"
+    },
+    {
+      "name": "combining marks are not normalised",
+      "input": "[\"e\\u0301\",\"\\u00e9\"]",
+      "canonical": "[\"é\",\"é\"]",
+      "sha256": "d056a09c651dab55ceb8f30b349ec21de471bdf5ce4a94db7f29dc9594f54ec3"
+    },
+    {
+      "name": "line separators stay raw",
+      "input": "\"a\\u2028b\\u2029c\"",
+      "canonical": "\"a b c\"",
+      "sha256": "18c6bee2c10cadf5dec772e4b216f9060a21814a302ce989e183178afcf43e1a"
+    },
+    {
+      "name": "astral plane from surrogate pair",
+      "input": "\"\\ud83d\\ude80 launch\"",
+      "canonical": "\"🚀 launch\"",
+      "sha256": "e66816732dfbc72751b60bed96798347e086bd5e734efa7eabd9d1343a0ee83d"
+    },
+    {
+      "name": "astral plane raw",
+      "input": "\"🚀\"",
+      "canonical": "\"🚀\"",
+      "sha256": "8d4bdd145400e3e242cbdac47a55f7298bed88a60d26a123a5837384ec060e54"
+    },
+    {
+      "name": "ACME entry",
+      "input": "{\"kind\":\"pr.merged\",\"title\":\"ACME-482913 Ship retry budget\",\"attrs\":{\"number\":412,\"ai_assisted\":true,\"additions\":184},\"links\":[{\"kind\":\"pr\",\"url\":\"https://git.example.com/acme/ledger-core/pull/412\"}],\"occurred_at\":\"2026-10-29T16:02:11+05:30\",\"ticket\":{\"class\":\"assigned\",\"key\":\"ACME-482913\"}}",
+      "canonical": "{\"attrs\":{\"additions\":184,\"ai_assisted\":true,\"number\":412},\"kind\":\"pr.merged\",\"links\":[{\"kind\":\"pr\",\"url\":\"https://git.example.com/acme/ledger-core/pull/412\"}],\"occurred_at\":\"2026-10-29T16:02:11+05:30\",\"ticket\":{\"class\":\"assigned\",\"key\":\"ACME-482913\"},\"title\":\"ACME-482913 Ship retry budget\"}",
+      "sha256": "cf75981ef5e315f824a3377302a63bcb3e07a679271d06742066f7497639a563"
+    },
+    {
+      "name": "deep nesting",
+      "input": "[[[[[[[[[[{\"a\":[[[[1]]]]}]]]]]]]]]]",
+      "canonical": "[[[[[[[[[[{\"a\":[[[[1]]]]}]]]]]]]]]]",
+      "sha256": "32a9921953d4ecfd70e17280c948797a403afef2668702d12a1a3d96b5a864c9"
+    },
+    {
+      "name": "64 levels of nesting",
+      "input": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[{}]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "canonical": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[{}]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "sha256": "2b69d0b7b23f131eeb25dd3ae3db30b6907a02e8e362d8a5572bc3d11c964972"
+    },
+    {
+      "name": "escaped keys sort after unescaping",
+      "input": "{\"\\u0062\":1,\"a\":2}",
+      "canonical": "{\"a\":2,\"b\":1}",
+      "sha256": "d3626ac30a87e6f7a6428233b3c68299976865fa5508e4267c5415c76af7a772"
+    },
+    {
+      "name": "keys that need escaping",
+      "input": "{\"a\\\"b\":1,\"a\\\\b\":2,\"\\n\":3,\"\\u007f\":4}",
+      "canonical": "{\"\\n\":3,\"a\\\"b\":1,\"a\\\\b\":2,\"\":4}",
+      "sha256": "b94a991bbc89da76b451bf773d13998dc4f4aef76c3bd51d8fb7a7929ce583e1"
+    },
+    {
+      "name": "C1 controls stay raw",
+      "input": "\"\\u0080\\u009f\"",
+      "canonical": "\"\"",
+      "sha256": "5ab9dc377c64aa500b327a9c80962288831270656cef570697459bd2428ce7d2"
+    },
+    {
+      "name": "BOM and noncharacter stay raw",
+      "input": "\"\\ufeff\\uffff\"",
+      "canonical": "\"﻿￿\"",
+      "sha256": "261ecab9e7cbca238714eb52db8fe6480f6c4fc5be2b8efebd2da8572789d965"
+    },
+    {
+      "name": "uppercase hex escape",
+      "input": "\"\\u00E9\"",
+      "canonical": "\"é\"",
+      "sha256": "f2886017e9c7abacf804b54d64787dce2b611c9544ba21f3affdd126a6e50086"
+    },
+    {
+      "name": "highest code point",
+      "input": "\"\\udbff\\udfff\"",
+      "canonical": "\"􏿿\"",
+      "sha256": "216551a7df34e082dd063693c09f0b567df0351251da1fd71057b83fe66003c6"
+    },
+    {
+      "name": "top-level string",
+      "input": "\"x\"",
+      "canonical": "\"x\"",
+      "sha256": "ba2df4903a2c14e86dc3bcca58911b44ac1d2514b7227bf6eb08cfb978f55a1b"
+    },
+    {
+      "name": "top-level integer",
+      "input": "7",
+      "canonical": "7",
+      "sha256": "7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451"
+    }
+  ],
+  "reject": [
+    {
+      "name": "float",
+      "input": "1.0",
+      "stage": "parse"
+    },
+    {
+      "name": "float in object",
+      "input": "{\"cost\":0.42}",
+      "stage": "parse"
+    },
+    {
+      "name": "exponent",
+      "input": "1e3",
+      "stage": "parse"
+    },
+    {
+      "name": "negative exponent",
+      "input": "{\"a\":5E-1}",
+      "stage": "parse"
+    },
+    {
+      "name": "integer above 2^53 - 1",
+      "input": "9007199254740992",
+      "stage": "parse"
+    },
+    {
+      "name": "integer below -(2^53 - 1)",
+      "input": "-9007199254740992",
+      "stage": "parse"
+    },
+    {
+      "name": "huge integer",
+      "input": "123456789012345678901234567890",
+      "stage": "parse"
+    },
+    {
+      "name": "non-ASCII key",
+      "input": "{\"café\":1}",
+      "stage": "write"
+    },
+    {
+      "name": "duplicate key",
+      "input": "{\"a\":1,\"a\":2}",
+      "stage": "parse"
+    },
+    {
+      "name": "unpaired high surrogate",
+      "input": "\"\\ud800\"",
+      "stage": "parse"
+    },
+    {
+      "name": "unpaired low surrogate",
+      "input": "\"\\udc00x\"",
+      "stage": "parse"
+    },
+    {
+      "name": "raw control character",
+      "input": "\"a\tb\"",
+      "stage": "parse"
+    },
+    {
+      "name": "leading zero",
+      "input": "012",
+      "stage": "parse"
+    },
+    {
+      "name": "trailing content",
+      "input": "{} {}",
+      "stage": "parse"
+    },
+    {
+      "name": "NaN",
+      "input": "NaN",
+      "stage": "parse"
+    },
+    {
+      "name": "invalid escape",
+      "input": "\"\\x41\"",
+      "stage": "parse"
+    },
+    {
+      "name": "non-ASCII key through an escape",
+      "input": "{\"caf\\u00e9\":1}",
+      "stage": "write"
+    },
+    {
+      "name": "high surrogate then a letter",
+      "input": "\"\\ud800A\"",
+      "stage": "parse"
+    },
+    {
+      "name": "two high surrogates",
+      "input": "\"\\ud800\\ud800\"",
+      "stage": "parse"
+    },
+    {
+      "name": "lone minus",
+      "input": "-",
+      "stage": "parse"
+    },
+    {
+      "name": "negative leading zero",
+      "input": "-01",
+      "stage": "parse"
+    },
+    {
+      "name": "plus sign",
+      "input": "+1",
+      "stage": "parse"
+    },
+    {
+      "name": "negative zero float",
+      "input": "-0.0",
+      "stage": "parse"
+    },
+    {
+      "name": "zero exponent",
+      "input": "0e0",
+      "stage": "parse"
+    },
+    {
+      "name": "trailing comma in array",
+      "input": "[1,]",
+      "stage": "parse"
+    },
+    {
+      "name": "trailing comma in object",
+      "input": "{\"a\":1,}",
+      "stage": "parse"
+    },
+    {
+      "name": "missing colon",
+      "input": "{\"a\" 1}",
+      "stage": "parse"
+    },
+    {
+      "name": "Infinity",
+      "input": "Infinity",
+      "stage": "parse"
+    },
+    {
+      "name": "short unicode escape",
+      "input": "\"\\u12\"",
+      "stage": "parse"
+    },
+    {
+      "name": "uppercase U escape",
+      "input": "\"\\U0041\"",
+      "stage": "parse"
+    },
+    {
+      "name": "leading byte order mark",
+      "input": "﻿[]",
+      "stage": "parse"
+    },
+    {
+      "name": "65 levels of nesting",
+      "input": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "stage": "parse"
+    }
+  ]
+}
